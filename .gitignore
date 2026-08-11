@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Production
+build/
+dist/
+
+# Environment (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# Debug / logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+.next/dev/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Drizzle (local migration artifacts if generated)
+drizzle/meta/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE / editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# Vercel / deploy
+.vercel/
+
+# v0 sandbox (legacy)
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+
+# Misc local files
+*.tsbuildinfo
+.turbo/
+.cache/
+.test-cookies.txt
