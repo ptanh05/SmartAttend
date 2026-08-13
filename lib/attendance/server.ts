@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
+import { evaluateDevicePolicy, normalizeScore } from '@/lib/attendance/device-policy'
 import type { AuthContext } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import {
@@ -292,7 +293,17 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
   const policy = await getPolicy(auth.organizationId)
   const verifiedAt = new Date()
   const status: AttendanceStatus = 'present'
-  const verificationScore = 98
+
+  const deviceRows = await db()
+    .select()
+    .from(devices)
+    .where(and(eq(devices.organizationId, auth.organizationId), eq(devices.studentId, auth.userId)))
+  const deviceDecision = evaluateDevicePolicy({
+    hasTrustedDevice: deviceRows.some((device) => device.trusted),
+    hasSeenDevice: deviceRows.length > 0,
+    requireTrustedDevice: policy.requireTrustedDevice,
+  })
+  const verificationScore = normalizeScore(deviceDecision.score)
 
   const existing = await db()
     .select()
@@ -336,7 +347,7 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     challengeId: challenge.id,
     method: 'manual_code',
     result: 'accepted',
-    metadata: { device: deviceLabel },
+    metadata: { device: deviceLabel, score: verificationScore, reason: deviceDecision.reason },
   })
 
   await db().insert(notifications).values({
@@ -349,28 +360,38 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
 
   await appendAudit(auth, 'Verified attendance', live.id, 'info')
 
-  if (policy.requireTrustedDevice) {
-    const deviceRows = await db()
-      .select()
-      .from(devices)
-      .where(and(eq(devices.organizationId, auth.organizationId), eq(devices.studentId, auth.userId), eq(devices.trusted, true)))
+  // Track/update the device used for this verification.
+  const knownDevice = deviceRows.find((device) => device.label === deviceLabel) ?? deviceRows[0]
+  if (knownDevice) {
+    await db().update(devices).set({ trusted: true, lastSeenAt: verifiedAt }).where(eq(devices.id, knownDevice.id))
+  } else {
+    await db().insert(devices).values({
+      id: nanoid(),
+      organizationId: auth.organizationId,
+      studentId: auth.userId,
+      label: deviceLabel,
+      trusted: true,
+      lastSeenAt: verifiedAt,
+    })
+  }
 
-    if (!deviceRows[0]) {
-      await db().insert(devices).values({
-        id: nanoid(),
-        organizationId: auth.organizationId,
-        studentId: auth.userId,
-        label: deviceLabel,
-        trusted: true,
-        lastSeenAt: verifiedAt,
-      })
-    }
+  // Surface risky verifications to reviewers.
+  if (deviceDecision.suspicious) {
+    await db().insert(suspiciousAttempts).values({
+      id: nanoid(),
+      organizationId: auth.organizationId,
+      attendanceRecordId: recordId,
+      reason: `Verification from a non-trusted device under the trusted-device policy (${deviceDecision.reason}).`,
+      status: 'open',
+    })
   }
 
   return {
     ok: true,
     confidence: verificationScore,
-    message: 'Identity and session verified. Your attendance is recorded.',
+    message: deviceDecision.suspicious
+      ? 'Your attendance is recorded but it is flagged for review because the device is not trusted.'
+      : 'Identity and session verified. Your attendance is recorded.',
     record: {
       id: recordId,
       sessionId: live.id,

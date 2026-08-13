@@ -9,6 +9,7 @@ This is a **real, database-backed implementation** (Next.js + Drizzle + Neon Pos
 - **Role-based portals** — Student, Teacher, Staff, and Admin portals with role-aware routing and organization scoping.
 - **Tamper-resistant attendance** — rotating challenge codes (short TTL, stored hashed) with a strict session state machine.
 - **Brute-force protection** — sliding-window rate limiting on login and attendance verification endpoints.
+- **Trusted-device scoring** — per-organization `requireTrustedDevice` policy drives a bounded `verificationScore` and surfaces untrusted-device verifications as suspicious attempts for review.
 - **Real authentication** — password hashing (bcrypt), login by email or student code, session cookies with hashed, expiring tokens, password change, account disabling, and teacher self-registration behind an API key.
 - **Student import** — bulk-create students from CSV with generated default passwords.
 - **Analytics & auditing** — per-organization metrics, attendance rate, suspicious-attempt tracking, and audit logs.
@@ -123,11 +124,9 @@ Run the suite with `pnpm test`. Tests cover the core, framework-free logic:
 
 ## Roadmap (next milestones)
 
-- ~~Split-state work done~~ — core logic is now covered by tests and hardened with rate limiting.
 - Split the monolithic `components/smart-attend.tsx` into focused per-portal components.
-- Add a `requireTrustedDevice` policy and an explicit `verification_score`/`risk_score` (replacing the current `confidence` value).
-- Add real-time session updates (polling today; SSE/WebSocket later).
 - Add report exports (CSV/PDF).
-- Add integration tests covering the full attendance flow.
+- Add integration tests covering the full attendance flow (requires a configured `DATABASE_URL`).
+- Add real-time session updates (polling today; SSE/WebSocket later).
 
 See `docs/architecture.md` for the detailed system architecture and future phases.
