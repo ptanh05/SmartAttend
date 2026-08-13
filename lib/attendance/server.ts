@@ -440,6 +440,51 @@ export async function listRecords(auth: AuthContext, studentId?: string) {
   }))
 }
 
+export type ReportRecordRow = {
+  studentName: string
+  studentEmail: string
+  courseCode: string
+  courseName: string
+  room: string
+  status: string
+  score: number
+  verifiedAt: string | null
+  device: string
+}
+
+/**
+ * Attendance rows enriched with student, course and section details, used to
+ * build CSV exports. Scoped to the authenticated organization.
+ */
+export async function listReportRecords(auth: AuthContext): Promise<ReportRecordRow[]> {
+  const rows = await db()
+    .select({
+      record: attendanceRecords,
+      student: users,
+      section: courseSections,
+      course: courses,
+    })
+    .from(attendanceRecords)
+    .innerJoin(users, eq(attendanceRecords.studentId, users.id))
+    .innerJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+    .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
+    .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .where(eq(attendanceRecords.organizationId, auth.organizationId))
+    .orderBy(desc(attendanceRecords.createdAt))
+
+  return rows.map(({ record, student, section, course }) => ({
+    studentName: student.name,
+    studentEmail: student.email,
+    courseCode: course.code,
+    courseName: course.name,
+    room: section.room,
+    status: record.status,
+    score: record.verificationScore,
+    verifiedAt: record.verifiedAt ? record.verifiedAt.toISOString() : null,
+    device: record.device ?? '',
+  }))
+}
+
 export async function getLiveSessionDetails(auth: AuthContext) {
   const rows = await db()
     .select({

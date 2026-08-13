@@ -9,6 +9,7 @@ This is a **real, database-backed implementation** (Next.js + Drizzle + Neon Pos
 - **Role-based portals** — Student, Teacher, Staff, and Admin portals with role-aware routing and organization scoping.
 - **Tamper-resistant attendance** — rotating challenge codes (short TTL, stored hashed) with a strict session state machine.
 - **Brute-force protection** — sliding-window rate limiting on login and attendance verification endpoints.
+- **CSV report export** — `GET /api/reports/attendance` returns a per-student attendance summary as a downloadable CSV, wired to the Reports/Analytics export button.
 - **Trusted-device scoring** — per-organization `requireTrustedDevice` policy drives a bounded `verificationScore` and surfaces untrusted-device verifications as suspicious attempts for review.
 - **Real authentication** — password hashing (bcrypt), login by email or student code, session cookies with hashed, expiring tokens, password change, account disabling, and teacher self-registration behind an API key.
 - **Student import** — bulk-create students from CSV with generated default passwords.
@@ -122,6 +123,7 @@ Run the suite with `pnpm test`. Tests cover the core, framework-free logic:
 - `lib/validation` — input validators
 - `lib/auth/routing` — portal access rules
 - `lib/rate-limit` — sliding-window limiter
+- `lib/reports/csv` — RFC 4180 CSV escaping, summary/rate helpers
 
 There is also an **integration test** (`tests/integration/attendance-flow.test.ts`) that exercises the full
 attendance flow against the real database (create section → start session → rotate challenge → verify →
@@ -130,7 +132,7 @@ check record/device). It runs only when `DATABASE_URL` is set and cleans up its 
 ## Roadmap (next milestones)
 
 - Split the monolithic `components/smart-attend.tsx` into focused per-portal components.
-- Add report exports (CSV/PDF).
+- Extend reports to export per-course/section breakdowns.
 - Add real-time session updates (polling today; SSE/WebSocket later).
 
 See `docs/architecture.md` for the detailed system architecture and future phases.

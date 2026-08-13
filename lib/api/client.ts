@@ -137,6 +137,15 @@ export const api = {
   departments() {
     return request<{ ok: boolean; departments: string[] }>('/api/users?kind=departments')
   },
+  /** Triggers the attendance CSV export endpoint as an attachment download. */
+  downloadAttendanceReport() {
+    const link = document.createElement('a')
+    link.href = '/api/reports/attendance'
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  },
 }
 
 export type LiveSession = {
