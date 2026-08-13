@@ -120,6 +120,21 @@ async function getActiveChallenge(sessionId: string) {
   return rows[0] ?? null
 }
 
+/**
+ * The most recently issued challenge for a session, regardless of status.
+ * Used to compute the next sequence so the replay-protection unique index
+ * `(session_id, sequence)` is never violated after a challenge is consumed.
+ */
+async function getLatestChallenge(sessionId: string) {
+  const rows = await db()
+    .select()
+    .from(attendanceChallenges)
+    .where(eq(attendanceChallenges.sessionId, sessionId))
+    .orderBy(desc(attendanceChallenges.sequence))
+    .limit(1)
+  return rows[0] ?? null
+}
+
 const challengePlainCache = new Map<string, { value: string; expiresAt: number }>()
 
 export function cacheChallengePlain(sessionId: string, value: string, ttlSeconds: number) {
@@ -138,16 +153,17 @@ export async function rotateChallengeForSession(auth: AuthContext, sessionId: st
   if (session.status !== 'active') return { ok: false as const, message: 'Session is not active.' }
 
   const policy = await getPolicy(auth.organizationId)
-  const previous = await getActiveChallenge(sessionId)
-  if (previous) {
+  const latest = await getLatestChallenge(sessionId)
+  const active = await getActiveChallenge(sessionId)
+  if (active) {
     await db()
       .update(attendanceChallenges)
       .set({ status: 'invalidated' })
-      .where(eq(attendanceChallenges.id, previous.id))
+      .where(eq(attendanceChallenges.id, active.id))
   }
 
   const value = generateChallengeValue()
-  const sequence = (previous?.sequence ?? 0) + 1
+  const sequence = (latest?.sequence ?? 0) + 1
   const expiresAt = new Date(Date.now() + policy.challengeTtlSeconds * 1000)
 
   await db().insert(attendanceChallenges).values({

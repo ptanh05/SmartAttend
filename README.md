@@ -121,12 +121,16 @@ Run the suite with `pnpm test`. Tests cover the core, framework-free logic:
 - `lib/permissions` — role & organization guards
 - `lib/validation` — input validators
 - `lib/auth/routing` — portal access rules
+- `lib/rate-limit` — sliding-window limiter
+
+There is also an **integration test** (`tests/integration/attendance-flow.test.ts`) that exercises the full
+attendance flow against the real database (create section → start session → rotate challenge → verify →
+check record/device). It runs only when `DATABASE_URL` is set and cleans up its fixtures afterwards.
 
 ## Roadmap (next milestones)
 
 - Split the monolithic `components/smart-attend.tsx` into focused per-portal components.
 - Add report exports (CSV/PDF).
-- Add integration tests covering the full attendance flow (requires a configured `DATABASE_URL`).
 - Add real-time session updates (polling today; SSE/WebSocket later).
 
 See `docs/architecture.md` for the detailed system architecture and future phases.
