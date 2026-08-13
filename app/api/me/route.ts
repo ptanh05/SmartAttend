@@ -3,7 +3,7 @@ import { getCurrentAuth } from '@/lib/auth/context'
 
 export async function GET() {
   const auth = await getCurrentAuth()
-  if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+  if (!auth) return NextResponse.json({ ok: false })
 
   return NextResponse.json({
     ok: true,
@@ -14,6 +14,8 @@ export async function GET() {
       role: auth.role,
       initials: auth.initials,
       department: auth.department,
+      studentCode: auth.studentCode,
+      mustChangePassword: auth.mustChangePassword,
       organizationId: auth.organizationId,
     },
     organization: {

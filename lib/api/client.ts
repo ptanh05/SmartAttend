@@ -1,5 +1,8 @@
 import type { AttendanceRecord, AuditEvent, ClassSession, Course, Role } from '@/lib/types/domain'
 
+type AuditLogsResponse = { ok: boolean; events?: AuditEvent[] }
+type DepartmentsResponse = { ok: boolean; departments?: string[] }
+
 type MeResponse = {
   ok: boolean
   user?: {
@@ -9,6 +12,8 @@ type MeResponse = {
     role: Role
     initials: string
     department: string | null
+    studentCode: string | null
+    mustChangePassword: boolean
     organizationId: string
   }
   organization?: { id: string; name: string; plan: string }
@@ -30,10 +35,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login(email: string, password: string, portal: 'student' | 'staff') {
-    return request<{ ok: boolean; role?: Role; message?: string }>('/api/auth/login', {
+  login(identifier: string, password: string, portal: 'student' | 'staff') {
+    return request<{ ok: boolean; role?: Role; mustChangePassword?: boolean; message?: string }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password, portal }),
+      body: JSON.stringify({ identifier, password, portal }),
+    })
+  },
+  registerTeacher(input: { name: string; email: string; password: string; organizationName: string; apiKey: string }) {
+    return request<{ ok: boolean; role?: Role; message?: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+  changePassword(currentPassword: string, newPassword: string) {
+    return request<{ ok: boolean; message?: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+  },
+  importStudents(csv: string) {
+    return request<{
+      ok: boolean
+      created: { studentCode: string; name: string; defaultPassword: string }[]
+      skipped: { studentCode: string; reason: string }[]
+      message?: string
+    }>('/api/users/import', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
     })
   },
   logout() {
@@ -97,7 +125,7 @@ export const api = {
   },
   users(role?: string) {
     const query = role ? `?role=${role}` : ''
-    return request<{ ok: boolean; users: { id: string; name: string; email: string; role: string; department: string }[] }>(
+    return request<{ ok: boolean; users: { id: string; name: string; email: string; role: string; department: string; studentCode: string; initials: string }[] }>(
       `/api/users${query}`,
     )
   },
@@ -141,10 +169,14 @@ export type DashboardData = {
   live: LiveSession | null
   devices: { id: string; label: string; trusted: boolean; lastSeenAt: string }[]
   departments: string[]
-  users: { id: string; name: string; email: string; role: string; department: string }[]
+  users: { id: string; name: string; email: string; role: string; department: string; studentCode: string; initials: string }[]
 }
 
-export async function loadDashboard(): Promise<DashboardData> {
+export async function loadDashboard(role?: Role): Promise<DashboardData> {
+  const isAdmin = role === 'admin'
+  const emptyAudit: AuditLogsResponse = { ok: true, events: [] }
+  const emptyDepartments: DepartmentsResponse = { ok: true, departments: [] }
+
   const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes] =
     await Promise.all([
       api.courses().catch(() => ({ courses: [] as Course[] })),
@@ -155,10 +187,10 @@ export async function loadDashboard(): Promise<DashboardData> {
         metrics: { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
         suspicious: [],
       })),
-      api.auditLogs().catch(() => ({ events: [] as AuditEvent[] })),
+      isAdmin ? api.auditLogs().catch(() => emptyAudit) : Promise.resolve(emptyAudit),
       api.users().catch(() => ({ users: [] })),
-      api.devices().catch(() => ({ devices: [] })),
-      api.departments().catch(() => ({ departments: [] as string[] })),
+      role === 'student' ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
+      isAdmin ? api.departments().catch(() => emptyDepartments) : Promise.resolve(emptyDepartments),
     ])
 
   return {
@@ -171,7 +203,7 @@ export async function loadDashboard(): Promise<DashboardData> {
     auditEvents: auditRes.events ?? [],
     live: sessionsRes.live,
     devices: devicesRes.devices,
-    departments: departmentsRes.departments,
+    departments: departmentsRes.departments ?? [],
     users: usersRes.users,
   }
 }

@@ -20,6 +20,8 @@ export type AuthContext = {
   name: string
   initials: string
   department: string | null
+  studentCode: string | null
+  mustChangePassword: boolean
   organizationName: string
   organizationPlan: string
 }
@@ -57,6 +59,8 @@ export async function getAuthContext(token: string | undefined | null): Promise<
       name: users.name,
       initials: users.initials,
       department: organizationMemberships.department,
+      studentCode: organizationMemberships.studentCode,
+      mustChangePassword: users.mustChangePassword,
       organizationName: organizations.name,
       organizationPlan: organizations.plan,
       disabledAt: users.disabledAt,
@@ -81,6 +85,8 @@ export async function getAuthContext(token: string | undefined | null): Promise<
     name: row.name,
     initials: row.initials,
     department: row.department,
+    studentCode: row.studentCode,
+    mustChangePassword: row.mustChangePassword,
     organizationName: row.organizationName,
     organizationPlan: row.organizationPlan,
   }
@@ -95,10 +101,32 @@ export async function resolveMembershipForLogin(email: string) {
       passwordHash: users.passwordHash,
       disabledAt: users.disabledAt,
       membershipStatus: organizationMemberships.status,
+      mustChangePassword: users.mustChangePassword,
     })
     .from(users)
     .innerJoin(organizationMemberships, eq(users.id, organizationMemberships.userId))
     .where(eq(users.email, email.trim().toLowerCase()))
+
+  return rows
+}
+
+export async function resolveMembershipForStudentLogin(studentCode: string) {
+  const normalized = studentCode.trim()
+  const rows = await db()
+    .select({
+      userId: users.id,
+      membershipId: organizationMemberships.id,
+      role: organizationMemberships.role,
+      passwordHash: users.passwordHash,
+      disabledAt: users.disabledAt,
+      membershipStatus: organizationMemberships.status,
+      mustChangePassword: users.mustChangePassword,
+    })
+    .from(organizationMemberships)
+    .innerJoin(users, eq(organizationMemberships.userId, users.id))
+    .where(
+      and(eq(organizationMemberships.studentCode, normalized), eq(organizationMemberships.role, 'student')),
+    )
 
   return rows
 }

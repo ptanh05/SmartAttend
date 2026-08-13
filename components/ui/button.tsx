@@ -1,4 +1,4 @@
-import { Button as ButtonPrimitive } from '@base-ui/react/button'
+import { Button as ButtonPrimitive, type ButtonProps as ButtonPrimitiveProps } from '@base-ui/react/button'
 import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '@/lib/utils'
@@ -40,17 +40,25 @@ const buttonVariants = cva(
   },
 )
 
-function Button({
-  className,
-  variant = 'default',
-  size = 'default',
-  ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+type ButtonProps = ButtonPrimitiveProps &
+  VariantProps<typeof buttonVariants> & {
+    // @base-ui/react/button models disabled state internally but its public
+    // Props type does not expose the native `disabled` attribute (only
+    // `nativeButton?: boolean`). Accept it explicitly and forward it to the
+    // rendered <button> so Tailwind's `disabled:` variant and a11y behave as
+    // expected.
+    disabled?: boolean
+  }
+
+function Button({ className, variant = 'default', size = 'default', disabled, ...props }: ButtonProps) {
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      {...(disabled
+        ? (Object.assign({ disabled: true }) as Partial<ButtonPrimitiveProps>)
+        : {})}
     />
   )
 }

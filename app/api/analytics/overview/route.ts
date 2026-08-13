@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getOrganizationMetrics, listAuditLogs, listDepartments, listSuspicious, listUsers } from '@/lib/attendance/server'
-import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { getOrganizationMetrics, listSuspicious } from '@/lib/attendance/server'
+import { getCurrentAuth } from '@/lib/auth/context'
 
 export async function GET() {
   const auth = await getCurrentAuth()

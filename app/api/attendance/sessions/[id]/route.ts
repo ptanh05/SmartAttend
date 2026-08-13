@@ -34,7 +34,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET() {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
 

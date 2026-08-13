@@ -299,7 +299,7 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     .from(attendanceRecords)
     .where(and(eq(attendanceRecords.sessionId, live.id), eq(attendanceRecords.studentId, auth.userId)))
 
-  let recordId = existing[0]?.id ?? nanoid()
+  const recordId = existing[0]?.id ?? nanoid()
 
   if (existing[0]) {
     await db()
@@ -502,6 +502,7 @@ export async function listUsers(auth: AuthContext, role?: string) {
       role: organizationMemberships.role,
       initials: users.initials,
       department: organizationMemberships.department,
+      studentCode: organizationMemberships.studentCode,
     })
     .from(organizationMemberships)
     .innerJoin(users, eq(organizationMemberships.userId, users.id))
@@ -515,6 +516,7 @@ export async function listUsers(auth: AuthContext, role?: string) {
     role: row.role,
     initials: row.initials,
     department: row.department ?? '',
+    studentCode: row.studentCode ?? '',
   }))
 }
 

@@ -22,6 +22,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
   initials: text('initials').notNull(),
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
@@ -38,11 +39,13 @@ export const organizationMemberships = pgTable(
       .references(() => users.id),
     role: text('role').notNull(),
     department: text('department'),
+    studentCode: text('student_code'),
     status: text('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex('membership_org_user_idx').on(table.organizationId, table.userId),
+    uniqueIndex('membership_org_student_code_idx').on(table.organizationId, table.studentCode),
     index('membership_org_role_idx').on(table.organizationId, table.role),
   ],
 )

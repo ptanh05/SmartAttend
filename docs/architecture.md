@@ -3,6 +3,14 @@
 **Status:** v6 architecture and backend contract review only  
 **Scope:** documentation and hydration fix; no database, integration, API, migration, or real-auth implementation in this iteration.
 
+> **Implementation status (updated):** this document's "no database / no real-auth" scope line is now **out of date**.
+> As of the current codebase, the backend has been migrated from demo data to a real, database-backed
+> implementation: Drizzle + Neon schema (`lib/db/schema.ts`), token-based sessions (`lib/auth/session.ts`),
+> teacher registration behind an API key, student CSV import, DB-backed attendance services
+> (`lib/attendance/server.ts`) and route handlers (`app/api/**`). The document below remains a useful
+> reference for the production target model and future phases; treat its "no implementation yet" wording as
+> describing the earlier baseline, not the current tree.
+
 ## 1. System overview
 
 SmartAttend is a multi-tenant university attendance SaaS. The current frontend is a demo implementation with Student, Teacher, and Admin portals, centralized demo data, a session/challenge lifecycle, and repository/permission seams. The production system should preserve those seams and replace demo repositories with server-side repositories backed by a tenant-scoped relational database.

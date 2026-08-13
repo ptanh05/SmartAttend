@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { listDepartments, listDevices, listUsers } from '@/lib/attendance/server'
-import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { getCurrentAuth } from '@/lib/auth/context'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
@@ -15,7 +15,9 @@ export async function GET(request: Request) {
   }
 
   if (kind === 'departments') {
-    await requireAuth('admin')
+    if (auth.role !== 'admin') {
+      return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
+    }
     const departments = await listDepartments(auth)
     return NextResponse.json({ ok: true, departments })
   }
