@@ -138,9 +138,22 @@ export const api = {
     return request<{ ok: boolean; departments: string[] }>('/api/users?kind=departments')
   },
   /** Triggers the attendance CSV export endpoint as an attachment download. */
-  downloadAttendanceReport() {
+  downloadAttendanceReport(opts?: { courseId?: string; scope?: 'summary' | 'detail' }) {
+    const params = new URLSearchParams()
+    if (opts?.courseId) params.set('courseId', opts.courseId)
+    if (opts?.scope && opts.scope !== 'summary') params.set('scope', opts.scope)
+    const qs = params.toString()
     const link = document.createElement('a')
-    link.href = '/api/reports/attendance'
+    link.href = qs ? `/api/reports/attendance?${qs}` : '/api/reports/attendance'
+    link.download = ''
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  },
+  /** Triggers the audit log CSV export endpoint as an attachment download. */
+  downloadAuditReport() {
+    const link = document.createElement('a')
+    link.href = '/api/reports/audit'
     link.download = ''
     document.body.appendChild(link)
     link.click()

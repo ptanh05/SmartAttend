@@ -456,7 +456,10 @@ export type ReportRecordRow = {
  * Attendance rows enriched with student, course and section details, used to
  * build CSV exports. Scoped to the authenticated organization.
  */
-export async function listReportRecords(auth: AuthContext): Promise<ReportRecordRow[]> {
+export async function listReportRecords(auth: AuthContext, courseId?: string): Promise<ReportRecordRow[]> {
+  const conditions = [eq(attendanceRecords.organizationId, auth.organizationId)]
+  if (courseId) conditions.push(eq(courses.id, courseId))
+
   const rows = await db()
     .select({
       record: attendanceRecords,
@@ -469,7 +472,7 @@ export async function listReportRecords(auth: AuthContext): Promise<ReportRecord
     .innerJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
     .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
     .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
-    .where(eq(attendanceRecords.organizationId, auth.organizationId))
+    .where(and(...conditions))
     .orderBy(desc(attendanceRecords.createdAt))
 
   return rows.map(({ record, student, section, course }) => ({

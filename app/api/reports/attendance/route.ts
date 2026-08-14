@@ -7,15 +7,57 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/reports/attendance
- * Returns a per-student attendance summary as a CSV attachment, scoped to the
- * authenticated user's organization.
+ * Returns attendance as a CSV attachment, scoped to the authenticated user's
+ * organization. Query params:
+ *  - `courseId`  filter to a single course
+ *  - `scope`     `summary` (default, per student) or `detail` (row per record)
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await getCurrentAuth()
     if (!auth) return NextResponse.json({ ok: false, message: 'Authentication required.' }, { status: 401 })
+    if (!['teacher', 'staff', 'admin'].includes(auth.role)) {
+      return NextResponse.json({ ok: false, message: 'Access denied.' }, { status: 403 })
+    }
 
-    const records = await listReportRecords(auth)
+    const { searchParams } = new URL(request.url)
+    const courseId = searchParams.get('courseId') ?? undefined
+    const scope = searchParams.get('scope') === 'detail' ? 'detail' : 'summary'
+
+    const records = await listReportRecords(auth, courseId)
+
+    if (scope === 'detail') {
+      const detailColumns = [
+        { header: 'Student', key: 'student' },
+        { header: 'Email', key: 'email' },
+        { header: 'Course', key: 'course' },
+        { header: 'Room', key: 'room' },
+        { header: 'Status', key: 'status' },
+        { header: 'Score', key: 'score' },
+        { header: 'Verified', key: 'verified' },
+        { header: 'Device', key: 'device' },
+      ]
+      const detailRows = records.map((r) => ({
+        student: r.studentName,
+        email: r.studentEmail,
+        course: `${r.courseCode} · ${r.courseName}`,
+        room: r.room,
+        status: r.status,
+        score: r.score,
+        verified: r.verifiedAt ?? '',
+        device: r.device,
+      }))
+      const csv = toCsv(detailColumns, detailRows)
+      const ts = new Date().toISOString().slice(0, 10)
+      const suffix = courseId ? `-course-${courseId}` : '-all'
+      return new NextResponse(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="attendance-detail${suffix}-${ts}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
 
     const byStudent = new Map<string, { name: string; email: string; items: Array<{ status: string }> }>()
     for (const record of records) {
@@ -55,11 +97,12 @@ export async function GET() {
 
     const csv = toCsv(columns, rows)
     const timestamp = new Date().toISOString().slice(0, 10)
+    const suffix = courseId ? `-course-${courseId}` : '-all'
 
     return new NextResponse(csv, {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="attendance-report-${timestamp}.csv"`,
+        'Content-Disposition': `attachment; filename="attendance-report${suffix}-${timestamp}.csv"`,
         'Cache-Control': 'no-store',
       },
     })

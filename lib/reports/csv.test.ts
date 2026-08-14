@@ -34,6 +34,20 @@ describe('toCsv', () => {
   it('produces just a header for no rows', () => {
     expect(toCsv([{ header: 'A', key: 'a' }], [])).toBe('A')
   })
+
+  it('correctly formats detailed record rows for export', () => {
+    const columns = [
+      { header: 'Student', key: 'student' },
+      { header: 'Course', key: 'course' },
+      { header: 'Score', key: 'score' },
+    ]
+    const rows = [
+      { student: 'Nguyen Van A', course: 'CS101 · Web Dev', score: 100 },
+      { student: 'Tran Thi B', course: 'CS102 · Data Struct', score: 85 },
+    ]
+    const csv = toCsv(columns, rows)
+    expect(csv).toBe('Student,Course,Score\r\nNguyen Van A,CS101 · Web Dev,100\r\nTran Thi B,CS102 · Data Struct,85')
+  })
 })
 
 describe('attendanceSummary', () => {
