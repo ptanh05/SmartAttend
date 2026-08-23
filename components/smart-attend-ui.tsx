@@ -190,4 +190,135 @@ export function PasswordInput({
   )
 }
 
+export function formatDayOfWeek(t: (key: string) => string, dayOfWeek?: number) {
+  if (!dayOfWeek) return '—'
+  const text = t(`common.day${dayOfWeek}`)
+  return text || `Thứ ${dayOfWeek === 7 ? 'CN' : dayOfWeek + 1}`
+}
+
+import QRCode from 'qrcode'
+import { useEffect } from 'react'
+
+export function DynamicQRCode({
+  value,
+  size = 180,
+  className = '',
+}: {
+  value: string
+  size?: number
+  className?: string
+}) {
+  const [svg, setSvg] = useState<string>('')
+
+  useEffect(() => {
+    let active = true
+    if (!value || value === '------') {
+      return
+    }
+    QRCode.toString(value, {
+      type: 'svg',
+      width: size,
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    })
+      .then((data) => {
+        if (active) setSvg(data)
+      })
+      .catch((err) => console.error('QR code error', err))
+    return () => {
+      active = false
+    }
+  }, [value, size])
+
+  if (!svg || !value || value === '------') {
+    return (
+      <div
+        className={`flex items-center justify-center rounded-xl border-2 border-dashed bg-muted/40 p-4 text-muted-foreground ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <span className="font-mono text-xl tracking-widest">{value || '------'}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`inline-block overflow-hidden rounded-xl border bg-white p-2 shadow-sm ${className}`}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  )
+}
+
+import { useCallback } from 'react'
+
+export function CountdownTimer({
+  expiresAt,
+  totalSeconds = 30,
+  onExpire,
+}: {
+  expiresAt?: string
+  totalSeconds?: number
+  onExpire?: () => void
+}) {
+  const calculateRemaining = useCallback(() => {
+    if (!expiresAt) return totalSeconds
+    return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000))
+  }, [expiresAt, totalSeconds])
+
+  const [secondsLeft, setSecondsLeft] = useState<number>(calculateRemaining)
+
+  useEffect(() => {
+    const update = () => {
+      const remaining = calculateRemaining()
+      setSecondsLeft(remaining)
+      if (remaining <= 0 && onExpire) {
+        onExpire()
+      }
+    }
+
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [calculateRemaining, onExpire])
+
+  const percentage = Math.min(100, Math.max(0, (secondsLeft / totalSeconds) * 100))
+  const isLow = secondsLeft <= 5
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex size-8 items-center justify-center">
+        <svg className="size-8 -rotate-90">
+          <circle
+            cx="16"
+            cy="16"
+            r="12"
+            stroke="currentColor"
+            strokeWidth="3"
+            className="text-muted/30"
+            fill="none"
+          />
+          <circle
+            cx="16"
+            cy="16"
+            r="12"
+            stroke="currentColor"
+            strokeWidth="3"
+            className={`transition-all duration-300 ${isLow ? 'text-rose-500' : 'text-primary'}`}
+            fill="none"
+            strokeDasharray={75.398}
+            strokeDashoffset={75.398 - (75.398 * percentage) / 100}
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className={`absolute text-[10px] font-bold ${isLow ? 'text-rose-600' : 'text-primary'}`}>
+          {secondsLeft}
+        </span>
+      </div>
+      <span className="text-xs font-medium text-muted-foreground">{secondsLeft}s</span>
+    </div>
+  )
+}
+
 export type { FormEvent }

@@ -97,7 +97,7 @@ export const api = {
     )
   },
   createSession(sectionId: string) {
-    return request<{ ok: boolean; sessionId?: string }>('/api/attendance/sessions', {
+    return request<{ ok: boolean; sessionId?: string; message?: string }>('/api/attendance/sessions', {
       method: 'PUT',
       body: JSON.stringify({ sectionId }),
     })
@@ -137,6 +137,32 @@ export const api = {
   departments() {
     return request<{ ok: boolean; departments: string[] }>('/api/users?kind=departments')
   },
+  createCourse(data: { code: string; name: string; department: string; color?: string }) {
+    return request<{ ok: boolean; courseId?: string; message?: string }>('/api/courses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  sections() {
+    return request<{ ok: boolean; sections: ClassSession[] }>('/api/courses/sections')
+  },
+  createSection(data: { courseId: string; room: string; startsAt: string; endsAt: string; dayOfWeek?: number; autoStart?: boolean }) {
+    return request<{ ok: boolean; sectionId?: string; message?: string }>('/api/courses/sections', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  updateSection(sectionId: string, data: { room?: string; startsAt?: string; endsAt?: string; dayOfWeek?: number; autoStart?: boolean; status?: string }) {
+    return request<{ ok: boolean; message?: string }>(`/api/courses/sections/${sectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  deleteSection(sectionId: string) {
+    return request<{ ok: boolean; message?: string }>(`/api/courses/sections/${sectionId}`, {
+      method: 'DELETE',
+    })
+  },
   /** Triggers the attendance CSV export endpoint as an attachment download. */
   downloadAttendanceReport(opts?: { courseId?: string; scope?: 'summary' | 'detail' }) {
     const params = new URLSearchParams()
@@ -168,7 +194,9 @@ export type LiveSession = {
   room: string
   startsAt: string
   endsAt: string
+  dayOfWeek?: number
   challenge: string
+  challengeExpiresAt?: string
   records: {
     id: string
     studentName: string

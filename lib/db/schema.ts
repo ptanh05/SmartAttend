@@ -114,10 +114,15 @@ export const courseSections = pgTable(
     room: text('room').notNull(),
     startsAt: text('starts_at').notNull(),
     endsAt: text('ends_at').notNull(),
+    dayOfWeek: integer('day_of_week').notNull().default(1),
+    autoStart: boolean('auto_start').notNull().default(true),
     status: text('status').notNull().default('scheduled'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('sections_org_course_idx').on(table.organizationId, table.courseId)],
+  (table) => [
+    index('sections_org_course_idx').on(table.organizationId, table.courseId),
+    index('sections_org_day_idx').on(table.organizationId, table.dayOfWeek),
+  ],
 )
 
 export const classEnrollments = pgTable(

@@ -3,7 +3,21 @@ export type AttendanceStatus = 'present' | 'late' | 'absent' | 'pending' | 'flag
 export type User = { id: string; organizationId: string; name: string; email: string; role: Role; initials: string; department: string }
 export type Course = { id: string; organizationId: string; code: string; name: string; department: string; teacherId: string; enrolled: number; color: string }
 export type SessionStatus = 'draft' | 'active' | 'paused' | 'closed' | 'expired' | 'scheduled' | 'live'
-export type ClassSession = { id: string; sectionId: string; courseId: string; room: string; startsAt: string; endsAt: string; status: SessionStatus; challenge: string }
+export type ClassSession = {
+  id: string
+  sectionId: string
+  courseId: string
+  courseCode?: string
+  courseName?: string
+  room: string
+  startsAt: string
+  endsAt: string
+  dayOfWeek?: number
+  autoStart?: boolean
+  status: SessionStatus
+  challenge: string
+  enrolledCount?: number
+}
 export type AttendanceRecord = { id: string; sessionId: string; studentId: string; status: AttendanceStatus; confidence: number; verifiedAt?: string; device: string; flaggedReason?: string }
 export type Notification = { id: string; title: string; body: string; read: boolean; createdAt: string }
 export type AuditEvent = { id: string; actor: string; action: string; target: string; createdAt: string; severity: 'info' | 'warning' }

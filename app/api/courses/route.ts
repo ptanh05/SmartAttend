@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listCourses } from '@/lib/attendance/server'
+import { createCourse, listCourses } from '@/lib/attendance/server'
 import { AuthError, getCurrentAuth } from '@/lib/auth/context'
 
 export async function GET() {
@@ -13,3 +13,25 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: 'Unable to load courses.' }, { status: 500 })
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const auth = await getCurrentAuth()
+    if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+    const body = await request.json()
+    if (!body.code || !body.name || !body.department) {
+      return NextResponse.json({ ok: false, message: 'Code, name, and department are required.' }, { status: 400 })
+    }
+    const result = await createCourse(auth, {
+      code: body.code,
+      name: body.name,
+      department: body.department,
+      color: body.color,
+    })
+    return NextResponse.json(result)
+  } catch (error) {
+    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    return NextResponse.json({ ok: false, message: 'Unable to create course.' }, { status: 500 })
+  }
+}
+

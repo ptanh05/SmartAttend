@@ -52,10 +52,13 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
     .select({
       section: courseSections,
       courseId: courseSections.courseId,
+      courseCode: courses.code,
+      courseName: courses.name,
       session: attendanceSessions,
       challenge: attendanceChallenges.valueHash,
     })
     .from(courseSections)
+    .leftJoin(courses, eq(courseSections.courseId, courses.id))
     .leftJoin(
       attendanceSessions,
       and(eq(attendanceSessions.sectionId, courseSections.id), inArray(attendanceSessions.status, ['active', 'draft', 'paused'])),
@@ -65,6 +68,18 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
       and(eq(attendanceChallenges.sessionId, attendanceSessions.id), eq(attendanceChallenges.status, 'active')),
     )
     .where(eq(courseSections.organizationId, organizationId))
+
+  const enrollments = await db()
+    .select({
+      sectionId: classEnrollments.sectionId,
+    })
+    .from(classEnrollments)
+    .where(and(eq(classEnrollments.organizationId, organizationId), eq(classEnrollments.status, 'active')))
+
+  const enrollmentCountBySection = new Map<string, number>()
+  for (const en of enrollments) {
+    enrollmentCountBySection.set(en.sectionId, (enrollmentCountBySection.get(en.sectionId) ?? 0) + 1)
+  }
 
   const liveSessions = await db()
     .select({
@@ -94,9 +109,14 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
       id: live?.session.id ?? row.section.id,
       sectionId: row.section.id,
       courseId: row.section.courseId,
+      courseCode: row.courseCode ?? undefined,
+      courseName: row.courseName ?? undefined,
       room: row.section.room,
       startsAt: row.section.startsAt,
       endsAt: row.section.endsAt,
+      dayOfWeek: row.section.dayOfWeek,
+      autoStart: row.section.autoStart,
+      enrolledCount: enrollmentCountBySection.get(row.section.id) ?? 0,
       status,
       challenge: live ? challengeBySession.get(live.session.id) ?? '------' : '------',
     })
@@ -351,9 +371,10 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     })
   }
 
+  // Update consumedAt timestamp on the challenge while keeping it active for other students in the room
   await db()
     .update(attendanceChallenges)
-    .set({ status: 'consumed', consumedAt: verifiedAt })
+    .set({ consumedAt: verifiedAt })
     .where(eq(attendanceChallenges.id, challenge.id))
 
   await db().insert(attendanceVerifications).values({
@@ -505,9 +526,18 @@ export async function getLiveSessionDetails(auth: AuthContext) {
   if (!row) return null
 
   let challenge = await getActiveChallengePlain(row.session.id)
+  let challengeExpiresAt: string | undefined
+  const activeChallengeRow = await getActiveChallenge(row.session.id)
+  if (activeChallengeRow) {
+    challengeExpiresAt = activeChallengeRow.expiresAt.toISOString()
+  }
+
   if (!challenge) {
     const rotated = await rotateChallengeForSession(auth, row.session.id)
     challenge = rotated.ok ? rotated.challenge : '------'
+    if (rotated.ok && rotated.expiresAt) {
+      challengeExpiresAt = rotated.expiresAt
+    }
   }
 
   const recordRows = await db()
@@ -526,7 +556,9 @@ export async function getLiveSessionDetails(auth: AuthContext) {
     room: row.section.room,
     startsAt: row.section.startsAt,
     endsAt: row.section.endsAt,
+    dayOfWeek: row.section.dayOfWeek,
     challenge,
+    challengeExpiresAt,
     records: recordRows.map(({ record, student }) => ({
       id: record.id,
       studentName: student.name,
@@ -733,6 +765,108 @@ function formatRelativeTime(date: Date) {
   if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`
   const days = Math.floor(hours / 24)
   return days === 1 ? 'Yesterday' : `${days} days ago`
+}
+
+export async function createCourse(
+  auth: AuthContext,
+  data: { code: string; name: string; department: string; teacherId?: string; color?: string }
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+  const courseId = `crs_${nanoid(10)}`
+  await db().insert(courses).values({
+    id: courseId,
+    organizationId: auth.organizationId,
+    code: data.code.trim().toUpperCase(),
+    name: data.name.trim(),
+    department: data.department.trim(),
+    teacherId: data.teacherId || auth.userId,
+    color: data.color || 'indigo',
+    status: 'active',
+  })
+  await appendAudit(auth, `Created course ${data.code} (${data.name})`, courseId, 'info')
+  return { ok: true as const, courseId }
+}
+
+export async function createCourseSection(
+  auth: AuthContext,
+  data: {
+    courseId: string
+    room: string
+    startsAt: string
+    endsAt: string
+    dayOfWeek?: number
+    autoStart?: boolean
+  }
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+  const sectionId = `sec_${nanoid(10)}`
+  await db().insert(courseSections).values({
+    id: sectionId,
+    organizationId: auth.organizationId,
+    courseId: data.courseId,
+    room: data.room.trim(),
+    startsAt: data.startsAt.trim(),
+    endsAt: data.endsAt.trim(),
+    dayOfWeek: data.dayOfWeek ?? 1,
+    autoStart: data.autoStart ?? true,
+    status: 'scheduled',
+  })
+
+  // Auto-enroll active students of the organization into this new section so attendance is seamless
+  const orgStudents = await db()
+    .select({ userId: organizationMemberships.userId })
+    .from(organizationMemberships)
+    .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student')))
+
+  for (const st of orgStudents) {
+    await db().insert(classEnrollments).values({
+      sectionId,
+      studentId: st.userId,
+      organizationId: auth.organizationId,
+      status: 'active',
+    }).onConflictDoNothing()
+  }
+
+  await appendAudit(auth, `Created recurring section schedule in room ${data.room}`, sectionId, 'info')
+  return { ok: true as const, sectionId }
+}
+
+export async function updateCourseSection(
+  auth: AuthContext,
+  sectionId: string,
+  data: {
+    room?: string
+    startsAt?: string
+    endsAt?: string
+    dayOfWeek?: number
+    autoStart?: boolean
+    status?: string
+  }
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+  await db()
+    .update(courseSections)
+    .set(data)
+    .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+
+  await appendAudit(auth, `Updated section schedule`, sectionId, 'info')
+  return { ok: true as const }
+}
+
+export async function deleteCourseSection(auth: AuthContext, sectionId: string) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+  await db().delete(classEnrollments).where(and(eq(classEnrollments.sectionId, sectionId), eq(classEnrollments.organizationId, auth.organizationId)))
+  await db().delete(courseSections).where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+  await appendAudit(auth, `Deleted section`, sectionId, 'warning')
+  return { ok: true as const }
 }
 
 export { mapSessionStatus }
