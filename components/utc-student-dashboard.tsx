@@ -2,20 +2,24 @@
 
 import React, { useState } from 'react'
 import {
+  AlertTriangle,
   Bell,
-  BookOpen,
   Calendar,
+  CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
   Clock,
+  FileCheck,
   FileText,
   GraduationCap,
   Inbox,
-  Newspaper,
   Pin,
+  QrCode,
   ScanLine,
   Search,
+  ShieldAlert,
+  ShieldCheck,
   Sparkles,
-  Wallet,
 } from 'lucide-react'
 import { useI18n } from '@/components/i18n-provider'
 import type { AppUser, PageKey, ViewProps } from './smart-attend-ui'
@@ -62,42 +66,42 @@ export function UtcStudentDashboard({
   const schoolNews = [
     {
       id: 'sn-1',
-      title: 'THÔNG BÁO MỞ HỆ THỐNG LÀM BÀI THU HOẠCH SINH HOẠT CÔNG DÂN – SINH VIÊN NĂM HỌC 2026 – 2027 Dành cho sinh viên Khóa 63, 64, 65, 66',
+      title: 'Quy định đánh giá điểm chuyên cần và điều kiện dự thi kết thúc học phần Học kỳ I',
       date: '21/08/2026',
-      content: 'Nhà trường thông báo mở hệ thống trực tuyến để toàn thể sinh viên các khóa 63, 64, 65, 66 hoàn thành bài thu hoạch Tuần sinh hoạt công dân đầu năm học. Đề nghị các bạn sinh viên nghiêm túc thực hiện đúng thời hạn quy định.',
+      content: 'Sinh viên có tỷ lệ vắng mặt vượt quá 20% tổng số tiết của học phần sẽ không đủ điều kiện dự thi kết thúc học phần. Đề nghị sinh viên theo dõi tỷ lệ chuyên cần thường xuyên trên hệ thống SmartAttend.',
     },
     {
       id: 'sn-2',
-      title: 'Gia hạn đánh giá RLSV học kì II năm học 2025 - 2026',
+      title: 'Hướng dẫn quét mã QR động điểm danh qua ứng dụng SmartAttend tại phòng học',
       date: '21/08/2026',
-      content: 'Phòng Công tác sinh viên thông báo gia hạn thời gian tự đánh giá điểm rèn luyện của sinh viên và đánh giá của ban cán sự lớp đến hết ngày 30/08/2026.',
+      content: 'Mã QR tại giảng đường được tự động làm mới theo chu kỳ để đảm bảo tính minh bạch. Sinh viên cần kết nối mạng Wi-Fi trường và cấp quyền định vị vị trí để hoàn tất điểm danh hợp lệ.',
     },
     {
       id: 'sn-3',
-      title: 'Thực hiện chế độ chính sách sinh viên học kỳ I năm học 2026 - 2027',
+      title: 'Quy trình gửi đơn xin phép vắng học và nộp minh chứng y tế / công tác trực tuyến',
       date: '11/08/2026',
-      content: 'Hướng dẫn nộp hồ sơ xét miễn giảm học phí và trợ cấp xã hội cho sinh viên diện chính sách trong học kỳ I năm học 2026 - 2027.',
+      content: 'Sinh viên gửi đơn kèm ảnh chụp minh chứng qua mục Lịch sử chuyên cần trong vòng 48 giờ kể từ buổi học cần xin phép để được giảng viên phụ trách xem xét duyệt vắng có phép.',
     },
   ]
 
   const trainingNews = [
     {
       id: 'tn-1',
-      title: 'Hướng dẫn sinh viên đăng ký nhu cầu (nguyện vọng) học kỳ 1 đợt học 2 năm học 2026 - 2027',
+      title: 'Lưu ý bật định vị GPS và cấp quyền Camera khi thực hiện quét mã điểm danh',
       date: '22/08/2026',
-      content: 'Phòng Đào tạo Đại học hướng dẫn các bước đăng ký nguyện vọng lớp học phần qua cổng thông tin tín chỉ.',
+      content: 'Hệ thống yêu cầu xác thực vị trí phòng học để chống điểm danh hộ từ xa. Vui lòng đảm bảo thiết bị đã bật GPS và trình duyệt cho phép truy cập vị trí.',
     },
     {
       id: 'tn-2',
-      title: 'Hướng dẫn sinh viên đăng ký nhu cầu (nguyện vọng) học kỳ 1 đợt học 2 năm học 2026 - 2027',
+      title: 'Thông báo lịch mở phiên điểm danh học bù cho các lớp học phần Tuần 12',
       date: '22/08/2026',
-      content: 'Lưu ý về số lượng tín chỉ tối thiểu và tối đa được phép đăng ký trong đợt học 2.',
+      content: 'Giảng viên các lớp học phần có lịch học bù đã cập nhật phiên điểm danh mới. Sinh viên theo dõi mục Lịch học để vào điểm danh đúng khung giờ quy định.',
     },
     {
       id: 'tn-3',
-      title: 'Thông báo hủy kết quả đăng ký Tiếng Anh B1, tiếng Anh chuyên ngành do chưa qua Tiếng Anh A2',
+      title: 'Cảnh báo tự động: Hệ thống đã gửi thông báo đến các sinh viên chạm ngưỡng vắng 15%',
       date: '22/08/2026',
-      content: 'Danh sách các sinh viên chưa đạt điều kiện tiên quyết môn Tiếng Anh A2 sẽ được rà soát và hủy đăng ký môn học phần kế tiếp theo đúng quy chế đào tạo.',
+      content: 'Sinh viên nhận được cảnh báo cần kiểm tra lại lịch sử điểm danh, các đơn nghỉ phép đã gửi và liên hệ trực tiếp với Giảng viên nếu có sai sót.',
     },
   ]
 
@@ -142,25 +146,25 @@ export function UtcStudentDashboard({
 
       {/* 2. FOUR QUICK SHORTCUT ACTION CARDS */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Shortcut 1: Học tập / Đăng ký học (Điểm danh QR) */}
+        {/* Shortcut 1: Điểm danh ngay / Quét QR */}
         <div
           onClick={() => go('join')}
           className="group flex items-center gap-3.5 rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md cursor-pointer dark:border-slate-800 dark:bg-[#121c2d]"
         >
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#1e4da1] text-white shadow-sm group-hover:scale-105 transition-transform">
-            <BookOpen className="size-5" />
+            <ScanLine className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              {t('student.quickAcademic')}
+              {t('student.quickScan')}
             </p>
             <h2 className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">
-              {t('student.quickCourseReg')}
+              {t('student.quickScanSub')}
             </h2>
           </div>
         </div>
 
-        {/* Shortcut 2: Lịch / Thời khóa biểu */}
+        {/* Shortcut 2: Lịch học / Ca học & Phòng học */}
         <div
           onClick={() => go('courses')}
           className="group flex items-center gap-3.5 rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md cursor-pointer dark:border-slate-800 dark:bg-[#121c2d]"
@@ -178,31 +182,31 @@ export function UtcStudentDashboard({
           </div>
         </div>
 
-        {/* Shortcut 3: Tài chính / Học phí */}
+        {/* Shortcut 3: Chuyên cần / Lịch sử điểm danh */}
         <div
           onClick={() => go('history')}
           className="group flex items-center gap-3.5 rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-md cursor-pointer dark:border-slate-800 dark:bg-[#121c2d]"
         >
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#009688] text-white shadow-sm group-hover:scale-105 transition-transform">
-            <Wallet className="size-5" />
+            <ClipboardCheck className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              {t('student.quickFinance')}
+              {t('student.quickHistory')}
             </p>
             <h2 className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">
-              {t('student.quickTuition')}
+              {t('student.quickHistorySub')}
             </h2>
           </div>
         </div>
 
-        {/* Shortcut 4: Thông tin / Tin tức & thông báo */}
+        {/* Shortcut 4: Thông báo / Nhắc nhở & Cảnh báo */}
         <div
           onClick={() => go('notifications')}
           className="group flex items-center gap-3.5 rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md cursor-pointer dark:border-slate-800 dark:bg-[#121c2d]"
         >
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#d32f2f] text-white shadow-sm group-hover:scale-105 transition-transform">
-            <Newspaper className="size-5" />
+            <Bell className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
@@ -302,54 +306,82 @@ export function UtcStudentDashboard({
         </div>
       </div>
 
-      {/* 4. SECONDARY ROW: HOẠT ĐỘNG SINH VIÊN & SỰ KIỆN SẮP TỚI */}
+      {/* 4. ATTENDANCE STATUS & UPCOMING SESSIONS */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Hoạt động sinh viên */}
-        <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 border-l-blue-600">
-          <div className="border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
+        {/* Cảnh báo & Tình trạng chuyên cần */}
+        <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 border-l-emerald-500">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
             <div className="flex items-center gap-2">
-              <span className="h-4 w-1 rounded-full bg-blue-600" />
-              <h2 className="text-sm font-extrabold uppercase tracking-wide text-blue-950 dark:text-slate-100">
+              <span className="h-4 w-1 rounded-full bg-emerald-500" />
+              <h2 className="text-sm font-extrabold uppercase tracking-wide text-emerald-950 dark:text-slate-100">
                 {t('student.studentActivities')}
               </h2>
             </div>
+            <button
+              type="button"
+              onClick={() => go('history')}
+              className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors dark:border-emerald-900/60 dark:bg-slate-900 dark:text-emerald-400 cursor-pointer"
+            >
+              {t('student.viewAll')}
+            </button>
           </div>
-          <div className="flex flex-col items-center justify-center py-10 text-center text-xs text-slate-400">
-            <Inbox className="size-7 mb-2 text-slate-300 dark:text-slate-600" />
-            <p>{t('student.noNewsYet')}</p>
+          <div className="p-5 space-y-3">
+            <div className="flex items-start gap-3 rounded-xl bg-emerald-50/80 p-3.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 border border-emerald-200/60 dark:border-emerald-900/40">
+              <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+              <div>
+                <p className="font-bold">Trạng thái chuyên cần: An toàn</p>
+                <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+                  Tất cả các học phần hiện tại đều đạt tỷ lệ có mặt trên 80%. Bạn đủ điều kiện dự thi kết thúc học phần.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-1 text-xs text-slate-500 dark:text-slate-400">
+              <span>Quy chế: Vắng quá 20% tổng số tiết sẽ bị cấm thi.</span>
+              <button
+                type="button"
+                onClick={() => go('history')}
+                className="font-semibold text-blue-600 hover:underline cursor-pointer dark:text-blue-400"
+              >
+                Chi tiết vắng →
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Sự kiện sắp tới (Right box) */}
+        {/* Phiên điểm danh & Ca học */}
         <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 border-l-amber-500">
-          <div className="border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
             <div className="flex items-center gap-2">
               <span className="h-4 w-1 rounded-full bg-amber-500" />
               <h2 className="text-sm font-extrabold uppercase tracking-wide text-amber-900 dark:text-amber-300">
                 {t('student.upcomingEvents')}
               </h2>
             </div>
+            <button
+              type="button"
+              onClick={() => go('courses')}
+              className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50 transition-colors dark:border-amber-900/60 dark:bg-slate-900 dark:text-amber-400 cursor-pointer"
+            >
+              Lịch học
+            </button>
           </div>
-          <div className="flex flex-col items-center justify-center py-10 text-center text-xs text-slate-400">
-            <Calendar className="size-7 mb-2 text-slate-300 dark:text-slate-600" />
-            <p>{t('student.noEventsYet')}</p>
+          <div className="p-5 flex flex-col items-center justify-center text-center">
+            <Clock className="size-8 text-amber-500 mb-2" />
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+              Sẵn sàng cho các ca học hôm nay
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500 max-w-sm">
+              Khi giảng viên mở phiên điểm danh trên lớp, hãy bấm nút quét mã QR bên dưới để xác thực tham gia.
+            </p>
+            <button
+              type="button"
+              onClick={() => go('join')}
+              className="mt-3.5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              <ScanLine className="size-4" />
+              Quét mã QR điểm danh
+            </button>
           </div>
-        </div>
-      </div>
-
-      {/* 5. BOTTOM WIDE CARD: SỰ KIỆN SẮP TỚI */}
-      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 border-l-amber-500">
-        <div className="border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
-          <div className="flex items-center gap-2">
-            <span className="h-4 w-1 rounded-full bg-amber-500" />
-            <h2 className="text-sm font-extrabold uppercase tracking-wide text-amber-900 dark:text-amber-300">
-              {t('student.upcomingEvents')}
-            </h2>
-          </div>
-        </div>
-        <div className="flex flex-col items-center justify-center py-12 text-center text-xs text-slate-400">
-          <Calendar className="size-7 mb-2 text-slate-300 dark:text-slate-600" />
-          <p>{t('student.noEventsYet')}</p>
         </div>
       </div>
 

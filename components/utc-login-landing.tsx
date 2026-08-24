@@ -6,15 +6,18 @@ import {
   Calendar,
   CheckCircle2,
   CircleAlert,
-  CreditCard,
+  ClipboardCheck,
   Eye,
   EyeOff,
-  FileText,
+  FileCheck,
   GraduationCap,
   Headphones,
   HelpCircle,
   Lock,
   LockKeyhole,
+  MapPin,
+  QrCode,
+  ScanLine,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -41,7 +44,7 @@ export function UtcLoginLanding({
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'academic' | 'schedule' | 'register' | 'tuition' | null>(null)
+  const [activeTab, setActiveTab] = useState<'qr' | 'schedule' | 'analytics' | 'leave' | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -150,21 +153,21 @@ export function UtcLoginLanding({
 
               {/* 2x2 Feature Tiles */}
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {/* Tile 1: Kết quả học tập */}
+                {/* Tile 1: Điểm danh QR động */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'academic' ? null : 'academic')}
+                  onClick={() => setActiveTab(activeTab === 'qr' ? null : 'qr')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                    <BarChart3 className="size-5" />
+                    <QrCode className="size-5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featAcademic')}</h3>
-                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featAcademicSub')}</p>
+                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featQR')}</h3>
+                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featQRSub')}</p>
                   </div>
                 </div>
 
-                {/* Tile 2: Thời khóa biểu */}
+                {/* Tile 2: Thời khóa biểu & Ca học */}
                 <div
                   onClick={() => setActiveTab(activeTab === 'schedule' ? null : 'schedule')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
@@ -178,31 +181,31 @@ export function UtcLoginLanding({
                   </div>
                 </div>
 
-                {/* Tile 3: Đăng ký học phần */}
+                {/* Tile 3: Báo cáo chuyên cần */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'register' ? null : 'register')}
+                  onClick={() => setActiveTab(activeTab === 'analytics' ? null : 'analytics')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                    <FileText className="size-5" />
+                    <BarChart3 className="size-5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featRegister')}</h3>
-                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featRegisterSub')}</p>
+                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featAnalytics')}</h3>
+                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featAnalyticsSub')}</p>
                   </div>
                 </div>
 
-                {/* Tile 4: Học phí trực tuyến */}
+                {/* Tile 4: Minh chứng nghỉ phép & GPS */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'tuition' ? null : 'tuition')}
+                  onClick={() => setActiveTab(activeTab === 'leave' ? null : 'leave')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                    <CreditCard className="size-5" />
+                    <ShieldCheck className="size-5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featTuition')}</h3>
-                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featTuitionSub')}</p>
+                    <h3 className="text-xs font-bold text-slate-900">{t('landing.featLeave')}</h3>
+                    <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featLeaveSub')}</p>
                   </div>
                 </div>
               </div>
@@ -416,7 +419,7 @@ export function UtcLoginLanding({
             {/* Feature 2 */}
             <div className="flex items-center gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 text-blue-300 ring-1 ring-blue-400/30">
-                <LockKeyhole className="size-5" />
+                <MapPin className="size-5" />
               </div>
               <div>
                 <h4 className="text-xs font-bold text-white">{t('landing.safePayment')}</h4>
