@@ -329,20 +329,20 @@ export function UtcStudentDashboard({
             <div className="flex items-start gap-3 rounded-xl bg-emerald-50/80 p-3.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 border border-emerald-200/60 dark:border-emerald-900/40">
               <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
               <div>
-                <p className="font-bold">Trạng thái chuyên cần: An toàn</p>
+                <p className="font-bold">{t('student.attendanceStatusSafe')}</p>
                 <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-                  Tất cả các học phần hiện tại đều đạt tỷ lệ có mặt trên 80%. Bạn đủ điều kiện dự thi kết thúc học phần.
+                  {t('student.attendanceStatusSafeDesc')}
                 </p>
               </div>
             </div>
             <div className="flex items-center justify-between pt-1 text-xs text-slate-500 dark:text-slate-400">
-              <span>Quy chế: Vắng quá 20% tổng số tiết sẽ bị cấm thi.</span>
+              <span>{t('student.absenceRuleHint')}</span>
               <button
                 type="button"
                 onClick={() => go('history')}
                 className="font-semibold text-blue-600 hover:underline cursor-pointer dark:text-blue-400"
               >
-                Chi tiết vắng →
+                {t('student.viewAbsenceDetail')}
               </button>
             </div>
           </div>
@@ -362,16 +362,16 @@ export function UtcStudentDashboard({
               onClick={() => go('courses')}
               className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50 transition-colors dark:border-amber-900/60 dark:bg-slate-900 dark:text-amber-400 cursor-pointer"
             >
-              Lịch học
+              {t('student.timetableBtn')}
             </button>
           </div>
           <div className="p-5 flex flex-col items-center justify-center text-center">
             <Clock className="size-8 text-amber-500 mb-2" />
             <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-              Sẵn sàng cho các ca học hôm nay
+              {t('student.readyForClasses')}
             </p>
             <p className="mt-1 text-[11px] text-slate-500 max-w-sm">
-              Khi giảng viên mở phiên điểm danh trên lớp, hãy bấm nút quét mã QR bên dưới để xác thực tham gia.
+              {t('student.readyForClassesDesc')}
             </p>
             <button
               type="button"
@@ -379,7 +379,7 @@ export function UtcStudentDashboard({
               className="mt-3.5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition-colors cursor-pointer"
             >
               <ScanLine className="size-4" />
-              Quét mã QR điểm danh
+              {t('student.scanQrNow')}
             </button>
           </div>
         </div>
@@ -407,9 +407,9 @@ export function UtcStudentDashboard({
               <button
                 type="button"
                 onClick={() => setNewsModal(null)}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors cursor-pointer"
               >
-                Đóng
+                {t('common.done')}
               </button>
             </div>
           </div>

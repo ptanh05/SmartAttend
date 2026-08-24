@@ -41,6 +41,7 @@ export type PageKey =
 export type AuthUser = Role | null
 
 export type AppUser = {
+  id?: string
   name: string
   email: string
   initials: string

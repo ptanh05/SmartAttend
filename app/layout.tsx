@@ -4,8 +4,8 @@ import { Providers } from '@/components/providers'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'SmartAttend — Verify presence. Simplify attendance.',
-  description: 'SmartAttend helps universities verify student attendance, reduce proxy attendance, and manage classes from one simple platform.',
+  title: 'SmartAttend — Hệ thống Điểm danh Thông minh UTC',
+  description: 'Hệ thống Điểm danh Thông minh & Quản lý Chuyên cần Sinh viên — Trường Đại học Giao thông Vận tải',
   generator: 'v0.app',
   icons: {
     icon: [

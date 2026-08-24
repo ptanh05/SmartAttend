@@ -869,4 +869,17 @@ export async function deleteCourseSection(auth: AuthContext, sectionId: string) 
   return { ok: true as const }
 }
 
+export async function overrideRecordStatus(auth: AuthContext, recordId: string, status: AttendanceStatus) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+  await db()
+    .update(attendanceRecords)
+    .set({ status })
+    .where(and(eq(attendanceRecords.id, recordId), eq(attendanceRecords.organizationId, auth.organizationId)))
+
+  await appendAudit(auth, `Overrode attendance record ${recordId} to ${status}`, recordId, 'warning')
+  return { ok: true as const }
+}
+
 export { mapSessionStatus }

@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Download, Edit3, FileText, GraduationCap, LockKeyhole, LogOut, Menu, Moon, Play, Plus,
-  RotateCw, ScanLine, Search, ShieldCheck, Smartphone, Trash2, Upload, Users, Wifi, X
+  ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, GraduationCap, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon, Play, Plus,
+  RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Trash2, Upload, Users, Wifi, X
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
@@ -317,7 +317,7 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
 
 function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewProps) {
   const { t } = useI18n()
-  const { courses, records, sessions, notifications, devices } = data
+  const { courses, records, sessions, notifications, devices, leaveRequests = [] } = data
   const [code, setCode] = useState('')
   const [result, setResult] = useState<{ ok: boolean; confidence: number; message: string } | null>(null)
   const [filter, setFilter] = useState('all')
@@ -327,6 +327,40 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const [cameraError, setCameraError] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+
+  // Leave Request State
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false)
+  const [leaveCourseId, setLeaveCourseId] = useState('')
+  const [leaveDate, setLeaveDate] = useState(new Date().toLocaleDateString('vi-VN'))
+  const [leaveReason, setLeaveReason] = useState('')
+  const [leaveEvidence, setLeaveEvidence] = useState('')
+  const [submittingLeave, setSubmittingLeave] = useState(false)
+  const [leaveNotice, setLeaveNotice] = useState('')
+
+  const handleLeaveSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!leaveCourseId || !leaveReason.trim()) return
+    setSubmittingLeave(true)
+    try {
+      const selectedCourse = courses.find((c) => c.id === leaveCourseId)
+      await api.submitLeaveRequest({
+        courseId: leaveCourseId,
+        courseName: selectedCourse ? `${selectedCourse.code} - ${selectedCourse.name}` : undefined,
+        date: leaveDate,
+        reason: leaveReason.trim(),
+        evidenceNote: leaveEvidence.trim(),
+      })
+      setLeaveNotice(t('student.leaveSubmitted'))
+      setLeaveReason('')
+      setLeaveEvidence('')
+      setLeaveModalOpen(false)
+      await refresh()
+    } catch {
+      setLeaveNotice('Không thể gửi đơn xin phép vắng. Vui lòng thử lại.')
+    } finally {
+      setSubmittingLeave(false)
+    }
+  }
 
   const liveSession = sessions.find((session) => session.status === 'live')
   const liveCourse = liveSession ? courses.find((course) => course.id === liveSession.courseId) : null
@@ -495,24 +529,40 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
   if (page === 'history') {
     const shown = records.filter((r) => filter === 'all' || r.status === filter)
+    const myLeaveList = leaveRequests.filter((r) => (user.studentCode && r.studentCode === user.studentCode) || (user.id && r.studentId === user.id) || !r.studentCode)
     return (
       <div className="flex flex-col gap-6">
+        {leaveNotice && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-center justify-between">
+            <span>{leaveNotice}</span>
+            <button onClick={() => setLeaveNotice('')} className="text-emerald-600 hover:text-emerald-900 cursor-pointer"><X className="size-4" /></button>
+          </div>
+        )}
         <SectionHeader
           eyebrow={t('student.workspace')}
           title={t('student.historyTitle')}
           detail={t('student.historyDetail')}
-          action={<Button variant="outline"><Download />{t('common.exportCsv')}</Button>}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setLeaveModalOpen(true)}>
+                <FileCheck />{t('student.submitLeave')}
+              </Button>
+              <Button variant="outline">
+                <Download />{t('common.exportCsv')}
+              </Button>
+            </div>
+          }
         />
         <Card title={t('student.yourAttendance')} description={t('student.totalRecords', { count: records.length })}>
           <div className="mb-5 grid gap-4 sm:grid-cols-3">
             <Metric label={t('student.attendanceRate')} value={`${rate}%`} detail={t('student.fromRecords')} icon={ClipboardCheck} />
             <Metric label={t('common.present')} value={String(presentCount)} detail={t('student.sessionsAttended')} icon={CheckCircle2} tone="success" />
-            <Metric label={t('common.needsReview')} value={String(records.filter((r) => r.status === 'flagged' || r.status === 'pending').length)} detail={t('student.teacherFollowUp')} icon={CircleAlert} tone="warning" />
+            <Metric label={t('common.needsReview')} value={String(records.filter((r) => r.status === 'flagged' || r.status === 'pending' || r.status === 'absent').length)} detail={t('student.teacherFollowUp')} icon={CircleAlert} tone="warning" />
           </div>
           <div className="mb-5 flex flex-wrap gap-2">
-            {['all', 'present', 'late', 'absent'].map((item) => (
+            {['all', 'present', 'late', 'absent', 'excused'].map((item) => (
               <Button key={item} variant={filter === item ? 'primary' : 'outline'} onClick={() => setFilter(item)}>
-                {t(`common.${item}`)}
+                {item === 'excused' ? t('student.excused') : t(`common.${item}`)}
               </Button>
             ))}
           </div>
@@ -530,7 +580,11 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 {shown.map((r) => (
                   <tr key={r.id}>
                     <td className="py-3 font-medium">{courses.find((c) => c.id === sessions.find((s) => s.id === r.sessionId)?.courseId)?.name ?? r.sessionId}</td>
-                    <td className="py-3"><Status tone={r.status === 'late' ? 'warning' : r.status === 'absent' ? 'danger' : 'success'}>{statusText(t, r.status)}</Status></td>
+                    <td className="py-3">
+                      <Status tone={r.status === 'late' ? 'warning' : r.status === 'absent' ? 'danger' : r.status === 'excused' ? 'neutral' : 'success'}>
+                        {statusText(t, r.status)}
+                      </Status>
+                    </td>
                     <td className="py-3 text-muted-foreground">{r.confidence ? `${r.confidence}%` : '—'}</td>
                     <td className="py-3 text-muted-foreground">{r.device || '—'}</td>
                   </tr>
@@ -539,6 +593,120 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
             </table>
           </div>
         </Card>
+
+        {/* My Leave Requests Section */}
+        <Card title={t('student.myLeaveRequests')} description={t('student.leaveModalDetail')}>
+          {myLeaveList.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">{t('student.noLeaveRequests')}</p>
+          ) : (
+            <div className="divide-y">
+              {myLeaveList.map((req) => (
+                <div key={req.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-foreground">{req.courseName}</span>
+                      <span className="text-muted-foreground">({req.date})</span>
+                    </div>
+                    <p className="text-muted-foreground"><strong>Lý do:</strong> {req.reason}</p>
+                    {req.evidenceNote && <p className="text-muted-foreground text-[11px]"><strong>Minh chứng:</strong> {req.evidenceNote}</p>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Status tone={req.status === 'approved' ? 'success' : req.status === 'rejected' ? 'danger' : 'warning'}>
+                      {req.status === 'approved' ? 'Đã duyệt' : req.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                    </Status>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Leave Request Submission Modal */}
+        {leaveModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl text-slate-800 border border-slate-200">
+              <button
+                onClick={() => setLeaveModalOpen(false)}
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md">
+                  <FileCheck className="size-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">{t('student.leaveModalTitle')}</h3>
+                  <p className="text-xs text-slate-500">{t('student.leaveModalDetail')}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleLeaveSubmit} className="mt-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('student.selectCourse')} *</label>
+                  <select
+                    value={leaveCourseId}
+                    onChange={(e) => setLeaveCourseId(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+                  >
+                    <option value="">-- {t('student.selectCourse')} --</option>
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.code} - {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('student.selectSession')} *</label>
+                  <input
+                    type="text"
+                    value={leaveDate}
+                    onChange={(e) => setLeaveDate(e.target.value)}
+                    placeholder="24/08/2026"
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('student.absenceReason')} *</label>
+                  <textarea
+                    value={leaveReason}
+                    onChange={(e) => setLeaveReason(e.target.value)}
+                    placeholder={t('student.leaveReasonPlaceholder')}
+                    required
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">{t('student.evidenceNote')}</label>
+                  <input
+                    type="text"
+                    value={leaveEvidence}
+                    onChange={(e) => setLeaveEvidence(e.target.value)}
+                    placeholder={t('student.evidencePlaceholder')}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <Button variant="outline" onClick={() => setLeaveModalOpen(false)}>
+                    {t('common.back')}
+                  </Button>
+                  <Button type="submit" disabled={submittingLeave}>
+                    <Send className="size-4" />
+                    {submittingLeave ? 'Đang gửi…' : t('student.sendLeaveRequest')}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1016,7 +1184,7 @@ function ScheduleModal({
 
 function StaffView({ role, page, go, data, user, organization, refresh }: ViewProps & { role: 'teacher' | 'admin' }) {
   const { t } = useI18n()
-  const { courses, sessions, live, metrics, suspicious, auditEvents, users, departments } = data
+  const { courses, sessions, live, metrics, suspicious, auditEvents, users, departments, leaveRequests = [] } = data
   const [search, setSearch] = useState('')
   const [reviewed, setReviewed] = useState<string[]>([])
   const [notice, setNotice] = useState('')
@@ -1033,6 +1201,25 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState<string | undefined>()
   const [selectedSection, setSelectedSection] = useState<ClassSession | undefined>()
+  const [projectorMode, setProjectorMode] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProjectorMode(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const handleReviewLeave = async (requestId: string, status: 'approved' | 'rejected') => {
+    try {
+      await api.reviewLeaveRequest(requestId, status)
+      setNotice(status === 'approved' ? t('teacher.leaveApproved') : t('teacher.leaveRejected'))
+      await refresh()
+    } catch {
+      setNotice('Lỗi khi xử lý đơn nghỉ phép.')
+    }
+  }
 
   const isAdmin = role === 'admin'
   const liveActive = Boolean(live)
@@ -1133,9 +1320,16 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           title={t('teacher.liveTitle')}
           detail={t('teacher.liveDetail')}
           action={
-            <Button variant={liveActive ? 'danger' : 'primary'} onClick={toggleSession}>
-              {liveActive ? <><X />{t('teacher.endSession')}</> : <><Play />{t('teacher.startSession')}</>}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {liveActive && (
+                <Button variant="outline" onClick={() => setProjectorMode(true)}>
+                  <Maximize2 />{t('teacher.projectorMode')}
+                </Button>
+              )}
+              <Button variant={liveActive ? 'danger' : 'primary'} onClick={toggleSession}>
+                {liveActive ? <><X />{t('teacher.endSession')}</> : <><Play />{t('teacher.startSession')}</>}
+              </Button>
+            </div>
           }
         />
         {liveActive && live ? (
@@ -1159,9 +1353,14 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <CountdownTimer expiresAt={live.challengeExpiresAt} onExpire={rotateChallenge} />
                   </div>
                   <p className="text-xs text-muted-foreground">{t('teacher.shareCode')}</p>
-                  <Button variant="outline" onClick={rotateChallenge}>
-                    <RotateCw />{t('teacher.rotateChallenge')}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={rotateChallenge}>
+                      <RotateCw />{t('teacher.rotateChallenge')}
+                    </Button>
+                    <Button variant="outline" onClick={() => setProjectorMode(true)}>
+                      <Maximize2 />{t('teacher.projectorMode')}
+                    </Button>
+                  </div>
                 </div>
               </Card>
               <Card title={t('teacher.liveStatistics')}>
@@ -1184,6 +1383,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       <th className="pb-3">{t('roles.student')}</th>
                       <th className="pb-3">{t('teacher.checkIn')}</th>
                       <th className="pb-3">{t('common.status')}</th>
+                      <th className="pb-3">{t('teacher.manualAttendance')}</th>
                       <th className="pb-3">{t('teacher.verification')}</th>
                       <th className="pb-3">{t('common.device')}</th>
                     </tr>
@@ -1193,14 +1393,35 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       <tr key={row.id}>
                         <td className="py-3 font-medium">{row.studentName}</td>
                         <td className="py-3">{row.verifiedAt}</td>
-                        <td className="py-3"><Status tone={row.status === 'late' ? 'warning' : 'success'}>{statusText(t, row.status)}</Status></td>
+                        <td className="py-3">
+                          <Status tone={row.status === 'late' ? 'warning' : row.status === 'absent' ? 'danger' : row.status === 'excused' ? 'neutral' : 'success'}>
+                            {statusText(t, row.status)}
+                          </Status>
+                        </td>
+                        <td className="py-3">
+                          <select
+                            value={row.status}
+                            onChange={async (e) => {
+                              const newStatus = e.target.value as any
+                              await api.overrideAttendance(row.id, newStatus)
+                              setNotice(t('teacher.statusOverridden'))
+                              await refresh()
+                            }}
+                            className="rounded-lg border border-slate-200 bg-background px-2.5 py-1 text-xs font-medium cursor-pointer"
+                          >
+                            <option value="present">{t('status.present')}</option>
+                            <option value="late">{t('status.late')}</option>
+                            <option value="absent">{t('status.absent')}</option>
+                            <option value="excused">{t('status.excused')}</option>
+                          </select>
+                        </td>
                         <td className="py-3">{row.confidence}%</td>
                         <td className="py-3 text-muted-foreground">{row.device}</td>
                       </tr>
                     ))}
                     {live.records.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                        <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                           {t('teacher.waitingSession')}
                         </td>
                       </tr>
@@ -1209,6 +1430,65 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 </table>
               </div>
             </Card>
+
+            {/* Projector Mode Fullscreen Overlay */}
+            {projectorMode && (
+              <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#06152d] text-white p-6 sm:p-10 select-none">
+                {/* Top Header */}
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                  <div className="flex items-center gap-3">
+                    <UtcLogo compact={false} textColor="text-white" />
+                    <div className="hidden sm:block border-l border-white/20 pl-3">
+                      <h2 className="text-base font-bold tracking-tight text-white">{live.courseCode} · {live.courseName}</h2>
+                      <p className="text-xs text-blue-300">Phòng {live.room} · {formatDayOfWeek(t, live.dayOfWeek)} ({live.startsAt} – {live.endsAt})</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 border border-emerald-400/30 flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-emerald-400 animate-ping" />
+                      {t('common.liveNow')} · {live.records.length} đã điểm danh
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProjectorMode(false)}
+                      className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer border border-white/20"
+                    >
+                      <Minimize2 className="size-4" /> {t('teacher.exitProjector')} (Esc)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Centered Large QR and Code */}
+                <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+                  <div className="rounded-3xl border-4 border-blue-400/30 bg-white p-6 shadow-2xl shadow-blue-500/20">
+                    <DynamicQRCode value={live.challenge} size={320} />
+                  </div>
+                  <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+                    <span className="rounded-2xl border border-blue-400/40 bg-blue-900/60 px-8 py-3 font-mono text-5xl sm:text-6xl font-extrabold tracking-[0.35em] text-white shadow-lg">
+                      {live.challenge}
+                    </span>
+                    <div className="scale-125">
+                      <CountdownTimer expiresAt={live.challengeExpiresAt} onExpire={rotateChallenge} />
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm font-medium text-blue-200 max-w-md">
+                    {t('teacher.projectorHint')}
+                  </p>
+                </div>
+
+                {/* Bottom Footer Info */}
+                <div className="flex items-center justify-between border-t border-white/10 pt-4 text-xs text-slate-400">
+                  <span>Hệ thống Điểm danh Thông minh UTC · Chống gian lận thời gian thực</span>
+                  <button
+                    type="button"
+                    onClick={rotateChallenge}
+                    className="flex items-center gap-1.5 text-blue-300 hover:text-white transition-colors cursor-pointer font-medium"
+                  >
+                    <RotateCw className="size-4" /> {t('teacher.rotateChallenge')}
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col gap-6">
@@ -1468,12 +1748,104 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   if (page === 'analytics' || page === 'reports') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={page === 'reports' ? t('teacher.reportsTitle') : t('teacher.analyticsTitle')} detail={t('teacher.analyticsDetail')} action={<Button variant="outline" onClick={() => api.downloadAttendanceReport()}><Download />{page === 'reports' ? t('common.exportReport') : t('common.exportData')}</Button>} /><div className="grid gap-4 sm:grid-cols-3"><Metric label={t('teacher.averageAttendance')} value={metrics.attendanceRate} detail={t('common.organizationAverage')} icon={BarChart3} /><Metric label={t('teacher.students')} value={String(metrics.students)} detail={t('common.enrolled')} icon={Users} /><Metric label={t('teacher.suspiciousAttempts')} value={String(metrics.flagged)} detail={t('common.needsReview')} icon={CircleAlert} tone="warning" /></div><Card title={t('teacher.attendanceByCourse')}><div className="flex flex-col gap-5">{courses.map((course) => <div key={course.id}><div className="mb-2 flex justify-between text-sm"><span className="font-medium">{course.code} · {course.name}</span><span className="text-muted-foreground">{t('teacher.enrolledCount', { count: course.enrolled })}</span></div><div className="h-2 rounded-full bg-muted"><div className="h-2 w-3/4 rounded-full bg-primary" /></div><div className="mt-3 flex items-center gap-2"><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id })}><Download />{t('common.export')}</Button><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id, scope: 'detail' })}><Download />{t('teacher.detailedCsv')}</Button></div></div>)}</div></Card></div>
   if (page === 'audit') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={adminEyebrow} title={t('teacher.activityLog')} detail={t('teacher.activityDetail')} action={<Button variant="outline" onClick={() => api.downloadAuditReport()}><Download />{t('common.exportLog')}</Button>} /><Card title={t('teacher.recentActivity')} description={organization.name}><div className="divide-y">{auditEvents.map((event) => <div key={event.id} className="flex gap-4 py-4"><div className={`mt-1 size-2 rounded-full ${event.severity === 'warning' ? 'bg-amber-500' : 'bg-primary'}`} /><div className="flex-1"><p className="text-sm"><span className="font-medium">{event.actor}</span> {event.action}</p><p className="mt-1 text-xs text-muted-foreground">{event.target} · {event.createdAt}</p></div><Status tone={event.severity === 'warning' ? 'warning' : 'neutral'}>{statusText(t, event.severity)}</Status></div>)}</div></Card></div>
   if (page === 'settings') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={t('teacher.settingsTitle')} detail={t('teacher.settingsDetail')} /><Card title={t('teacher.orgProfile')}><div className="grid gap-4 sm:grid-cols-2"><label className="flex flex-col gap-2 text-sm font-medium">{t('teacher.orgName')}<input className="h-11 rounded-lg border bg-background px-3" defaultValue={organization.name} /></label><label className="flex flex-col gap-2 text-sm font-medium">{t('teacher.attendancePolicy')}<input className="h-11 rounded-lg border bg-background px-3" defaultValue={t('teacher.policyDefault')} /></label></div><Button className="mt-5" onClick={() => { setSaved(true); setNotice(t('teacher.settingsSaved')) }}>{saved ? <><Check />{t('common.saved')}</> : t('common.saveChanges')}</Button></Card></div>
-  return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={t('teacher.goodMorning', { name: user.name.split(' ').slice(-1)[0] === 'Patel' ? 'Dr. Patel' : user.name.split(' ')[0] })} detail={t('teacher.overviewDetail')} action={<Button onClick={() => go(isAdmin ? 'analytics' : 'sessions')}><Wifi />{isAdmin ? t('teacher.viewAnalytics') : t('teacher.openLiveSession')}</Button>} /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric label={isAdmin ? t('teacher.totalStudents') : t('teacher.todaysAttendance')} value={isAdmin ? metrics.students.toLocaleString() : metrics.attendanceRate} detail={isAdmin ? t('teacher.orgTotal') : t('teacher.acrossClasses')} icon={ClipboardCheck} /><Metric label={isAdmin ? t('teacher.totalTeachers') : t('teacher.activeStudents')} value={isAdmin ? String(metrics.teachers) : String(students.length)} detail={t('common.updatedToday')} icon={Users} /><Metric label={isAdmin ? t('teacher.activeSessions') : t('teacher.liveSessions')} value={String(metrics.activeSessions)} detail={t('common.runningNow')} icon={Wifi} /><Metric label={t('common.needsReview')} value={String(metrics.flagged)} detail={t('teacher.suspiciousAttempts')} icon={CircleAlert} tone="warning" /></div><Card title={t('teacher.suspiciousAttendance')} description={t('teacher.suspiciousDetail')} action={<Button variant="ghost" onClick={() => go('students')}>{t('common.viewAll')} <ChevronRight /></Button>}><div className="divide-y">{suspicious.map((item) => <div className="flex items-center gap-3 py-3" key={item.id}><CircleAlert className="text-amber-600" /><p className="flex-1 text-sm">{item.reason}</p>{reviewed.includes(item.id) ? <Status>{t('common.reviewed')}</Status> : <Button variant="outline" onClick={() => setReviewed([...reviewed, item.id])}>{t('common.review')}</Button>}</div>)}</div></Card></div>
+  return (
+    <div className="flex flex-col gap-6">
+      {notice && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-center justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+      <SectionHeader
+        eyebrow={staffEyebrow}
+        title={t('teacher.goodMorning', { name: user.name.split(' ').slice(-1)[0] === 'Patel' ? 'Dr. Patel' : user.name.split(' ')[0] })}
+        detail={t('teacher.overviewDetail')}
+        action={
+          <Button onClick={() => go(isAdmin ? 'analytics' : 'sessions')}>
+            <Wifi />{isAdmin ? t('teacher.viewAnalytics') : t('teacher.openLiveSession')}
+          </Button>
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label={isAdmin ? t('teacher.totalStudents') : t('teacher.todaysAttendance')} value={isAdmin ? metrics.students.toLocaleString() : metrics.attendanceRate} detail={isAdmin ? t('teacher.orgTotal') : t('teacher.acrossClasses')} icon={ClipboardCheck} />
+        <Metric label={isAdmin ? t('teacher.totalTeachers') : t('teacher.activeStudents')} value={isAdmin ? String(metrics.teachers) : String(students.length)} detail={t('common.updatedToday')} icon={Users} />
+        <Metric label={isAdmin ? t('teacher.activeSessions') : t('teacher.liveSessions')} value={String(metrics.activeSessions)} detail={t('common.runningNow')} icon={Wifi} />
+        <Metric label={t('common.needsReview')} value={String(metrics.flagged)} detail={t('teacher.suspiciousAttempts')} icon={CircleAlert} tone="warning" />
+      </div>
+
+      {/* Leave Requests Review Panel */}
+      <Card title={t('teacher.leaveClaims')} description={t('teacher.leaveClaimsDetail')}>
+        {leaveRequests.length === 0 ? (
+          <p className="py-6 text-center text-xs text-muted-foreground">{t('teacher.noLeaveClaims')}</p>
+        ) : (
+          <div className="divide-y">
+            {leaveRequests.map((req) => (
+              <div key={req.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                <div className="space-y-1 max-w-xl">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-foreground">{req.studentName}</span>
+                    {req.studentCode && <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700">{req.studentCode}</span>}
+                    <span className="text-muted-foreground">· {req.courseName} ({req.date})</span>
+                  </div>
+                  <p className="text-muted-foreground"><strong>{t('student.absenceReason')}:</strong> {req.reason}</p>
+                  {req.evidenceNote && <p className="text-muted-foreground text-[11px]"><strong>{t('student.evidenceNote')}:</strong> {req.evidenceNote}</p>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {req.status === 'pending' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleReviewLeave(req.id, 'approved')}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors cursor-pointer"
+                      >
+                        {t('teacher.approveLeave')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReviewLeave(req.id, 'rejected')}
+                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 font-medium text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                      >
+                        {t('teacher.rejectLeave')}
+                      </button>
+                    </>
+                  ) : (
+                    <Status tone={req.status === 'approved' ? 'success' : 'danger'}>
+                      {req.status === 'approved' ? 'Đã duyệt có phép' : 'Đã từ chối'}
+                    </Status>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card title={t('teacher.suspiciousAttendance')} description={t('teacher.suspiciousDetail')} action={<Button variant="ghost" onClick={() => go('students')}>{t('common.viewAll')} <ChevronRight /></Button>}>
+        <div className="divide-y">
+          {suspicious.map((item) => (
+            <div className="flex items-center gap-3 py-3" key={item.id}>
+              <CircleAlert className="text-amber-600" />
+              <p className="flex-1 text-sm">{item.reason}</p>
+              {reviewed.includes(item.id) ? (
+                <Status>{t('common.reviewed')}</Status>
+              ) : (
+                <Button variant="outline" onClick={() => setReviewed([...reviewed, item.id])}>
+                  {t('common.review')}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
 }
 
 const emptyDashboard: DashboardData = {
   courses: [], sessions: [], records: [], notifications: [], metrics: { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
-  suspicious: [], auditEvents: [], live: null, devices: [], departments: [], users: [],
+  suspicious: [], auditEvents: [], live: null, devices: [], departments: [], users: [], leaveRequests: [],
 }
 
 function NotificationBell({

@@ -13,14 +13,18 @@ import {
   GraduationCap,
   Headphones,
   HelpCircle,
+  Info,
+  KeyRound,
   Lock,
   LockKeyhole,
   MapPin,
+  PhoneCall,
   QrCode,
   ScanLine,
   ShieldCheck,
   Sparkles,
   UserRound,
+  X,
 } from 'lucide-react'
 import { UtcLogo } from './utc-logo'
 import { useI18n } from '@/components/i18n-provider'
@@ -44,7 +48,8 @@ export function UtcLoginLanding({
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'qr' | 'schedule' | 'analytics' | 'leave' | null>(null)
+  const [featureModal, setFeatureModal] = useState<'qr' | 'schedule' | 'analytics' | 'leave' | null>(null)
+  const [dialogModal, setDialogModal] = useState<{ title: string; detail: string; icon?: React.ReactNode } | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -155,7 +160,7 @@ export function UtcLoginLanding({
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {/* Tile 1: Điểm danh QR động */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'qr' ? null : 'qr')}
+                  onClick={() => setFeatureModal('qr')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
@@ -169,7 +174,7 @@ export function UtcLoginLanding({
 
                 {/* Tile 2: Thời khóa biểu & Ca học */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'schedule' ? null : 'schedule')}
+                  onClick={() => setFeatureModal('schedule')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
@@ -183,7 +188,7 @@ export function UtcLoginLanding({
 
                 {/* Tile 3: Báo cáo chuyên cần */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'analytics' ? null : 'analytics')}
+                  onClick={() => setFeatureModal('analytics')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
@@ -197,7 +202,7 @@ export function UtcLoginLanding({
 
                 {/* Tile 4: Minh chứng nghỉ phép & GPS */}
                 <div
-                  onClick={() => setActiveTab(activeTab === 'leave' ? null : 'leave')}
+                  onClick={() => setFeatureModal('leave')}
                   className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-[#f4f7fc] p-3.5 transition-all hover:bg-blue-50/70 hover:border-blue-200 cursor-pointer shadow-xs"
                 >
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
@@ -328,15 +333,27 @@ export function UtcLoginLanding({
                 <div className="flex items-center justify-between text-xs">
                   <button
                     type="button"
-                    onClick={() => alert('Mật khẩu mặc định sinh viên: Sv@{mã SV}. Hoặc liên hệ phòng đào tạo để cấp lại.')}
-                    className="font-medium text-blue-600 hover:underline"
+                    onClick={() =>
+                      setDialogModal({
+                        title: t('landing.forgotPasswordTitle'),
+                        detail: t('landing.forgotPasswordDetail'),
+                        icon: <KeyRound className="size-6 text-blue-600" />,
+                      })
+                    }
+                    className="font-medium text-blue-600 hover:underline cursor-pointer"
                   >
                     {t('login.forgotPassword')}
                   </button>
                   <button
                     type="button"
-                    onClick={() => alert('Hotline hỗ trợ kỹ thuật: 024 3204 5867 (8h00 - 17h30)')}
-                    className="flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                    onClick={() =>
+                      setDialogModal({
+                        title: t('landing.supportModalTitle'),
+                        detail: t('landing.supportModalDetail'),
+                        icon: <PhoneCall className="size-6 text-blue-600" />,
+                      })
+                    }
+                    className="flex items-center gap-1 font-medium text-blue-600 hover:underline cursor-pointer"
                   >
                     <HelpCircle className="size-3" /> {t('landing.help')}
                   </button>
@@ -373,7 +390,20 @@ export function UtcLoginLanding({
               {/* Microsoft Login Button */}
               <button
                 type="button"
-                onClick={() => alert('Tính năng đăng nhập với Microsoft 365 tài khoản trường đang sẵn sàng kết nối.')}
+                onClick={() =>
+                  setDialogModal({
+                    title: t('landing.ssoModalTitle'),
+                    detail: t('landing.ssoModalDetail'),
+                    icon: (
+                      <svg className="size-6 shrink-0" viewBox="0 0 21 21">
+                        <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                        <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                        <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                        <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                      </svg>
+                    ),
+                  })
+                }
                 className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-[#0078d4] text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#006cbd] active:scale-[0.99] cursor-pointer"
               >
                 {/* 4-Color Microsoft Logo */}
@@ -458,6 +488,90 @@ export function UtcLoginLanding({
           {t('landing.devBy')}
         </p>
       </footer>
+
+      {/* Feature Details Modal */}
+      {featureModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl text-slate-800 border border-slate-200">
+            <button
+              onClick={() => setFeatureModal(null)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/30">
+                {featureModal === 'qr' && <QrCode className="size-6" />}
+                {featureModal === 'schedule' && <Calendar className="size-6" />}
+                {featureModal === 'analytics' && <BarChart3 className="size-6" />}
+                {featureModal === 'leave' && <ShieldCheck className="size-6" />}
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600">SmartAttend Features</span>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {featureModal === 'qr' && t('landing.featQR')}
+                  {featureModal === 'schedule' && t('landing.featSchedule')}
+                  {featureModal === 'analytics' && t('landing.featAnalytics')}
+                  {featureModal === 'leave' && t('landing.featLeave')}
+                </h3>
+              </div>
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-slate-600 bg-slate-50 rounded-xl p-3.5 border border-slate-100">
+              {featureModal === 'qr' && t('landing.featQRDetail')}
+              {featureModal === 'schedule' && t('landing.featScheduleDetail')}
+              {featureModal === 'analytics' && t('landing.featAnalyticsDetail')}
+              {featureModal === 'leave' && t('landing.featLeaveDetail')}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setFeatureModal(null)}
+                className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                {t('common.done')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Info / Support / SSO Dialog Modal */}
+      {dialogModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-slate-800 border border-slate-200">
+            <button
+              onClick={() => setDialogModal(null)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+            <div className="flex items-start gap-3.5">
+              {dialogModal.icon && (
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                  {dialogModal.icon}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-bold text-slate-900 leading-snug">
+                  {dialogModal.title}
+                </h3>
+                <p className="mt-2 text-xs leading-relaxed text-slate-600 whitespace-pre-line">
+                  {dialogModal.detail}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setDialogModal(null)}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                {t('common.done')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

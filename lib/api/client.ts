@@ -1,4 +1,4 @@
-import type { AttendanceRecord, AuditEvent, ClassSession, Course, Role } from '@/lib/types/domain'
+import type { AttendanceRecord, AttendanceStatus, AuditEvent, ClassSession, Course, LeaveRequest, Role } from '@/lib/types/domain'
 
 type AuditLogsResponse = { ok: boolean; events?: AuditEvent[] }
 type DepartmentsResponse = { ok: boolean; departments?: string[] }
@@ -83,6 +83,28 @@ export const api = {
   records(studentId?: string) {
     const query = studentId ? `?studentId=${studentId}` : ''
     return request<{ ok: boolean; records: AttendanceRecord[] }>(`/api/attendance/records${query}`)
+  },
+  overrideAttendance(recordId: string, status: AttendanceStatus) {
+    return request<{ ok: boolean; status?: AttendanceStatus; message?: string }>('/api/attendance/records', {
+      method: 'PATCH',
+      body: JSON.stringify({ recordId, status }),
+    })
+  },
+  leaveRequests(studentId?: string) {
+    const query = studentId ? `?studentId=${studentId}` : ''
+    return request<{ ok: boolean; requests: LeaveRequest[] }>(`/api/attendance/leave${query}`)
+  },
+  submitLeaveRequest(data: { courseId: string; courseName?: string; sessionId?: string; date: string; reason: string; evidenceNote?: string }) {
+    return request<{ ok: boolean; request?: LeaveRequest; message?: string }>('/api/attendance/leave', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  reviewLeaveRequest(requestId: string, status: 'approved' | 'rejected') {
+    return request<{ ok: boolean; request?: LeaveRequest; message?: string }>('/api/attendance/leave', {
+      method: 'PATCH',
+      body: JSON.stringify({ requestId, status }),
+    })
   },
   verify(code: string) {
     return request<{ ok: boolean; confidence: number; message: string }>('/api/attendance/verify', {
@@ -220,6 +242,7 @@ export type DashboardData = {
   devices: { id: string; label: string; trusted: boolean; lastSeenAt: string }[]
   departments: string[]
   users: { id: string; name: string; email: string; role: string; department: string; studentCode: string; initials: string }[]
+  leaveRequests: LeaveRequest[]
 }
 
 export async function loadDashboard(role?: Role): Promise<DashboardData> {
@@ -227,7 +250,7 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
   const emptyAudit: AuditLogsResponse = { ok: true, events: [] }
   const emptyDepartments: DepartmentsResponse = { ok: true, departments: [] }
 
-  const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes] =
+  const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes, leaveRes] =
     await Promise.all([
       api.courses().catch(() => ({ courses: [] as Course[] })),
       api.sessions().catch(() => ({ sessions: [] as ClassSession[], live: null })),
@@ -241,6 +264,7 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
       api.users().catch(() => ({ users: [] })),
       role === 'student' ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
       isAdmin ? api.departments().catch(() => emptyDepartments) : Promise.resolve(emptyDepartments),
+      api.leaveRequests().catch(() => ({ requests: [] as LeaveRequest[] })),
     ])
 
   return {
@@ -255,5 +279,6 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
     devices: devicesRes.devices,
     departments: departmentsRes.departments ?? [],
     users: usersRes.users,
+    leaveRequests: leaveRes.requests ?? [],
   }
 }
