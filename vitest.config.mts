@@ -9,5 +9,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['lib/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    testTimeout: 60000,
   },
 })

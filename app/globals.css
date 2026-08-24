@@ -161,3 +161,36 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* UTC Portal Theme Utilities */
+.utc-landing-bg {
+  background: radial-gradient(circle at 50% 20%, #154589 0%, #0c2b5d 35%, #071a38 70%, #041024 100%);
+}
+
+.utc-portal-bg {
+  background-color: #ebf1fa;
+  background-image: radial-gradient(at 0% 0%, rgba(219, 234, 254, 0.4) 0px, transparent 50%),
+                    radial-gradient(at 100% 100%, rgba(224, 231, 255, 0.3) 0px, transparent 50%);
+}
+
+.dark .utc-portal-bg {
+  background-color: #0d1524;
+  background-image: radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.25) 0px, transparent 50%),
+                    radial-gradient(at 100% 100%, rgba(17, 24, 39, 0.5) 0px, transparent 50%);
+}
+
+.utc-sidebar-bg {
+  background: linear-gradient(180deg, #16243d 0%, #111d33 60%, #0d1628 100%);
+}
+
+.utc-banner-gradient {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%);
+}
+
+.utc-glass-panel {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+

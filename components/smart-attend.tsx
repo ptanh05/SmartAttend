@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronRight, CircleAlert,
+  Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
   ClipboardCheck, Clock, Download, Edit3, FileText, GraduationCap, LockKeyhole, LogOut, Menu, Moon, Play, Plus,
   RotateCw, ScanLine, Search, ShieldCheck, Smartphone, Trash2, Upload, Users, Wifi, X
 } from 'lucide-react'
@@ -16,6 +16,9 @@ import { api, loadDashboard, type DashboardData } from '@/lib/api/client'
 import { canAccessRole } from '@/lib/auth/routing'
 import { useI18n } from '@/components/i18n-provider'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { UtcLogo } from './utc-logo'
+import { UtcLoginLanding } from './utc-login-landing'
+import { UtcStudentDashboard } from './utc-student-dashboard'
 import type { ClassSession, Course, Role } from '@/lib/types/domain'
 
 
@@ -665,54 +668,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
     )
   }
 
-  const nextSession = sessions.find((session) => session.status !== 'live') ?? sessions[0]
-  const nextCourse = nextSession ? courses.find((course) => course.id === nextSession.courseId) : null
-
-  return (
-    <div className="flex flex-col gap-6">
-      <SectionHeader
-        eyebrow={t('common.today')}
-        title={t('student.goodMorning', { name: user.name.split(' ')[0] })}
-        detail={t('student.overviewDetail')}
-        action={<Button onClick={() => go('join')}><ScanLine />{t('nav.student.join')}</Button>}
-      />
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric label={t('student.attendanceRate')} value={`${rate}%`} detail={t('student.fromYourRecords')} icon={ClipboardCheck} />
-        <Metric label={t('common.present')} value={String(presentCount)} detail={t('student.ofSessions', { count: records.length })} icon={CheckCircle2} tone="success" />
-        <Metric label={t('common.absent')} value={String(records.filter((r) => r.status === 'absent').length)} detail={t('common.noActionRequired')} icon={CircleAlert} tone="warning" />
-      </div>
-      <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
-        <Card title={t('student.todaysClasses')} description={t('student.scheduledSessions')} action={<Button variant="ghost" onClick={() => go('courses')}>{t('student.viewClasses')} <ChevronRight /></Button>}>
-          <div className="divide-y">
-            {todaySessions.length > 0 ? (
-              todaySessions.map((session) => (
-                <div key={session.sectionId} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
-                  <div className={`size-2.5 rounded-full ${session.status === 'live' ? 'bg-primary animate-pulse' : 'bg-muted-foreground'}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{courses.find((c) => c.id === session.courseId)?.name}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{session.startsAt} – {session.endsAt} · {session.room}</p>
-                  </div>
-                  <Status tone={session.status === 'live' ? 'success' : 'neutral'}>
-                    {session.status === 'live' ? t('common.live') : t('common.upcoming')}
-                  </Status>
-                </div>
-              ))
-            ) : (
-              <p className="py-4 text-sm text-muted-foreground">{t('common.noClassToday')}</p>
-            )}
-          </div>
-        </Card>
-        {nextCourse && (
-          <section className="rounded-xl bg-primary p-5 text-primary-foreground">
-            <p className="text-sm text-primary-foreground/70">{t('student.nextClass')}</p>
-            <h2 className="mt-2 text-xl font-semibold">{nextCourse.name}</h2>
-            <p className="mt-1 text-sm text-primary-foreground/70">{t('student.startsAt', { time: nextSession.startsAt, room: nextSession.room })}</p>
-            <Button variant="outline" className="mt-5" onClick={() => go('join')}>{t('nav.student.join')} <ArrowRight /></Button>
-          </section>
-        )}
-      </div>
-    </div>
-  )
+  return <UtcStudentDashboard user={user} go={go} data={data} />
 }
 
 function StudentImportPanel({
@@ -1733,11 +1689,8 @@ export default function SmartAttendApp() {
     router.push('/student/login')
   }
 
-  if (!hydrated) return <div className="min-h-screen bg-background" aria-hidden="true" />
+  if (!hydrated) return <div className="min-h-screen bg-[#071935]" aria-hidden="true" />
   if (!role || !appUser) {
-    if (authScreen === 'landing') {
-      return <PublicLanding onSelect={openPortal} />
-    }
     if (authScreen === 'register') {
       return (
         <RegisterScreen
@@ -1751,12 +1704,9 @@ export default function SmartAttendApp() {
       )
     }
     return (
-      <LoginScreen
-        portal={portal}
+      <UtcLoginLanding
         onLogin={login}
-        onSwitch={() => openPortal(portal === 'student' ? 'staff' : 'student')}
         onRegister={openRegister}
-        onHome={goHome}
         organizationName={organization.name}
       />
     )
@@ -1780,7 +1730,7 @@ export default function SmartAttendApp() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen utc-portal-bg flex flex-col selection:bg-blue-600 selection:text-white">
       {mustChangePassword && role === 'student' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-xl">
@@ -1799,7 +1749,129 @@ export default function SmartAttendApp() {
           </div>
         </div>
       )}
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6"><div className="flex items-center gap-3"><button onClick={() => setMobileOpen(!mobileOpen)} className="rounded-lg p-2 hover:bg-muted lg:hidden" aria-label={t('header.openNav')}><Menu /></button><Logo onClick={goHome} /></div><div className="flex items-center gap-2"><LanguageSwitcher compact /><button onClick={() => setDark(!dark)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted" aria-label={t('header.toggleDark')}><Moon className="size-4" /></button><NotificationBell notifications={data.notifications} role={role} go={go} t={t} /><div className="hidden items-center gap-2 border-l pl-3 sm:flex"><div className="grid size-8 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{appUser.initials}</div><div className="text-right"><p className="text-sm font-medium">{appUser.name}</p><p className="text-xs text-muted-foreground">{t(`roles.${appUser.role}`)}</p></div></div></div></header><div className="flex"><aside className={mobileOpen ? 'block fixed inset-x-0 top-16 z-10 border-b bg-background p-3 lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:p-4' : 'hidden fixed inset-x-0 top-16 z-10 border-b bg-background p-3 lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:p-4'}><nav className="flex flex-col gap-1">{items.map(({ key, labelKey, icon: Icon }) => <button key={key} onClick={() => go(key)} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${page === key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="size-4" />{t(labelKey)}</button>)}<div className="my-3 border-t" /><button onClick={logout} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"><LogOut className="size-4" />{t('common.logout')}</button></nav><div className="mt-8 rounded-xl bg-primary/5 p-4"><ShieldCheck className="size-5 text-primary" /><p className="mt-3 text-sm font-medium">{t('header.verificationProtected')}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('header.verificationDetail')}</p></div></aside><main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8"><div className="mx-auto max-w-7xl">{role === 'student' ? <StudentView {...viewProps} /> : <StaffView {...viewProps} role={role} />}</div></main></div><nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t bg-background p-2 lg:hidden">{items.slice(0, 4).map(({ key, labelKey, icon: Icon }) => <button key={key} onClick={() => go(key)} className="flex flex-col items-center gap-1 rounded-lg p-2 text-[10px] text-muted-foreground"><Icon className="size-4" />{t(labelKey)}</button>)}      </nav>
+
+      {/* Top Header Bar */}
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#111d33]/90 sm:px-6 shadow-xs">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            aria-label={t('header.openNav')}
+          >
+            <Menu className="size-5" />
+          </button>
+          <div className="lg:hidden">
+            <UtcLogo compact size={36} textColor="text-slate-800 dark:text-white" />
+          </div>
+        </div>
+
+        {/* Central Search Capsule Bar */}
+        <div className="flex-1 max-w-md mx-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder={t('student.searchPlaceholder')}
+              className="h-9 w-full rounded-full border border-slate-200 bg-slate-100/80 pl-9 pr-4 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800"
+            />
+          </div>
+        </div>
+
+        {/* Right Tools & User Profile Chip */}
+        <div className="flex items-center gap-2.5">
+          <LanguageSwitcher compact />
+          <button
+            onClick={() => setDark(!dark)}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+            aria-label={t('header.toggleDark')}
+          >
+            <Moon className="size-4" />
+          </button>
+          <NotificationBell notifications={data.notifications} role={role} go={go} t={t} />
+
+          {/* User Profile Chip */}
+          <div className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800">
+            <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
+              {appUser.initials}
+            </div>
+            <span className="hidden text-xs font-bold text-slate-800 dark:text-slate-100 sm:inline-block">
+              {appUser.name}
+            </span>
+            <ChevronDown className="size-3.5 text-slate-400" />
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-1">
+        {/* Sidebar Navigation */}
+        <aside
+          className={
+            mobileOpen
+              ? 'fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg p-4 text-white shadow-xl lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:border-slate-800'
+              : 'hidden fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg p-4 text-white shadow-xl lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:border-slate-800'
+          }
+        >
+          {/* Top Logo inside Sidebar */}
+          <div className="mb-6 pb-4 border-b border-white/10 hidden lg:block">
+            <UtcLogo size={38} textColor="text-white" />
+          </div>
+
+          <nav className="flex flex-col gap-1.5">
+            {items.map(({ key, labelKey, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => go(key)}
+                className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                  page === key
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className="size-4 shrink-0" />
+                  <span>{t(labelKey)}</span>
+                </div>
+                {key !== 'overview' && key !== 'profile' && key !== 'settings' && (
+                  <ChevronRight className="size-3.5 opacity-50" />
+                )}
+              </button>
+            ))}
+
+            <div className="my-3 border-t border-white/10" />
+
+            <button
+              onClick={logout}
+              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer"
+            >
+              <LogOut className="size-4" />
+              {t('common.logout')}
+            </button>
+          </nav>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto max-w-7xl">
+            {role === 'student' ? <StudentView {...viewProps} /> : <StaffView {...viewProps} role={role} />}
+          </div>
+        </main>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-[#111d33] lg:hidden shadow-lg">
+        {items.slice(0, 4).map(({ key, labelKey, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => go(key)}
+            className={`flex flex-col items-center gap-1 rounded-lg p-2 text-[10px] font-medium transition-colors ${
+              page === key ? 'text-blue-600 font-bold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Icon className="size-4" />
+            <span className="truncate max-w-[70px]">{t(labelKey)}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   )
 }
