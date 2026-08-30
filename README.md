@@ -1,138 +1,102 @@
-# SmartAttend
+# SmartAttend — Multi-Tenant University Attendance SaaS
 
-SmartAttend is a **multi-tenant university attendance SaaS**. It helps institutions run fast, tamper-resistant attendance: a teacher starts a live session, a rotating challenge code is issued, and students verify their presence within a short time window.
+SmartAttend is a **production-ready, multi-tenant university attendance SaaS platform**. It enables institutions to conduct fast, tamper-resistant attendance: teachers launch live class sessions, dynamic 6-character rotating challenge codes/QRs are issued with strict TTLs, and students verify presence within authorized time windows.
 
-This is a **real, database-backed implementation** (Next.js + Drizzle + Neon PostgreSQL). It is not a UI-only demo — authentication, attendance records, audit logs, and analytics are all persisted server-side.
+The application is a **full-stack database-backed implementation** running on Next.js 16 (App Router), Drizzle ORM, and Neon PostgreSQL.
 
-## Key features
+---
 
-- **Role-based portals** — Student, Teacher, Staff, and Admin portals with role-aware routing and organization scoping.
-- **Tamper-resistant attendance** — rotating challenge codes (short TTL, stored hashed) with a strict session state machine.
-- **Brute-force protection** — sliding-window rate limiting on login and attendance verification endpoints.
-- **CSV report export** — `GET /api/reports/attendance` returns a per-student attendance summary as a downloadable CSV, wired to the Reports/Analytics export button.
-- **Trusted-device scoring** — per-organization `requireTrustedDevice` policy drives a bounded `verificationScore` and surfaces untrusted-device verifications as suspicious attempts for review.
-- **Real authentication** — password hashing (bcrypt), login by email or student code, session cookies with hashed, expiring tokens, password change, account disabling, and teacher self-registration behind an API key.
-- **Student import** — bulk-create students from CSV with generated default passwords.
-- **Analytics & auditing** — per-organization metrics, attendance rate, suspicious-attempt tracking, and audit logs.
-- **i18n** — English and Vietnamese built in, with a runtime language switcher.
+## 🌟 Key Features
 
-## Tech stack
+- **Multi-Tenant SaaS Architecture:** Complete organizational data isolation based on server-verified session context (`organizationId`).
+- **Role-Based Portals:** Specialized interfaces for Students, Teachers, Staff, and Admins with strict server-side RBAC.
+- **Tamper-Resistant Attendance Engine:** Server-side state machine (`draft` → `active` → `paused` → `closed`), dynamic OTP challenge codes (safe alphabet, SHA-256 hashed), and automatic absent finalization on close.
+- **Late Attendance Calculation:** Automatic server calculation of `late` vs `present` based on session `startedAt` and organizational policy (`lateAfterMinutes`).
+- **Database-Backed Leave Requests:** Full lifecycle (submission, review, approve/reject, notification) persisted to PostgreSQL.
+- **Anti-Cheating & Device Trust:** Hardware trust scoring (0–100), device fingerprint registry, replay protection, and `suspicious_attempts` tracking.
+- **Real Authentication & Session Security:** `bcryptjs` password encryption, cryptographically secure 32-byte session tokens stored as SHA-256 hashes, `HttpOnly` / `SameSite=Lax` cookies, and brute-force sliding-window rate limiting.
+- **CSV Reports & Analytics:** RFC 4180 streaming CSV export for attendance and audit trails, with real-time institutional metrics.
+- **Bilingual i18n & Dark Mode:** Full English and Vietnamese support with runtime switcher and responsive mobile/tablet layout.
 
-| Layer        | Tooling                                                          |
-| ------------ | ---------------------------------------------------------------- |
-| Framework    | Next.js 16 (App Router) + React 19                               |
-| Language     | TypeScript (strict)                                              |
-| Styling      | Tailwind CSS 4 + shadcn/ui components                            |
-| ORM / DB     | Drizzle ORM on Neon PostgreSQL                                   |
-| Auth         | bcryptjs, signed session cookies, SHA-256 token hashing          |
-| Testing      | Vitest                                                           |
-| Validation   | Client/server validation helpers + role/permission guards        |
-| i18n         | Lightweight runtime `en`/`vi` dictionary                         |
+---
 
-## Getting started
+## 🛠 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) + React 19 |
+| Language | TypeScript (strict mode) |
+| Styling | Tailwind CSS 4 + Lucide Icons + shadcn/ui |
+| ORM & Database | Drizzle ORM on Neon Serverless PostgreSQL |
+| Auth & Security | bcryptjs, SHA-256 hashed session tokens, HttpOnly cookies, timingSafeEqual |
+| Rate Limiting | In-memory sliding window rate limiter |
+| Testing | Vitest (11 suites, 86 unit & integration tests) |
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
-
 - Node.js 20+ and `pnpm`
-- A Neon (PostgreSQL) database — set its connection string as `DATABASE_URL`
+- Neon Serverless PostgreSQL instance
 
-### 1. Configure environment
-
+### 1. Configure Environment
 ```bash
 cp .env.example .env
 ```
+Populate `.env` with your credentials:
+- `DATABASE_URL`: PostgreSQL connection string.
+- `TEACHER_REGISTRATION_API_KEY`: Secret key authorizing teacher account creation.
 
-Required variables in `.env`:
-
-- `DATABASE_URL` — PostgreSQL connection string (Neon recommended).
-- `TEACHER_REGISTRATION_API_KEY` — secret shared key that authorizes teacher self-registration.
-
-### 2. Install and set up the database
-
+### 2. Install Dependencies & Push Schema
 ```bash
 pnpm install
-pnpm db:push        # apply the Drizzle schema to your database
-pnpm db:seed        # reset the database (clears all rows)
+pnpm db:push    # push Drizzle schema to Neon PostgreSQL
+pnpm db:seed    # seed UTC demo data (courses, students, schedules)
 ```
 
-> For production, prefer tracked migrations. Generate and apply them with:
->
-> ```bash
-> pnpm dlx drizzle-kit generate
-> pnpm dlx drizzle-kit migrate
-> ```
-
-### 3. Run the app
-
+### 3. Start Development Server
 ```bash
-pnpm dev            # http://localhost:3000
+pnpm dev        # http://localhost:3000
 ```
 
-To get started after a fresh seed, register a teacher account at
-`/staff/register` using your `TEACHER_REGISTRATION_API_KEY`.
+---
 
-## Scripts
+## 📦 Scripts
 
-| Command            | Description                                        |
-| ------------------ | -------------------------------------------------- |
-| `pnpm dev`         | Start the development server                       |
-| `pnpm build`       | Production build (type-checks the app)             |
-| `pnpm start`       | Start the production server                        |
-| `pnpm lint`        | Run ESLint                                        |
-| `pnpm typecheck`   | Type-check the whole project (`tsc --noEmit`)     |
-| `pnpm test`        | Run the Vitest test suite                          |
-| `pnpm db:push`     | Push the Drizzle schema to the database            |
-| `pnpm db:seed`     | Reset all database rows (development only)         |
+| Command | Description |
+|---|---|
+| `pnpm dev` | Start development server |
+| `pnpm build` | Production build & static page generation |
+| `pnpm start` | Start production server |
+| `pnpm test` | Run complete Vitest suite (unit, integration & security tests) |
+| `pnpm typecheck` | Run TypeScript verification (`tsc --noEmit`) |
+| `pnpm lint` | Run ESLint check |
+| `pnpm db:push` | Push schema changes directly to Neon DB |
+| `pnpm db:seed` | Seed default university organization, users, and courses |
 
-## Project structure
+---
 
+## 🧪 Testing & Verification
+
+Run the test suite:
+```bash
+pnpm test
 ```
-app/
-  api/                # Route handlers (auth, attendance, users, analytics, ...)
-  student|teacher|staff|admin/   # Portal entry pages ([[...slug]] dynamic routes)
-components/
-  smart-attend.tsx    # Main client app shell (per-portal dashboards)
-lib/
-  attendance/         # Challenge, session state machine, DB-backed services
-  auth/               # Session, cookies, password, registration-key, routing
-  db/                 # Drizzle schema, connection
-  i18n/               # en/vi string dictionaries
-  permissions/        # Role & organization access guards
-  repositories/       # Repository interfaces (contracts/seams)
-  validation/         # Input validators
-  api/client.ts       # Typed browser API client
-docs/                 # Architecture & stability notes
-scripts/seed.ts       # Database reset script
-```
+The test suite covers:
+- `lib/attendance/session-state.test.ts`: Session lifecycle transition rules.
+- `lib/attendance/challenge.test.ts`: Code generation, safe alphabet, SHA-256 verification.
+- `lib/attendance/device-policy.test.ts`: Trust scoring (0–100) and suspicious flagging.
+- `lib/attendance/leave.test.ts`: Database-backed leave request workflow.
+- `lib/rate-limit.test.ts`: Sliding window consumption, expirations, resets.
+- `lib/permissions/index.test.ts`: Role-based access control helpers.
+- `lib/reports/csv.test.ts`: RFC 4180 CSV cell escaping and rate calculation.
+- `tests/integration/attendance-flow.test.ts`: Live end-to-end attendance flow on Neon DB.
+- `tests/integration/security-regressions.test.ts`: Multi-tenant isolation, role boundary enforcement, expired challenge rejection, and late attendance timing.
 
-## How attendance works
+---
 
-1. A teacher creates a **course section** and starts a **live session**.
-2. The server generates a short **challenge code** (6 chars, TTL-bounded) and stores only its hash.
-3. Students submit the code (`/api/attendance/verify`); the server validates the code, session state, and classroom policy.
-4. A successful match creates an **attendance record** (`present`/`late`/`pending`), protects against replay, and can flag **suspicious attempts**.
-5. Teachers rotate the code and close the session; everything is persisted and audited.
-
-## Testing
-
-Run the suite with `pnpm test`. Tests cover the core, framework-free logic:
-
-- `lib/attendance/session-state` — session transition rules
-- `lib/attendance/challenge` — code generation, hashing, verification
-- `lib/permissions` — role & organization guards
-- `lib/validation` — input validators
-- `lib/auth/routing` — portal access rules
-- `lib/rate-limit` — sliding-window limiter
-- `lib/reports/csv` — RFC 4180 CSV escaping, summary/rate helpers
-
-There is also an **integration test** (`tests/integration/attendance-flow.test.ts`) that exercises the full
-attendance flow against the real database (create section → start session → rotate challenge → verify →
-check record/device). It runs only when `DATABASE_URL` is set and cleans up its fixtures afterwards.
-
-## Roadmap (next milestones)
-
-- Split the monolithic `components/smart-attend.tsx` into focused per-portal components.
-- Extend reports to export per-course/section breakdowns.
-- Add real-time session updates (polling today; SSE/WebSocket later).
-
-See `docs/architecture.md` for the detailed system architecture and future phases.
+## 🔒 Security Summary
+- **No Hardcoded Secrets:** All secrets and connection strings are strictly read from environment variables.
+- **Tenant Context Security:** `organization_id` is derived from the server-validated session cookie and cannot be overridden by client request bodies.
+- **Zero Client Trust:** Status calculations, role authorizations, and timestamps are determined authoritatively on the server.

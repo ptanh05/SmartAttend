@@ -19,7 +19,7 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 import { UtcLogo } from './utc-logo'
 import { UtcLoginLanding } from './utc-login-landing'
 import { UtcStudentDashboard } from './utc-student-dashboard'
-import type { ClassSession, Course, Role } from '@/lib/types/domain'
+import type { AttendanceStatus, ClassSession, Course, Role } from '@/lib/types/domain'
 
 
 function PublicLanding({ onSelect }: { onSelect: (portal: 'student' | 'staff') => void }) {
@@ -1402,7 +1402,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                           <select
                             value={row.status}
                             onChange={async (e) => {
-                              const newStatus = e.target.value as any
+                              const newStatus = e.target.value as AttendanceStatus
                               await api.overrideAttendance(row.id, newStatus)
                               setNotice(t('teacher.statusOverridden'))
                               await refresh()

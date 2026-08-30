@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createCourse, listCourses } from '@/lib/attendance/server'
-import { AuthError, getCurrentAuth } from '@/lib/auth/context'
+import { AuthError, getCurrentAuth, requireAuth } from '@/lib/auth/context'
 
 export async function GET() {
   try {
     const auth = await getCurrentAuth()
-    if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+    if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
     const courses = await listCourses(auth.organizationId)
     return NextResponse.json({ ok: true, courses })
   } catch (error) {
@@ -16,8 +16,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const auth = await getCurrentAuth()
-    if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+    const auth = await requireAuth(['teacher', 'admin'])
     const body = await request.json()
     if (!body.code || !body.name || !body.department) {
       return NextResponse.json({ ok: false, message: 'Code, name, and department are required.' }, { status: 400 })
@@ -34,4 +33,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: 'Unable to create course.' }, { status: 500 })
   }
 }
-

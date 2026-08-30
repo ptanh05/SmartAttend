@@ -1,59 +1,177 @@
+import { and, desc, eq } from 'drizzle-orm'
+import { nanoid } from 'nanoid'
+import { db } from '@/lib/db'
+import {
+  courses,
+  leaveRequests,
+  notifications,
+  organizationMemberships,
+  users,
+} from '@/lib/db/schema'
+import type { AuthContext } from '@/lib/auth/session'
 import type { LeaveRequest, LeaveStatus } from '@/lib/types/domain'
 
-let leaveRequestsStore: LeaveRequest[] = [
-  {
-    id: 'lr-1',
-    studentId: 'usr-student-1',
-    studentName: 'Nguyễn Văn An',
-    studentCode: '20260001',
-    courseId: 'course-1',
-    courseName: 'Lập trình Web nâng cao (IT301)',
-    date: '24/08/2026',
-    reason: 'Sốt xuất huyết điều trị tại Bệnh viện GTVT',
-    evidenceNote: 'Giấy khám bệnh & chỉ định nghỉ số 482/BV-GTVT ngày 24/08/2026',
-    status: 'pending',
-    createdAt: '24/08/2026 08:30',
-  },
-  {
-    id: 'lr-2',
-    studentId: 'usr-student-2',
-    studentName: 'Trần Thị Mai',
-    studentCode: '20260002',
-    courseId: 'course-2',
-    courseName: 'Cơ sở dữ liệu phân tán (IT302)',
-    date: '22/08/2026',
-    reason: 'Tham gia đội tuyển Olympic Tin học sinh viên toàn quốc',
-    evidenceNote: 'Quyết định cử đoàn thi đấu số 118/QĐ-ĐHGTVT',
-    status: 'approved',
-    createdAt: '22/08/2026 09:15',
-    reviewedAt: '22/08/2026 10:00',
-    reviewedBy: 'ThS. Nguyễn Văn Thầy',
-  },
-]
+export async function getLeaveRequests(auth: AuthContext, studentId?: string): Promise<LeaveRequest[]> {
+  const targetStudent = auth.role === 'student' ? auth.userId : studentId
 
-export function getLeaveRequests(studentId?: string): LeaveRequest[] {
-  if (studentId) {
-    return leaveRequestsStore.filter((r) => r.studentId === studentId || r.studentCode === studentId)
+  const conditions = [eq(leaveRequests.organizationId, auth.organizationId)]
+  if (targetStudent) {
+    conditions.push(eq(leaveRequests.studentId, targetStudent))
   }
-  return [...leaveRequestsStore]
+
+  const rows = await db()
+    .select({
+      req: leaveRequests,
+      student: users,
+      membership: organizationMemberships,
+      course: courses,
+    })
+    .from(leaveRequests)
+    .innerJoin(users, eq(leaveRequests.studentId, users.id))
+    .leftJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, leaveRequests.studentId),
+        eq(organizationMemberships.organizationId, leaveRequests.organizationId),
+      ),
+    )
+    .innerJoin(courses, eq(leaveRequests.courseId, courses.id))
+    .where(and(...conditions))
+    .orderBy(desc(leaveRequests.createdAt))
+
+  return rows.map(({ req, student, membership, course }) => ({
+    id: req.id,
+    studentId: req.studentId,
+    studentName: student.name,
+    studentCode: membership?.studentCode ?? undefined,
+    courseId: req.courseId,
+    courseName: `${course.code} · ${course.name}`,
+    sessionId: req.sessionId ?? undefined,
+    date: req.date,
+    reason: req.reason,
+    evidenceNote: req.evidenceNote ?? undefined,
+    status: req.status as LeaveStatus,
+    createdAt: req.createdAt.toISOString(),
+    reviewedAt: req.reviewedAt?.toISOString(),
+    reviewedBy: req.reviewedByName ?? undefined,
+  }))
 }
 
-export function addLeaveRequest(req: Omit<LeaveRequest, 'id' | 'createdAt' | 'status'>): LeaveRequest {
-  const newReq: LeaveRequest = {
-    ...req,
-    id: `lr-${Date.now()}`,
+export async function addLeaveRequest(
+  auth: AuthContext,
+  data: {
+    courseId: string
+    sessionId?: string
+    date: string
+    reason: string
+    evidenceNote?: string
+  },
+): Promise<LeaveRequest> {
+  const id = `lr_${nanoid(12)}`
+  const now = new Date()
+
+  await db().insert(leaveRequests).values({
+    id,
+    organizationId: auth.organizationId,
+    studentId: auth.userId,
+    courseId: data.courseId,
+    sessionId: data.sessionId ?? null,
+    date: data.date.trim(),
+    reason: data.reason.trim(),
+    evidenceNote: data.evidenceNote?.trim() || null,
     status: 'pending',
-    createdAt: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    createdAt: now,
+  })
+
+  // Fetch course name
+  const courseRows = await db()
+    .select()
+    .from(courses)
+    .where(and(eq(courses.id, data.courseId), eq(courses.organizationId, auth.organizationId)))
+  const courseName = courseRows[0] ? `${courseRows[0].code} · ${courseRows[0].name}` : 'Course'
+
+  return {
+    id,
+    studentId: auth.userId,
+    studentName: auth.name,
+    studentCode: auth.studentCode ?? undefined,
+    courseId: data.courseId,
+    courseName,
+    sessionId: data.sessionId,
+    date: data.date,
+    reason: data.reason,
+    evidenceNote: data.evidenceNote,
+    status: 'pending',
+    createdAt: now.toISOString(),
   }
-  leaveRequestsStore = [newReq, ...leaveRequestsStore]
-  return newReq
 }
 
-export function updateLeaveRequestStatus(requestId: string, status: LeaveStatus, reviewerName = 'Giảng viên phụ trách'): LeaveRequest | null {
-  const req = leaveRequestsStore.find((r) => r.id === requestId)
-  if (!req) return null
-  req.status = status
-  req.reviewedAt = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-  req.reviewedBy = reviewerName
-  return req
+export async function updateLeaveRequestStatus(
+  auth: AuthContext,
+  requestId: string,
+  status: LeaveStatus,
+): Promise<LeaveRequest | null> {
+  if (auth.role !== 'teacher' && auth.role !== 'admin') {
+    throw new Error('Forbidden')
+  }
+
+  const now = new Date()
+  await db()
+    .update(leaveRequests)
+    .set({
+      status,
+      reviewedBy: auth.userId,
+      reviewedByName: auth.name,
+      reviewedAt: now,
+    })
+    .where(and(eq(leaveRequests.id, requestId), eq(leaveRequests.organizationId, auth.organizationId)))
+
+  // Notify student
+  const updatedRows = await db()
+    .select({
+      req: leaveRequests,
+      student: users,
+      membership: organizationMemberships,
+      course: courses,
+    })
+    .from(leaveRequests)
+    .innerJoin(users, eq(leaveRequests.studentId, users.id))
+    .leftJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, leaveRequests.studentId),
+        eq(organizationMemberships.organizationId, leaveRequests.organizationId),
+      ),
+    )
+    .innerJoin(courses, eq(leaveRequests.courseId, courses.id))
+    .where(and(eq(leaveRequests.id, requestId), eq(leaveRequests.organizationId, auth.organizationId)))
+
+  const row = updatedRows[0]
+  if (!row) return null
+
+  await db().insert(notifications).values({
+    id: nanoid(),
+    organizationId: auth.organizationId,
+    userId: row.req.studentId,
+    title: status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected',
+    body: `Your leave request for ${row.course.code} on ${row.req.date} was ${status} by ${auth.name}.`,
+    createdAt: now,
+  })
+
+  return {
+    id: row.req.id,
+    studentId: row.req.studentId,
+    studentName: row.student.name,
+    studentCode: row.membership?.studentCode ?? undefined,
+    courseId: row.req.courseId,
+    courseName: `${row.course.code} · ${row.course.name}`,
+    sessionId: row.req.sessionId ?? undefined,
+    date: row.req.date,
+    reason: row.req.reason,
+    evidenceNote: row.req.evidenceNote ?? undefined,
+    status: row.req.status as LeaveStatus,
+    createdAt: row.req.createdAt.toISOString(),
+    reviewedAt: row.req.reviewedAt?.toISOString(),
+    reviewedBy: row.req.reviewedByName ?? undefined,
+  }
 }

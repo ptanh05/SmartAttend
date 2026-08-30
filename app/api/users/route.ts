@@ -4,7 +4,7 @@ import { getCurrentAuth } from '@/lib/auth/context'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
-  if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+  if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
   const kind = searchParams.get('kind')
@@ -20,6 +20,11 @@ export async function GET(request: Request) {
     }
     const departments = await listDepartments(auth)
     return NextResponse.json({ ok: true, departments })
+  }
+
+  // Full user directory is restricted to teacher/admin roles
+  if (auth.role !== 'teacher' && auth.role !== 'admin') {
+    return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
   }
 
   const role = searchParams.get('role') ?? undefined

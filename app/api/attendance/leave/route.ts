@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const studentId = auth.role === 'student' ? auth.userId : (searchParams.get('studentId') ?? undefined)
-  const requests = getLeaveRequests(studentId)
+  const requests = await getLeaveRequests(auth, studentId)
   return NextResponse.json({ ok: true, requests })
 }
 
@@ -17,18 +17,14 @@ export async function POST(request: Request) {
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { courseId, courseName, sessionId, date, reason, evidenceNote } = body
+  const { courseId, sessionId, date, reason, evidenceNote } = body
 
   if (!courseId || !reason || !date) {
     return NextResponse.json({ ok: false, message: 'Missing required fields' }, { status: 400 })
   }
 
-  const created = addLeaveRequest({
-    studentId: auth.userId,
-    studentName: auth.name,
-    studentCode: auth.studentCode ?? undefined,
+  const created = await addLeaveRequest(auth, {
     courseId,
-    courseName: courseName || 'Học phần',
     sessionId,
     date,
     reason,
@@ -51,7 +47,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: false, message: 'Invalid payload' }, { status: 400 })
   }
 
-  const updated = updateLeaveRequestStatus(requestId, status, auth.name)
+  const updated = await updateLeaveRequestStatus(auth, requestId, status)
   if (!updated) {
     return NextResponse.json({ ok: false, message: 'Leave request not found' }, { status: 404 })
   }

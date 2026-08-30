@@ -328,7 +328,9 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
 
   const policy = await getPolicy(auth.organizationId)
   const verifiedAt = new Date()
-  const status: AttendanceStatus = 'present'
+  const lateThresholdMs = (policy.lateAfterMinutes ?? 10) * 60 * 1000
+  const isLate = Boolean(live.startedAt && verifiedAt.getTime() > live.startedAt.getTime() + lateThresholdMs)
+  const status: AttendanceStatus = isLate ? 'late' : 'present'
 
   const deviceRows = await db()
     .select()
@@ -655,8 +657,15 @@ export async function listNotifications(auth: AuthContext) {
 
 export async function markNotificationsRead(auth: AuthContext, ids?: string[]) {
   const where = ids?.length
-    ? and(eq(notifications.userId, auth.userId), inArray(notifications.id, ids))
-    : eq(notifications.userId, auth.userId)
+    ? and(
+        eq(notifications.organizationId, auth.organizationId),
+        eq(notifications.userId, auth.userId),
+        inArray(notifications.id, ids),
+      )
+    : and(
+        eq(notifications.organizationId, auth.organizationId),
+        eq(notifications.userId, auth.userId),
+      )
 
   await db().update(notifications).set({ readAt: new Date() }).where(where)
 }

@@ -31,11 +31,17 @@ export class SlidingWindowRateLimiter {
     return arr
   }
 
+  private lastSweep = 0
+
   /**
    * Records a request for `key` and returns whether it is still allowed.
    * The hit is counted even when the request is rejected.
    */
   consume(key: string, now = Date.now()): RateLimitResult {
+    if (now - this.lastSweep > this.windowMs || this.hits.size > 500) {
+      this.clearExpired(now)
+      this.lastSweep = now
+    }
     const arr = this.usages(key, now)
     if (arr.length >= this.maxHits) {
       const oldest = arr[0]

@@ -37,6 +37,9 @@ export async function POST(_request: Request, context: RouteContext) {
 export async function GET() {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+  if (auth.role === 'student') {
+    return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
+  }
 
   const { getLiveSessionDetails } = await import('@/lib/attendance/server')
   const live = await getLiveSessionDetails(auth)

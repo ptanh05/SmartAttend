@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
 import { deleteCourseSection, updateCourseSection } from '@/lib/attendance/server'
-import { AuthError, getCurrentAuth } from '@/lib/auth/context'
+import { AuthError, requireAuth } from '@/lib/auth/context'
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getCurrentAuth()
-    if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+    const auth = await requireAuth(['teacher', 'admin'])
     const { id } = await params
     const body = await request.json()
     const result = await updateCourseSection(auth, id, {
@@ -31,8 +30,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getCurrentAuth()
-    if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+    const auth = await requireAuth(['teacher', 'admin'])
     const { id } = await params
     const result = await deleteCourseSection(auth, id)
     return NextResponse.json(result)

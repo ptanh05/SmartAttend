@@ -315,3 +315,33 @@ export const auditLogs = pgTable(
   },
   (table) => [index('audit_logs_org_created_idx').on(table.organizationId, table.createdAt)],
 )
+
+export const leaveRequests = pgTable(
+  'leave_requests',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    studentId: text('student_id')
+      .notNull()
+      .references(() => users.id),
+    courseId: text('course_id')
+      .notNull()
+      .references(() => courses.id),
+    sessionId: text('session_id').references(() => attendanceSessions.id),
+    date: text('date').notNull(),
+    reason: text('reason').notNull(),
+    evidenceNote: text('evidence_note'),
+    status: text('status').notNull().default('pending'),
+    reviewedBy: text('reviewed_by').references(() => users.id),
+    reviewedByName: text('reviewed_by_name'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('leave_requests_org_student_idx').on(table.organizationId, table.studentId),
+    index('leave_requests_org_status_idx').on(table.organizationId, table.status),
+  ],
+)
+

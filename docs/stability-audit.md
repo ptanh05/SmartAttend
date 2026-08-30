@@ -1,6 +1,10 @@
-# SmartAttend v6.1 Stability Audit
+# SmartAttend v6.1 Stability Audit (Historical Milestone)
 
-**Status:** Stability gate completed before backend implementation
+> [!NOTE]
+> **Historical Archive Notice:** This document records the frontend-only stability gate completed during milestone v6.1 before backend integration.
+> For the current production-ready implementation, architecture, and security audit, refer to [`docs/production-readiness-audit.md`](file:///c:/Workspace/Bai_tap_lon_cac_mon/SmartAttend/docs/production-readiness-audit.md) and [`docs/final-project-status.md`](file:///c:/Workspace/Bai_tap_lon_cac_mon/SmartAttend/docs/final-project-status.md).
+
+**Original Status:** Stability gate completed before backend implementation
 **Scope:** Hydration, route resolution, demo authentication, browser validation, lint, and build only.
 
 ## Hydration
