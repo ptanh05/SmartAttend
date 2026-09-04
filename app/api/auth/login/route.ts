@@ -68,7 +68,17 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
     return response
   } catch (error) {
-    console.error('Login failed', error)
-    return NextResponse.json({ ok: false, message: 'Unable to sign in right now.' }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('Login failed:', message, error)
+
+    // Provide more specific error messages based on the error type
+    if (message.includes('fetch') || message.includes('connect') || message.includes('ECONNREFUSED') || message.includes('timeout')) {
+      return NextResponse.json(
+        { ok: false, message: 'Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại sau vài giây.' },
+        { status: 503 },
+      )
+    }
+
+    return NextResponse.json({ ok: false, message: 'Không thể đăng nhập lúc này. Vui lòng thử lại.' }, { status: 500 })
   }
 }

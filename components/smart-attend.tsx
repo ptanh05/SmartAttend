@@ -1437,7 +1437,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 {/* Top Header */}
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
                   <div className="flex items-center gap-3">
-                    <UtcLogo compact={false} textColor="text-white" />
+                    <UtcLogo compact={false} />
                     <div className="hidden sm:block border-l border-white/20 pl-3">
                       <h2 className="text-base font-bold tracking-tight text-white">{live.courseCode} · {live.courseName}</h2>
                       <p className="text-xs text-blue-300">Phòng {live.room} · {formatDayOfWeek(t, live.dayOfWeek)} ({live.startsAt} – {live.endsAt})</p>
@@ -2185,7 +2185,7 @@ export default function SmartAttendApp() {
         >
           {/* Top Logo inside Sidebar */}
           <div className="mb-6 pb-4 border-b border-white/10 hidden lg:block">
-            <UtcLogo size={38} textColor="text-white" />
+            <UtcLogo size={38} />
           </div>
 
           <nav className="flex flex-col gap-1.5">

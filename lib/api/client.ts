@@ -41,6 +41,12 @@ export const api = {
       body: JSON.stringify({ identifier, password, portal }),
     })
   },
+  microsoftLogin(email: string, portal: 'student' | 'staff') {
+    return request<{ ok: boolean; role?: Role; mustChangePassword?: boolean; message?: string }>('/api/auth/microsoft-login', {
+      method: 'POST',
+      body: JSON.stringify({ email, portal }),
+    })
+  },
   registerTeacher(input: { name: string; email: string; password: string; organizationName: string; apiKey: string }) {
     return request<{ ok: boolean; role?: Role; message?: string }>('/api/auth/register', {
       method: 'POST',
