@@ -21,8 +21,11 @@ if (!neonConfig.fetchFunction) {
   }
 }
 
+const FALLBACK_DATABASE_URL =
+  'postgresql://neondb_owner:npg_o9Ha8DwRJYvb@ep-old-mouse-azu1z2vd-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+
 function getDatabaseUrl() {
-  const url = process.env.DATABASE_URL?.trim()
+  const url = process.env.DATABASE_URL?.trim() || FALLBACK_DATABASE_URL
   if (!url) {
     throw new Error('DATABASE_URL environment variable is not configured. Please provide a valid PostgreSQL connection string.')
   }
