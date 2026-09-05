@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     }
 
     const rateKey = `${clientIp(request)}:${loginId.toLowerCase()}`
-    const rate = loginLimiter.consume(rateKey)
+    const rate = await loginLimiter.consume(rateKey)
     if (!rate.ok) {
       return NextResponse.json(
         { ok: false, message: 'Too many login attempts. Please try again later.' },
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const { token, expiresAt } = await createAuthSession(match.userId, match.membershipId)
     const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
 
-    loginLimiter.reset(rateKey)
+    await loginLimiter.reset(rateKey)
 
     const response = NextResponse.json({
       ok: true,

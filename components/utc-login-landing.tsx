@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   BarChart3,
   Calendar,
@@ -50,10 +50,17 @@ export function UtcLoginLanding({
   const [error, setError] = useState('')
   const [featureModal, setFeatureModal] = useState<'qr' | 'schedule' | 'analytics' | 'leave' | null>(null)
   const [dialogModal, setDialogModal] = useState<{ title: string; detail: string; icon?: React.ReactNode } | null>(null)
-  const [msLoginModal, setMsLoginModal] = useState(false)
-  const [msEmail, setMsEmail] = useState('')
-  const [msLoading, setMsLoading] = useState(false)
-  const [msError, setMsError] = useState('')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const err = urlParams.get('error')
+      if (err) {
+        setError(err)
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -82,32 +89,6 @@ export function UtcLoginLanding({
     } else {
       setIdentifier('teacher@smartattend.edu.vn')
       setPassword('12345678')
-    }
-  }
-
-  const openMicrosoftLogin = () => {
-    setMsError('')
-    setMsEmail(portal === 'student' ? '20260001@student.utc.edu.vn' : 'teacher@smartattend.edu.vn')
-    setMsLoginModal(true)
-  }
-
-  const handleMicrosoftLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!msEmail.trim()) return
-    setMsLoading(true)
-    setMsError('')
-    try {
-      const result = await api.microsoftLogin(msEmail.trim(), portal)
-      if (!result.ok || !result.role) {
-        setMsError(result.message ?? t('common.signInFailed'))
-        return
-      }
-      setMsLoginModal(false)
-      onLogin(result.role, result.mustChangePassword)
-    } catch (err) {
-      setMsError(err instanceof Error ? err.message : t('common.signInFailed'))
-    } finally {
-      setMsLoading(false)
     }
   }
 
@@ -418,9 +399,8 @@ export function UtcLoginLanding({
               </div>
 
               {/* Microsoft Login Button */}
-              <button
-                type="button"
-                onClick={openMicrosoftLogin}
+              <a
+                href={`/api/auth/microsoft?role=${portal}`}
                 className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-[#0078d4] text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#006cbd] active:scale-[0.99] cursor-pointer"
               >
                 {/* 4-Color Microsoft Logo */}
@@ -431,7 +411,7 @@ export function UtcLoginLanding({
                   <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
                 </svg>
                 <span>{t('landing.signInMicrosoft')}</span>
-              </button>
+              </a>
             </div>
 
             {/* Teacher Registration Link */}
@@ -586,114 +566,6 @@ export function UtcLoginLanding({
                 {t('common.done')}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Microsoft 365 SSO Login Modal */}
-      {msLoginModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-slate-800 border border-slate-200">
-            <button
-              onClick={() => { setMsLoginModal(false); setMsError('') }}
-              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
-            >
-              <X className="size-5" />
-            </button>
-
-            {/* Microsoft Logo + Title */}
-            <div className="flex items-center gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#0078d4]/10 ring-1 ring-[#0078d4]/20">
-                <svg className="size-6 shrink-0" viewBox="0 0 21 21">
-                  <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-                  <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-                  <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-                  <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">{t('landing.ssoModalTitle')}</h3>
-                <p className="text-[11px] text-slate-500">Single Sign-On qua tài khoản @utc.edu.vn</p>
-              </div>
-            </div>
-
-            {/* SSO Form */}
-            <form onSubmit={handleMicrosoftLogin} className="mt-5 space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Email Microsoft 365</label>
-                <div className="relative mt-1.5">
-                  <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <svg className="size-4" viewBox="0 0 21 21">
-                      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-                      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-                      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-                      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-                    </svg>
-                  </div>
-                  <input
-                    type="email"
-                    value={msEmail}
-                    onChange={(e) => setMsEmail(e.target.value)}
-                    placeholder="email@utc.edu.vn"
-                    required
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-[#0078d4] focus:bg-white focus:ring-2 focus:ring-[#0078d4]/20"
-                  />
-                </div>
-              </div>
-
-              {msError && (
-                <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-2.5 text-xs text-rose-700 border border-rose-200">
-                  <CircleAlert className="size-4 shrink-0" />
-                  <span>{msError}</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={msLoading}
-                className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-[#0078d4] text-sm font-bold text-white shadow-md transition-all hover:bg-[#006cbd] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
-              >
-                <svg className="size-4" viewBox="0 0 21 21">
-                  <rect x="1" y="1" width="9" height="9" fill="#fff" fillOpacity={0.9} />
-                  <rect x="11" y="1" width="9" height="9" fill="#fff" fillOpacity={0.7} />
-                  <rect x="1" y="11" width="9" height="9" fill="#fff" fillOpacity={0.7} />
-                  <rect x="11" y="11" width="9" height="9" fill="#fff" fillOpacity={0.5} />
-                </svg>
-                {msLoading ? 'Đang xác thực với Microsoft...' : 'Đăng nhập với Microsoft 365'}
-              </button>
-            </form>
-
-            {/* Demo Quick-Select Accounts */}
-            <div className="mt-4 border-t border-slate-100 pt-3.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Tài khoản Microsoft demo</p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setMsEmail('20260001@student.utc.edu.vn'); setMsError('') }}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer"
-                >
-                  🎓 SV: 20260001@student.utc.edu.vn
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMsEmail('teacher@smartattend.edu.vn'); setMsError('') }}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer"
-                >
-                  👨‍🏫 GV: teacher@smartattend.edu.vn
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMsEmail('admin@smartattend.edu.vn'); setMsError('') }}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer"
-                >
-                  🛡️ QTV: admin@smartattend.edu.vn
-                </button>
-              </div>
-            </div>
-
-            <p className="mt-3 text-center text-[10px] text-slate-400">
-              {t('landing.ssoModalDetail')}
-            </p>
           </div>
         </div>
       )}

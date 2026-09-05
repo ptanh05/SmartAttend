@@ -167,8 +167,30 @@ export const api = {
     return request<{
       ok: boolean
       metrics: { students: number; teachers: number; activeSessions: number; attendanceRate: string; flagged: number }
-      suspicious: { id: string; reason: string; status: string }[]
+      suspicious: { id: string; reason: string; status: string; studentName?: string; studentCode?: string; device?: string; createdAt?: string }[]
     }>('/api/analytics/overview')
+  },
+  policy() {
+    return request<{
+      ok: boolean
+      policy: { challengeTtlSeconds: number; lateAfterMinutes: number; requireTrustedDevice: boolean }
+    }>('/api/attendance/policy')
+  },
+  updatePolicy(data: { challengeTtlSeconds?: number; lateAfterMinutes?: number; requireTrustedDevice?: boolean }) {
+    return request<{
+      ok: boolean
+      policy?: { challengeTtlSeconds: number; lateAfterMinutes: number; requireTrustedDevice: boolean }
+      message?: string
+    }>('/api/attendance/policy', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  resolveSuspicious(attemptId: string, action: 'approved' | 'dismissed') {
+    return request<{ ok: boolean; message?: string }>('/api/attendance/suspicious', {
+      method: 'PATCH',
+      body: JSON.stringify({ attemptId, action }),
+    })
   },
   auditLogs() {
     return request<{ ok: boolean; events: AuditEvent[] }>('/api/audit-logs')
@@ -264,21 +286,23 @@ export type DashboardData = {
   records: AttendanceRecord[]
   notifications: { id: string; title: string; body: string; read: boolean; createdAt: string }[]
   metrics: { students: number; teachers: number; activeSessions: number; attendanceRate: string; flagged: number }
-  suspicious: { id: string; reason: string; status: string }[]
+  suspicious: { id: string; reason: string; status: string; studentName?: string; studentCode?: string; device?: string; createdAt?: string }[]
   auditEvents: AuditEvent[]
   live: LiveSession | null
   devices: { id: string; label: string; trusted: boolean; lastSeenAt: string }[]
   departments: string[]
   users: { id: string; name: string; email: string; role: string; department: string; studentCode: string; initials: string }[]
   leaveRequests: LeaveRequest[]
+  policy?: { challengeTtlSeconds: number; lateAfterMinutes: number; requireTrustedDevice: boolean }
 }
 
 export async function loadDashboard(role?: Role): Promise<DashboardData> {
   const isAdmin = role === 'admin'
+  const isStaff = role === 'teacher' || isAdmin
   const emptyAudit: AuditLogsResponse = { ok: true, events: [] }
   const emptyDepartments: DepartmentsResponse = { ok: true, departments: [] }
 
-  const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes, leaveRes] =
+  const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes, leaveRes, policyRes] =
     await Promise.all([
       api.courses().catch(() => ({ courses: [] as Course[] })),
       api.sessions().catch(() => ({ sessions: [] as ClassSession[], live: null })),
@@ -293,6 +317,7 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
       role === 'student' ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
       isAdmin ? api.departments().catch(() => emptyDepartments) : Promise.resolve(emptyDepartments),
       api.leaveRequests().catch(() => ({ requests: [] as LeaveRequest[] })),
+      isStaff ? api.policy().catch(() => ({ ok: false, policy: { challengeTtlSeconds: 30, lateAfterMinutes: 10, requireTrustedDevice: false } })) : Promise.resolve({ ok: false, policy: undefined }),
     ])
 
   return {
@@ -308,5 +333,6 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
     departments: departmentsRes.departments ?? [],
     users: usersRes.users,
     leaveRequests: leaveRes.requests ?? [],
+    policy: policyRes.policy,
   }
 }

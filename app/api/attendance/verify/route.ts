@@ -7,7 +7,7 @@ import { challengeCode } from '@/lib/validation'
 export async function POST(request: Request) {
   try {
     const auth = await requireAuth('student')
-    const rate = verifyLimiter.consume(`${clientIp(request)}:${auth.userId}`)
+    const rate = await verifyLimiter.consume(`${clientIp(request)}:${auth.userId}`)
     if (!rate.ok) {
       return NextResponse.json(
         { ok: false, confidence: 0, message: 'Too many attempts. Please wait before trying again.' },

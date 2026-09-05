@@ -361,3 +361,26 @@ export const userPasskeys = pgTable(
   (table) => [index('user_passkeys_user_idx').on(table.userId)],
 )
 
+export const rateLimits = pgTable('rate_limits', {
+  key: text('key').primaryKey(),
+  hits: integer('hits').notNull().default(0),
+  resetAt: timestamp('reset_at', { withTimezone: true }).notNull(),
+})
+
+export const externalAccounts = pgTable(
+  'external_accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    provider: text('provider').notNull(),
+    providerAccountId: text('provider_account_id').notNull(),
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('external_accounts_user_idx').on(table.userId),
+    uniqueIndex('external_accounts_provider_idx').on(table.provider, table.providerAccountId),
+  ],
+)

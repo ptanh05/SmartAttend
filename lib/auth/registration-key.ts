@@ -1,9 +1,7 @@
 import { timingSafeEqual } from 'crypto'
 
-const FALLBACK_TEACHER_KEY = 'fgBuIL8#GQU%Ql.#;_r^svvdB[hzCjMPNzK@2b4cV%{nvbfd3%'
-
 export function verifyTeacherRegistrationApiKey(provided: string) {
-  const expected = process.env.TEACHER_REGISTRATION_API_KEY?.trim() || FALLBACK_TEACHER_KEY
+  const expected = process.env.TEACHER_REGISTRATION_API_KEY?.trim()
   if (!expected) {
     return { ok: false as const, message: 'Teacher registration is not configured on this server.' }
   }

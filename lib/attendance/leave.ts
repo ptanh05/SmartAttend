@@ -2,6 +2,9 @@ import { and, desc, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
 import {
+  attendanceRecords,
+  attendanceSessions,
+  auditLogs,
   courses,
   leaveRequests,
   notifications,
@@ -149,13 +152,80 @@ export async function updateLeaveRequestStatus(
   const row = updatedRows[0]
   if (!row) return null
 
+  // If approved, automatically synchronize attendance record to 'excused'
+  if (status === 'approved') {
+    let targetSessionId = row.req.sessionId
+
+    // If no specific sessionId was attached, find the active or most recent session for this course
+    if (!targetSessionId) {
+      const matchedSessions = await db()
+        .select()
+        .from(attendanceSessions)
+        .where(
+          and(
+            eq(attendanceSessions.organizationId, auth.organizationId),
+            eq(attendanceSessions.courseId, row.req.courseId),
+          ),
+        )
+        .orderBy(desc(attendanceSessions.createdAt))
+        .limit(1)
+
+      targetSessionId = matchedSessions[0]?.id
+    }
+
+    if (targetSessionId) {
+      const existingRecord = await db()
+        .select()
+        .from(attendanceRecords)
+        .where(
+          and(
+            eq(attendanceRecords.sessionId, targetSessionId),
+            eq(attendanceRecords.studentId, row.req.studentId),
+          ),
+        )
+
+      if (existingRecord[0]) {
+        await db()
+          .update(attendanceRecords)
+          .set({
+            status: 'excused',
+            verificationScore: 100,
+            flaggedReason: `Đơn nghỉ phép ngày ${row.req.date}: ${row.req.reason}`,
+          })
+          .where(eq(attendanceRecords.id, existingRecord[0].id))
+      } else {
+        await db().insert(attendanceRecords).values({
+          id: nanoid(),
+          organizationId: auth.organizationId,
+          sessionId: targetSessionId,
+          studentId: row.req.studentId,
+          status: 'excused',
+          verificationScore: 100,
+          device: 'Đơn nghỉ phép duyệt',
+          flaggedReason: `Đơn nghỉ phép ngày ${row.req.date}: ${row.req.reason}`,
+          verifiedAt: now,
+        })
+      }
+    }
+  }
+
   await db().insert(notifications).values({
     id: nanoid(),
     organizationId: auth.organizationId,
     userId: row.req.studentId,
-    title: status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected',
-    body: `Your leave request for ${row.course.code} on ${row.req.date} was ${status} by ${auth.name}.`,
+    title: status === 'approved' ? 'Đơn xin nghỉ phép đã được duyệt' : 'Đơn xin nghỉ phép bị từ chối',
+    body: `Đơn xin nghỉ học phần ${row.course.code} ngày ${row.req.date} của bạn đã được ${auth.name} ${status === 'approved' ? 'chấp thuận (Có phép)' : 'từ chối'}.`,
     createdAt: now,
+  })
+
+  await db().insert(auditLogs).values({
+    id: nanoid(),
+    organizationId: auth.organizationId,
+    actorId: auth.userId,
+    actorName: auth.name,
+    action: `Leave request ${status} for ${row.student.name}`,
+    target: row.req.id,
+    severity: 'info',
   })
 
   return {

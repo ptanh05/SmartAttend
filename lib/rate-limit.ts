@@ -16,65 +16,55 @@ export type RateLimitResult = {
   remaining: number
 }
 
-export class SlidingWindowRateLimiter {
-  private readonly hits = new Map<string, number[]>()
+import { db } from '@/lib/db'
+import { rateLimits } from '@/lib/db/schema'
+import { eq, sql } from 'drizzle-orm'
 
+export class RateLimiter {
   constructor(
     private readonly windowMs: number,
     private readonly maxHits: number,
   ) {}
 
-  private usages(key: string, now: number): number[] {
-    const cutoff = now - this.windowMs
-    const arr = (this.hits.get(key) ?? []).filter((t) => t > cutoff)
-    this.hits.set(key, arr)
-    return arr
-  }
+  async consume(key: string, now = Date.now()): Promise<RateLimitResult> {
+    const resetDate = new Date(now + this.windowMs)
+    const result = await db()
+      .insert(rateLimits)
+      .values({ key, hits: 1, resetAt: resetDate })
+      .onConflictDoUpdate({
+        target: rateLimits.key,
+        set: {
+          hits: sql`CASE WHEN ${rateLimits.resetAt} < now() THEN 1 ELSE ${rateLimits.hits} + 1 END`,
+          resetAt: sql`CASE WHEN ${rateLimits.resetAt} < now() THEN ${resetDate}::timestamp with time zone ELSE ${rateLimits.resetAt} END`,
+        },
+      })
+      .returning()
 
-  private lastSweep = 0
-
-  /**
-   * Records a request for `key` and returns whether it is still allowed.
-   * The hit is counted even when the request is rejected.
-   */
-  consume(key: string, now = Date.now()): RateLimitResult {
-    if (now - this.lastSweep > this.windowMs || this.hits.size > 500) {
-      this.clearExpired(now)
-      this.lastSweep = now
-    }
-    const arr = this.usages(key, now)
-    if (arr.length >= this.maxHits) {
-      const oldest = arr[0]
+    const record = result[0]
+    if (record.hits > this.maxHits) {
       return {
         ok: false,
-        retryAfterSeconds: Math.max(1, Math.ceil((oldest + this.windowMs - now) / 1000)),
+        retryAfterSeconds: Math.max(1, Math.ceil((record.resetAt.getTime() - now) / 1000)),
         remaining: 0,
       }
     }
-    arr.push(now)
-    this.hits.set(key, arr)
-    return { ok: true, retryAfterSeconds: 0, remaining: this.maxHits - arr.length }
-  }
-
-  /** Clears all recorded hits for `key` (e.g. after a successful login). */
-  reset(key: string) {
-    this.hits.delete(key)
-  }
-
-  /** Removes counters that have not been touched recently. */
-  clearExpired(now = Date.now()) {
-    const cutoff = now - this.windowMs
-    for (const [key, arr] of this.hits) {
-      if (arr.length === 0 || arr[arr.length - 1] <= cutoff) this.hits.delete(key)
+    return {
+      ok: true,
+      retryAfterSeconds: 0,
+      remaining: this.maxHits - record.hits,
     }
+  }
+
+  async reset(key: string) {
+    await db().delete(rateLimits).where(eq(rateLimits.key, key))
   }
 }
 
 /** Login: up to 10 attempts per 15 minutes per (IP + identifier). */
-export const loginLimiter = new SlidingWindowRateLimiter(15 * 60 * 1000, 10)
+export const loginLimiter = new RateLimiter(15 * 60 * 1000, 10)
 
 /** Attendance verification: up to 5 checks per minute per (IP + account). */
-export const verifyLimiter = new SlidingWindowRateLimiter(60 * 1000, 5)
+export const verifyLimiter = new RateLimiter(60 * 1000, 5)
 
 /** Best-effort client IP extraction from common proxy headers. */
 export function clientIp(request: Request): string {

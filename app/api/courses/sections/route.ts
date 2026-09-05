@@ -4,8 +4,7 @@ import { AuthError, getCurrentAuth, requireAuth } from '@/lib/auth/context'
 
 export async function GET() {
   try {
-    const auth = await getCurrentAuth()
-    if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+    const auth = await requireAuth(['teacher', 'admin'])
     const sections = await listClassSessions(auth.organizationId)
     return NextResponse.json({ ok: true, sections })
   } catch (error) {

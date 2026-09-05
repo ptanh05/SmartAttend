@@ -130,6 +130,51 @@ async function getPolicy(organizationId: string) {
   return rows[0] ?? { challengeTtlSeconds: 30, lateAfterMinutes: 10, requireTrustedDevice: false }
 }
 
+export async function getAttendancePolicy(organizationId: string) {
+  return getPolicy(organizationId)
+}
+
+export async function updateAttendancePolicy(
+  auth: AuthContext,
+  data: {
+    challengeTtlSeconds?: number
+    lateAfterMinutes?: number
+    requireTrustedDevice?: boolean
+  },
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+
+  const existing = await db()
+    .select()
+    .from(attendancePolicies)
+    .where(eq(attendancePolicies.organizationId, auth.organizationId))
+
+  if (existing[0]) {
+    await db()
+      .update(attendancePolicies)
+      .set({
+        challengeTtlSeconds: data.challengeTtlSeconds ?? existing[0].challengeTtlSeconds,
+        lateAfterMinutes: data.lateAfterMinutes ?? existing[0].lateAfterMinutes,
+        requireTrustedDevice: data.requireTrustedDevice ?? existing[0].requireTrustedDevice,
+      })
+      .where(eq(attendancePolicies.id, existing[0].id))
+  } else {
+    await db().insert(attendancePolicies).values({
+      id: nanoid(),
+      organizationId: auth.organizationId,
+      challengeTtlSeconds: data.challengeTtlSeconds ?? 30,
+      lateAfterMinutes: data.lateAfterMinutes ?? 10,
+      requireTrustedDevice: data.requireTrustedDevice ?? false,
+    })
+  }
+
+  await appendAudit(auth, 'Updated attendance policy', auth.organizationId, 'info')
+  const updated = await getPolicy(auth.organizationId)
+  return { ok: true as const, policy: updated }
+}
+
 async function getActiveChallenge(sessionId: string) {
   const rows = await db()
     .select()
@@ -718,11 +763,92 @@ export async function listAuditLogs(auth: AuthContext) {
 
 export async function listSuspicious(auth: AuthContext) {
   const rows = await db()
+    .select({
+      suspicious: suspiciousAttempts,
+      record: attendanceRecords,
+      student: users,
+      membership: organizationMemberships,
+    })
+    .from(suspiciousAttempts)
+    .leftJoin(attendanceRecords, eq(suspiciousAttempts.attendanceRecordId, attendanceRecords.id))
+    .leftJoin(users, eq(attendanceRecords.studentId, users.id))
+    .leftJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, users.id),
+        eq(organizationMemberships.organizationId, auth.organizationId),
+      ),
+    )
+    .where(and(eq(suspiciousAttempts.organizationId, auth.organizationId), eq(suspiciousAttempts.status, 'open')))
+    .orderBy(desc(suspiciousAttempts.createdAt))
+
+  return rows.map(({ suspicious, record, student, membership }) => ({
+    id: suspicious.id,
+    attendanceRecordId: suspicious.attendanceRecordId,
+    studentName: student?.name ?? 'Sinh viên',
+    studentCode: membership?.studentCode ?? '',
+    reason: suspicious.reason,
+    status: suspicious.status,
+    device: record?.device ?? 'Thiết bị chưa xác thực',
+    createdAt: formatRelativeTime(suspicious.createdAt),
+  }))
+}
+
+export async function resolveSuspiciousAttempt(
+  auth: AuthContext,
+  attemptId: string,
+  action: 'approved' | 'dismissed',
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+
+  const rows = await db()
     .select()
     .from(suspiciousAttempts)
-    .where(and(eq(suspiciousAttempts.organizationId, auth.organizationId), eq(suspiciousAttempts.status, 'open')))
+    .where(and(eq(suspiciousAttempts.id, attemptId), eq(suspiciousAttempts.organizationId, auth.organizationId)))
 
-  return rows.map((row) => ({ id: row.id, reason: row.reason, status: row.status }))
+  const attempt = rows[0]
+  if (!attempt) return { ok: false as const, message: 'Suspicious attempt not found.' }
+
+  const now = new Date()
+
+  await db()
+    .update(suspiciousAttempts)
+    .set({
+      status: 'resolved',
+      reviewedBy: auth.userId,
+      reviewedAt: now,
+    })
+    .where(eq(suspiciousAttempts.id, attemptId))
+
+  if (action === 'dismissed' && attempt.attendanceRecordId) {
+    await db()
+      .update(attendanceRecords)
+      .set({
+        status: 'absent',
+        verificationScore: 0,
+        flaggedReason: `Bác bỏ bởi ${auth.name}: ${attempt.reason}`,
+      })
+      .where(eq(attendanceRecords.id, attempt.attendanceRecordId))
+  } else if (action === 'approved' && attempt.attendanceRecordId) {
+    await db()
+      .update(attendanceRecords)
+      .set({
+        verificationScore: 90,
+        flaggedReason: `Được phê duyệt bởi ${auth.name}`,
+      })
+      .where(eq(attendanceRecords.id, attempt.attendanceRecordId))
+  }
+
+  await appendAudit(
+    auth,
+    `Resolved suspicious attempt ${attemptId} (${action})`,
+    attemptId,
+    action === 'dismissed' ? 'warning' : 'info',
+  )
+
+  return { ok: true as const }
 }
 
 export async function getOrganizationMetrics(auth: AuthContext) {

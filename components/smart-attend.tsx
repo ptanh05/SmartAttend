@@ -1469,6 +1469,55 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
+  const [policyTtl, setPolicyTtl] = useState(data.policy?.challengeTtlSeconds ?? 30)
+  const [policyLateAfter, setPolicyLateAfter] = useState(data.policy?.lateAfterMinutes ?? 10)
+  const [policyRequireTrusted, setPolicyRequireTrusted] = useState(data.policy?.requireTrustedDevice ?? false)
+  const [savingPolicy, setSavingPolicy] = useState(false)
+
+  useEffect(() => {
+    if (data.policy) {
+      setPolicyTtl(data.policy.challengeTtlSeconds)
+      setPolicyLateAfter(data.policy.lateAfterMinutes)
+      setPolicyRequireTrusted(data.policy.requireTrustedDevice)
+    }
+  }, [data.policy])
+
+  const handleSavePolicy = async () => {
+    setSavingPolicy(true)
+    try {
+      const res = await api.updatePolicy({
+        challengeTtlSeconds: Number(policyTtl),
+        lateAfterMinutes: Number(policyLateAfter),
+        requireTrustedDevice: policyRequireTrusted,
+      })
+      if (res.ok) {
+        setSaved(true)
+        setNotice(t('teacher.settingsSaved'))
+        await refresh()
+      } else {
+        setNotice(res.message || 'Lỗi khi lưu chính sách')
+      }
+    } catch {
+      setNotice('Lỗi kết nối khi lưu cài đặt.')
+    } finally {
+      setSavingPolicy(false)
+    }
+  }
+
+  const handleResolveSuspicious = async (attemptId: string, action: 'approved' | 'dismissed') => {
+    try {
+      const res = await api.resolveSuspicious(attemptId, action)
+      if (res.ok) {
+        setNotice(action === 'approved' ? 'Đã duyệt điểm danh hợp lệ cho sinh viên.' : 'Đã hủy bỏ kết quả điểm danh do gian lận.')
+        await refresh()
+      } else {
+        setNotice(res.message || 'Lỗi khi xử lý điểm danh đáng ngờ.')
+      }
+    } catch {
+      setNotice('Lỗi kết nối khi cập nhật điểm danh đáng ngờ.')
+    }
+  }
+
   const isAdmin = role === 'admin'
   const liveActive = Boolean(live)
   const students = users.filter((item) => item.role === 'student')
@@ -2028,7 +2077,128 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   if (page === 'analytics' || page === 'reports') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={page === 'reports' ? t('teacher.reportsTitle') : t('teacher.analyticsTitle')} detail={t('teacher.analyticsDetail')} action={<Button variant="outline" onClick={() => api.downloadAttendanceReport()}><Download />{page === 'reports' ? t('common.exportReport') : t('common.exportData')}</Button>} /><div className="grid gap-4 sm:grid-cols-3"><Metric label={t('teacher.averageAttendance')} value={metrics.attendanceRate} detail={t('common.organizationAverage')} icon={BarChart3} /><Metric label={t('teacher.students')} value={String(metrics.students)} detail={t('common.enrolled')} icon={Users} /><Metric label={t('teacher.suspiciousAttempts')} value={String(metrics.flagged)} detail={t('common.needsReview')} icon={CircleAlert} tone="warning" /></div><Card title={t('teacher.attendanceByCourse')}><div className="flex flex-col gap-5">{courses.map((course) => <div key={course.id}><div className="mb-2 flex justify-between text-sm"><span className="font-medium">{course.code} · {course.name}</span><span className="text-muted-foreground">{t('teacher.enrolledCount', { count: course.enrolled })}</span></div><div className="h-2 rounded-full bg-muted"><div className="h-2 w-3/4 rounded-full bg-primary" /></div><div className="mt-3 flex items-center gap-2"><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id })}><Download />{t('common.export')}</Button><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id, scope: 'detail' })}><Download />{t('teacher.detailedCsv')}</Button></div></div>)}</div></Card></div>
   if (page === 'audit') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={adminEyebrow} title={t('teacher.activityLog')} detail={t('teacher.activityDetail')} action={<Button variant="outline" onClick={() => api.downloadAuditReport()}><Download />{t('common.exportLog')}</Button>} /><Card title={t('teacher.recentActivity')} description={organization.name}><div className="divide-y">{auditEvents.map((event) => <div key={event.id} className="flex gap-4 py-4"><div className={`mt-1 size-2 rounded-full ${event.severity === 'warning' ? 'bg-amber-500' : 'bg-primary'}`} /><div className="flex-1"><p className="text-sm"><span className="font-medium">{event.actor}</span> {event.action}</p><p className="mt-1 text-xs text-muted-foreground">{event.target} · {event.createdAt}</p></div><Status tone={event.severity === 'warning' ? 'warning' : 'neutral'}>{statusText(t, event.severity)}</Status></div>)}</div></Card></div>
-  if (page === 'settings') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={t('teacher.settingsTitle')} detail={t('teacher.settingsDetail')} /><Card title={t('teacher.orgProfile')}><div className="grid gap-4 sm:grid-cols-2"><label className="flex flex-col gap-2 text-sm font-medium">{t('teacher.orgName')}<input className="h-11 rounded-lg border bg-background px-3" defaultValue={organization.name} /></label><label className="flex flex-col gap-2 text-sm font-medium">{t('teacher.attendancePolicy')}<input className="h-11 rounded-lg border bg-background px-3" defaultValue={t('teacher.policyDefault')} /></label></div><Button className="mt-5" onClick={() => { setSaved(true); setNotice(t('teacher.settingsSaved')) }}>{saved ? <><Check />{t('common.saved')}</> : t('common.saveChanges')}</Button></Card></div>
+  if (page === 'settings') {
+    return (
+      <div className="flex flex-col gap-6">
+        {notice && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-center justify-between">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} className="text-emerald-600 hover:text-emerald-900 cursor-pointer">
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
+        <SectionHeader eyebrow={staffEyebrow} title={t('teacher.settingsTitle')} detail={t('teacher.settingsDetail')} />
+
+        <Card title={t('teacher.orgProfile')}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              {t('teacher.orgName')}
+              <input className="h-11 rounded-lg border bg-muted/40 px-3 text-sm" defaultValue={organization.name} disabled />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Gói giải pháp
+              <input className="h-11 rounded-lg border bg-muted/40 px-3 text-sm" defaultValue="SmartAttend Anti-Proxy Ultrasonic + Biometrics" disabled />
+            </label>
+          </div>
+        </Card>
+
+        <Card title={t('teacher.attendancePolicy')} description="Cấu hình cơ chế điểm danh thông minh chống gian lận & proxy check-in">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-foreground">
+                Tần suất xoay mã Challenge (Dynamic QR / Code)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Mã sẽ tự động làm mới sau khoảng thời gian này. Ngăn chặn chụp ảnh gửi cho bạn bè ở nhà điểm danh hộ.
+              </p>
+              <select
+                value={policyTtl}
+                onChange={(e) => setPolicyTtl(Number(e.target.value))}
+                className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
+              >
+                <option value={15}>15 giây (Bảo mật tối đa)</option>
+                <option value={30}>30 giây (Tiêu chuẩn khuyên dùng)</option>
+                <option value={45}>45 giây</option>
+                <option value={60}>60 giây (1 phút)</option>
+                <option value={120}>120 giây (2 phút)</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-foreground">
+                Thời gian ân hạn tính đi muộn (Grace Period)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Sinh viên điểm danh sau mốc thời gian này tính từ khi bắt đầu phiên sẽ tự động đánh dấu "Muộn".
+              </p>
+              <select
+                value={policyLateAfter}
+                onChange={(e) => setPolicyLateAfter(Number(e.target.value))}
+                className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
+              >
+                <option value={5}>5 phút sau khi bắt đầu</option>
+                <option value={10}>10 phút sau khi bắt đầu (Tiêu chuẩn)</option>
+                <option value={15}>15 phút sau khi bắt đầu</option>
+                <option value={20}>20 phút sau khi bắt đầu</option>
+                <option value={30}>30 phút sau khi bắt đầu</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-6 border-t flex items-start gap-4">
+            <div className="pt-0.5">
+              <input
+                id="requireTrustedDevice"
+                type="checkbox"
+                checked={policyRequireTrusted}
+                onChange={(e) => setPolicyRequireTrusted(e.target.checked)}
+                className="size-5 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+              />
+            </div>
+            <label htmlFor="requireTrustedDevice" className="flex-1 cursor-pointer">
+              <span className="text-sm font-semibold text-foreground block">
+                Bắt buộc thiết bị tin cậy (Device Trust & Hardware Fingerprint)
+              </span>
+              <span className="text-xs text-muted-foreground block mt-0.5">
+                Chỉ cho phép điểm danh trên thiết bị sinh viên đã liên kết. Ngăn chặn trường hợp 1 sinh viên cầm 2 điện thoại điểm danh hộ.
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 pt-6 border-t">
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-center gap-2 text-primary font-semibold text-sm">
+                <Waves className="size-4" />
+                <span>Sóng âm siêu âm 18.75 kHz (Ultrasonic)</span>
+                <span className="ml-auto text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">KÍCH HOẠT</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Sóng siêu âm không xuyên qua được tường và cửa kính phòng học. Sinh viên bắt buộc phải có mặt trực tiếp trong phòng để micrô giải mã beacon.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm">
+                <Fingerprint className="size-4" />
+                <span>Sinh trắc học Native (Face ID / Touch ID)</span>
+                <span className="ml-auto text-[10px] bg-emerald-600/20 text-emerald-700 px-2 py-0.5 rounded-full font-bold">CHUẨN FIDO2</span>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Xác thực WebAuthn Passkeys tận dụng Face ID/vân tay phần cứng trên điện thoại sinh viên. Tự động chấm điểm xác minh 100%.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <Button onClick={handleSavePolicy} disabled={savingPolicy}>
+              {savingPolicy ? 'Đang lưu...' : saved ? <><Check />{t('common.saved')}</> : t('common.saveChanges')}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-6">
       {notice && (
@@ -2103,22 +2273,63 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         )}
       </Card>
 
-      <Card title={t('teacher.suspiciousAttendance')} description={t('teacher.suspiciousDetail')} action={<Button variant="ghost" onClick={() => go('students')}>{t('common.viewAll')} <ChevronRight /></Button>}>
-        <div className="divide-y">
-          {suspicious.map((item) => (
-            <div className="flex items-center gap-3 py-3" key={item.id}>
-              <CircleAlert className="text-amber-600" />
-              <p className="flex-1 text-sm">{item.reason}</p>
-              {reviewed.includes(item.id) ? (
-                <Status>{t('common.reviewed')}</Status>
-              ) : (
-                <Button variant="outline" onClick={() => setReviewed([...reviewed, item.id])}>
-                  {t('common.review')}
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
+      <Card
+        title={t('teacher.suspiciousAttendance')}
+        description={t('teacher.suspiciousDetail')}
+        action={<Button variant="ghost" onClick={() => go('students')}>{t('common.viewAll')} <ChevronRight /></Button>}
+      >
+        {suspicious.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+            <CheckCircle2 className="size-8 text-emerald-500" />
+            <p className="font-medium text-foreground">Không có lượt điểm danh đáng ngờ nào</p>
+            <p className="text-xs">Hệ thống bảo vệ bằng sóng âm siêu âm và sinh trắc học Face ID đang hoạt động an toàn.</p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {suspicious.map((item) => (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5" key={item.id}>
+                <div className="flex items-start gap-3">
+                  <CircleAlert className="mt-0.5 size-5 text-amber-500 shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm text-foreground">{item.studentName ?? 'Sinh viên'}</span>
+                      {item.studentCode && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                          {item.studentCode}
+                        </span>
+                      )}
+                      {item.createdAt && (
+                        <span className="text-xs text-muted-foreground">· {item.createdAt}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-amber-700 mt-0.5">{item.reason}</p>
+                    {item.device && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                        <Smartphone className="size-3 inline" /> {item.device}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleResolveSuspicious(item.id, 'approved')}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors cursor-pointer"
+                  >
+                    Chấp nhận
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleResolveSuspicious(item.id, 'dismissed')}
+                    className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+                  >
+                    Hủy kết quả
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   )

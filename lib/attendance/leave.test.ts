@@ -4,6 +4,10 @@ import { nanoid } from 'nanoid'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
+  attendanceRecords,
+  attendanceSessions,
+  auditLogs,
+  courseSections,
   courses,
   leaveRequests,
   notifications,
@@ -36,11 +40,13 @@ function makeAuthContext(overrides: Partial<AuthContext>): AuthContext {
 }
 
 describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
-  it('allows a student to submit a request, teachers to review, and filters by student and organization', async () => {
+  it('allows a student to submit a request, teachers to review, and auto-syncs to excused attendance records', async () => {
     const orgId = `org_leave_${nanoid(8)}`
     const teacherId = `usr_t_${nanoid(8)}`
     const studentId = `usr_s_${nanoid(8)}`
     const courseId = `crs_${nanoid(8)}`
+    const sectionId = `sec_${nanoid(8)}`
+    const sessionId = `ses_${nanoid(8)}`
 
     const teacherAuth = makeAuthContext({
       userId: teacherId,
@@ -76,6 +82,23 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
         department: 'IT',
         teacherId,
       })
+      await db().insert(courseSections).values({
+        id: sectionId,
+        organizationId: orgId,
+        courseId,
+        room: 'P.301',
+        dayOfWeek: 2,
+        startsAt: '08:00',
+        endsAt: '10:00',
+      })
+      await db().insert(attendanceSessions).values({
+        id: sessionId,
+        organizationId: orgId,
+        sectionId,
+        courseId,
+        teacherId,
+        status: 'active',
+      })
 
       // 2. Student submits leave request
       const newReq = await addLeaveRequest(studentAuth, {
@@ -100,27 +123,41 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
       expect(teacherList.length).toBe(1)
       expect(teacherList[0].id).toBe(newReq.id)
 
-      // 5. Teacher approves leave request
+      // 5. Teacher approves leave request -> must auto-sync to excused attendance record
       const approved = await updateLeaveRequestStatus(teacherAuth, newReq.id, 'approved')
       expect(approved?.status).toBe('approved')
       expect(approved?.reviewedBy).toBe(teacherAuth.name)
       expect(approved?.reviewedAt).toBeDefined()
 
-      // 6. Verify student received notification
+      // 6. Verify attendance record auto-synchronized with 'excused' status and 100 verification score
+      const records = await db()
+        .select()
+        .from(attendanceRecords)
+        .where(eq(attendanceRecords.studentId, studentId))
+      expect(records.length).toBe(1)
+      expect(records[0].status).toBe('excused')
+      expect(records[0].verificationScore).toBe(100)
+      expect(records[0].sessionId).toBe(sessionId)
+
+      // 7. Verify student received notification
       const notifs = await db()
         .select()
         .from(notifications)
         .where(eq(notifications.userId, studentId))
       expect(notifs.length).toBeGreaterThan(0)
-      expect(notifs[0].title).toContain('Approved')
+      expect(notifs[0].title).toContain('duyệt')
 
-      // 7. Teacher rejects another request
+      // 8. Teacher rejects another request
       const rejected = await updateLeaveRequestStatus(teacherAuth, newReq.id, 'rejected')
       expect(rejected?.status).toBe('rejected')
     } finally {
+      await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId))
+      await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId))
+      await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(notifications).where(eq(notifications.organizationId, orgId))
       await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))
       await db().delete(courses).where(eq(courses.organizationId, orgId))
+      await db().delete(auditLogs).where(eq(auditLogs.organizationId, orgId))
       await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
       await db().delete(users).where(eq(users.id, teacherId))
       await db().delete(users).where(eq(users.id, studentId))
@@ -128,3 +165,4 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
     }
   }, 30_000)
 })
+

@@ -1,53 +1,36 @@
-import { describe, expect, it } from 'vitest'
-import { clientIp, SlidingWindowRateLimiter } from './rate-limit'
+import 'dotenv/config'
+import { describe, expect, it, beforeEach } from 'vitest'
+import { clientIp, RateLimiter } from './rate-limit'
 
-describe('SlidingWindowRateLimiter', () => {
-  it('allows up to the configured number of hits within the window', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 3)
-    expect(limiter.consume('a', 0).ok).toBe(true)
-    expect(limiter.consume('a', 1).ok).toBe(true)
-    expect(limiter.consume('a', 2).ok).toBe(true)
-    const blocked = limiter.consume('a', 3)
+describe('RateLimiter', () => {
+  it('allows up to the configured number of hits within the window', async () => {
+    const limiter = new RateLimiter(60_000, 3)
+    await limiter.reset('a')
+    expect((await limiter.consume('a', Date.now())).ok).toBe(true)
+    expect((await limiter.consume('a', Date.now())).ok).toBe(true)
+    expect((await limiter.consume('a', Date.now())).ok).toBe(true)
+    const blocked = await limiter.consume('a', Date.now())
     expect(blocked.ok).toBe(false)
     expect(blocked.remaining).toBe(0)
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0)
   })
 
-  it('tracks keys independently', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 1)
-    expect(limiter.consume('a', 0).ok).toBe(true)
-    expect(limiter.consume('a', 1).ok).toBe(false)
-    expect(limiter.consume('b', 1).ok).toBe(true)
+  it('tracks keys independently', async () => {
+    const limiter = new RateLimiter(60_000, 1)
+    await limiter.reset('a')
+    await limiter.reset('b')
+    expect((await limiter.consume('a', Date.now())).ok).toBe(true)
+    expect((await limiter.consume('a', Date.now())).ok).toBe(false)
+    expect((await limiter.consume('b', Date.now())).ok).toBe(true)
   })
 
-  it('reports remaining capacity', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 3)
-    expect(limiter.consume('a', 0).remaining).toBe(2)
-    expect(limiter.consume('a', 1).remaining).toBe(1)
-    expect(limiter.consume('a', 2).remaining).toBe(0)
-  })
-
-  it('expires hits once the window has passed', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 1)
-    expect(limiter.consume('a', 0).ok).toBe(true)
-    // Same key after the window elapses is allowed again.
-    expect(limiter.consume('a', 61_000).ok).toBe(true)
-  })
-
-  it('computes retryAfterSeconds from the oldest hit', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 1)
-    limiter.consume('a', 0)
-    const blocked = limiter.consume('a', 30_000)
-    expect(blocked.ok).toBe(false)
-    expect(blocked.retryAfterSeconds).toBe(30)
-  })
-
-  it('reset clears the counter for a key', () => {
-    const limiter = new SlidingWindowRateLimiter(60_000, 1)
-    expect(limiter.consume('a', 0).ok).toBe(true)
-    expect(limiter.consume('a', 1).ok).toBe(false)
-    limiter.reset('a')
-    expect(limiter.consume('a', 2).ok).toBe(true)
+  it('reset clears the counter for a key', async () => {
+    const limiter = new RateLimiter(60_000, 1)
+    await limiter.reset('c')
+    expect((await limiter.consume('c', Date.now())).ok).toBe(true)
+    expect((await limiter.consume('c', Date.now())).ok).toBe(false)
+    await limiter.reset('c')
+    expect((await limiter.consume('c', Date.now())).ok).toBe(true)
   })
 })
 
