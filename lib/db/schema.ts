@@ -184,6 +184,7 @@ export const attendanceChallenges = pgTable(
       .notNull()
       .references(() => attendanceSessions.id),
     sequence: integer('sequence').notNull(),
+    code: text('code'),
     valueHash: text('value_hash').notNull(),
     status: text('status').notNull().default('active'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

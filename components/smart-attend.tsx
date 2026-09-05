@@ -1473,14 +1473,15 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [policyLateAfter, setPolicyLateAfter] = useState(data.policy?.lateAfterMinutes ?? 10)
   const [policyRequireTrusted, setPolicyRequireTrusted] = useState(data.policy?.requireTrustedDevice ?? false)
   const [savingPolicy, setSavingPolicy] = useState(false)
+  const [policyDirty, setPolicyDirty] = useState(false)
 
   useEffect(() => {
-    if (data.policy) {
+    if (data.policy && !policyDirty) {
       setPolicyTtl(data.policy.challengeTtlSeconds)
       setPolicyLateAfter(data.policy.lateAfterMinutes)
       setPolicyRequireTrusted(data.policy.requireTrustedDevice)
     }
-  }, [data.policy])
+  }, [data.policy?.challengeTtlSeconds, data.policy?.lateAfterMinutes, data.policy?.requireTrustedDevice, policyDirty])
 
   const handleSavePolicy = async () => {
     setSavingPolicy(true)
@@ -1492,7 +1493,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       })
       if (res.ok) {
         setSaved(true)
+        setPolicyDirty(false)
         setNotice(t('teacher.settingsSaved'))
+        if (live?.sessionId) {
+          await api.sessionAction(live.sessionId, 'rotate').catch(() => {})
+        }
         await refresh()
       } else {
         setNotice(res.message || 'Lỗi khi lưu chính sách')
@@ -1563,7 +1568,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
-  const rotateChallenge = async () => {
+  const rotateChallenge = useCallback(async () => {
     if (!live?.sessionId) return
     try {
       const result = await api.sessionAction(live.sessionId, 'rotate')
@@ -1572,7 +1577,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     } catch (err) {
       setNotice(err instanceof Error ? err.message : t('teacher.rotateFailed'))
     }
-  }
+  }, [live?.sessionId, refresh, t])
 
   const deleteSection = async (sectionId: string) => {
     if (!confirm(t('common.confirmDeleteSchedule'))) return
@@ -1647,7 +1652,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <span className="rounded-xl bg-primary/10 px-6 py-2.5 font-mono text-3xl font-bold tracking-[0.25em] text-primary">
                       {live.challenge}
                     </span>
-                    <CountdownTimer expiresAt={live.challengeExpiresAt} onExpire={rotateChallenge} />
+                    <CountdownTimer expiresAt={live.challengeExpiresAt} totalSeconds={data.policy?.challengeTtlSeconds ?? 30} onExpire={rotateChallenge} />
                   </div>
 
                   <div className="w-full max-w-xs">
@@ -1778,7 +1783,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       {live.challenge}
                     </span>
                     <div className="scale-125">
-                      <CountdownTimer expiresAt={live.challengeExpiresAt} onExpire={rotateChallenge} />
+                      <CountdownTimer expiresAt={live.challengeExpiresAt} totalSeconds={data.policy?.challengeTtlSeconds ?? 30} onExpire={rotateChallenge} />
                     </div>
                   </div>
 
@@ -2114,7 +2119,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               </p>
               <select
                 value={policyTtl}
-                onChange={(e) => setPolicyTtl(Number(e.target.value))}
+                onChange={(e) => {
+                  setPolicyTtl(Number(e.target.value))
+                  setPolicyDirty(true)
+                  setSaved(false)
+                }}
                 className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
               >
                 <option value={15}>15 giây (Bảo mật tối đa)</option>
@@ -2134,7 +2143,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               </p>
               <select
                 value={policyLateAfter}
-                onChange={(e) => setPolicyLateAfter(Number(e.target.value))}
+                onChange={(e) => {
+                  setPolicyLateAfter(Number(e.target.value))
+                  setPolicyDirty(true)
+                  setSaved(false)
+                }}
                 className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
               >
                 <option value={5}>5 phút sau khi bắt đầu</option>
@@ -2152,7 +2165,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 id="requireTrustedDevice"
                 type="checkbox"
                 checked={policyRequireTrusted}
-                onChange={(e) => setPolicyRequireTrusted(e.target.checked)}
+                onChange={(e) => {
+                  setPolicyRequireTrusted(e.target.checked)
+                  setPolicyDirty(true)
+                  setSaved(false)
+                }}
                 className="size-5 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
               />
             </div>

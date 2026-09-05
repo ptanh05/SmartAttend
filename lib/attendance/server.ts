@@ -92,7 +92,8 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
 
   const challengeBySession = new Map<string, string>()
   for (const live of liveSessions) {
-    const challenge = await getActiveChallengePlain(live.session.id)
+    const activeChallenge = await getActiveChallenge(live.session.id)
+    const challenge = activeChallenge?.code ?? (await getActiveChallengePlain(live.session.id))
     if (challenge) challengeBySession.set(live.session.id, challenge)
   }
 
@@ -236,6 +237,7 @@ export async function rotateChallengeForSession(auth: AuthContext, sessionId: st
     organizationId: auth.organizationId,
     sessionId,
     sequence,
+    code: value,
     valueHash: hashChallengeValue(value),
     status: 'active',
     expiresAt,
@@ -600,14 +602,15 @@ export async function getLiveSessionDetails(auth: AuthContext) {
   const row = rows[0]
   if (!row) return null
 
-  let challenge = await getActiveChallengePlain(row.session.id)
-  let challengeExpiresAt: string | undefined
   const activeChallengeRow = await getActiveChallenge(row.session.id)
-  if (activeChallengeRow) {
-    challengeExpiresAt = activeChallengeRow.expiresAt.toISOString()
-  }
+  let challenge = activeChallengeRow?.code ?? (await getActiveChallengePlain(row.session.id))
+  let challengeExpiresAt: string | undefined
 
-  if (!challenge) {
+  const isExpired = activeChallengeRow && new Date(activeChallengeRow.expiresAt).getTime() <= Date.now()
+
+  if (activeChallengeRow && !isExpired && challenge) {
+    challengeExpiresAt = activeChallengeRow.expiresAt.toISOString()
+  } else {
     const rotated = await rotateChallengeForSession(auth, row.session.id)
     challenge = rotated.ok ? rotated.challenge : '------'
     if (rotated.ok && rotated.expiresAt) {

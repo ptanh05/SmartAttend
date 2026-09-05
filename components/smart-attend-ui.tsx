@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react'
+import QRCode from 'qrcode'
 import {
   Activity,
   BarChart3,
@@ -296,8 +297,6 @@ export function formatDayOfWeek(t: (key: string) => string, dayOfWeek?: number) 
   return text || `Thứ ${dayOfWeek === 7 ? 'CN' : dayOfWeek + 1}`
 }
 
-import QRCode from 'qrcode'
-import { useEffect } from 'react'
 
 export function DynamicQRCode({
   value,
@@ -352,8 +351,6 @@ export function DynamicQRCode({
   )
 }
 
-import { useCallback } from 'react'
-
 export function CountdownTimer({
   expiresAt,
   totalSeconds = 30,
@@ -369,19 +366,29 @@ export function CountdownTimer({
   }, [expiresAt, totalSeconds])
 
   const [secondsLeft, setSecondsLeft] = useState<number>(calculateRemaining)
+  const onExpireRef = useRef(onExpire)
+  onExpireRef.current = onExpire
+  const hasExpiredRef = useRef(false)
+
+  useEffect(() => {
+    hasExpiredRef.current = false
+    setSecondsLeft(calculateRemaining())
+  }, [expiresAt, calculateRemaining])
 
   useEffect(() => {
     const update = () => {
       const remaining = calculateRemaining()
       setSecondsLeft(remaining)
-      if (remaining <= 0 && onExpire) {
-        onExpire()
+      if (remaining <= 0 && !hasExpiredRef.current) {
+        hasExpiredRef.current = true
+        onExpireRef.current?.()
       }
     }
 
+    update()
     const interval = setInterval(update, 1000)
     return () => clearInterval(interval)
-  }, [calculateRemaining, onExpire])
+  }, [calculateRemaining])
 
   const percentage = Math.min(100, Math.max(0, (secondsLeft / totalSeconds) * 100))
   const isLow = secondsLeft <= 5
