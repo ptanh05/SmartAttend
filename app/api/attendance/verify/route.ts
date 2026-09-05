@@ -17,7 +17,15 @@ export async function POST(request: Request) {
     const body = await request.json()
     const code = challengeCode(body.code)
     const device = typeof body.device === 'string' ? body.device : 'This browser'
-    const result = await verifyAttendance(auth, code, device)
+    const method = typeof body.method === 'string' ? body.method : 'manual_code'
+    const ultrasonicVerified = Boolean(body.ultrasonicVerified)
+    const biometricVerified = Boolean(body.biometricVerified)
+
+    const result = await verifyAttendance(auth, code, device, {
+      method,
+      ultrasonicVerified,
+      biometricVerified,
+    })
     return NextResponse.json(result, { status: result.ok ? 200 : 400 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Verification failed.'

@@ -421,4 +421,42 @@ export function CountdownTimer({
   )
 }
 
+export function UltrasonicWaveVisualizer({
+  active,
+  frequency = 18750,
+  className = '',
+}: {
+  active: boolean
+  frequency?: number
+  className?: string
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-xl border p-2.5 transition-all ${
+        active
+          ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300 shadow-sm'
+          : 'border-slate-700/60 bg-slate-800/40 text-slate-400'
+      } ${className}`}
+    >
+      <div className="relative flex size-7 items-center justify-center">
+        {active && (
+          <>
+            <span className="absolute size-7 animate-ping rounded-full bg-indigo-400/30" />
+            <span className="absolute size-5 animate-pulse rounded-full bg-indigo-500/40" />
+          </>
+        )}
+        <span className={`size-3 rounded-full ${active ? 'bg-indigo-400' : 'bg-slate-500'}`} />
+      </div>
+      <div className="flex flex-col text-left text-xs">
+        <span className="font-semibold tracking-wide">
+          {active ? `Sóng siêu âm: ${(frequency / 1000).toFixed(2)} kHz (Đang phát)` : 'Sóng siêu âm: Đang tắt'}
+        </span>
+        <span className="text-[10px] opacity-80">
+          {active ? 'Xác thực hiện diện trong phòng kín' : 'Bật để chống chụp ảnh gửi về nhà'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export type { FormEvent }

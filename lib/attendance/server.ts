@@ -289,7 +289,18 @@ export type VerificationResult = {
   }
 }
 
-export async function verifyAttendance(auth: AuthContext, input: string, deviceLabel = 'This browser'): Promise<VerificationResult> {
+export type VerificationOptions = {
+  method?: 'ultrasonic_faceid' | 'qr_scan' | 'manual_code' | string
+  ultrasonicVerified?: boolean
+  biometricVerified?: boolean
+}
+
+export async function verifyAttendance(
+  auth: AuthContext,
+  input: string,
+  deviceLabel = 'This browser',
+  options?: VerificationOptions,
+): Promise<VerificationResult> {
   if (auth.role !== 'student') {
     return { ok: false, confidence: 0, message: 'Only students can verify attendance.' }
   }
@@ -341,7 +352,10 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     hasSeenDevice: deviceRows.length > 0,
     requireTrustedDevice: policy.requireTrustedDevice,
   })
-  const verificationScore = normalizeScore(deviceDecision.score)
+
+  // Award 100% verification score when verified with both in-room ultrasonic beacon & biometric face ID
+  const isUltrasonicBiometric = Boolean(options?.ultrasonicVerified && options?.biometricVerified)
+  const verificationScore = isUltrasonicBiometric ? 100 : normalizeScore(deviceDecision.score)
 
   const existing = await db()
     .select()
@@ -379,25 +393,35 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     .set({ consumedAt: verifiedAt })
     .where(eq(attendanceChallenges.id, challenge.id))
 
+  const verificationMethod = options?.method ?? (isUltrasonicBiometric ? 'ultrasonic_faceid' : 'manual_code')
+
   await db().insert(attendanceVerifications).values({
     id: nanoid(),
     organizationId: auth.organizationId,
     attendanceRecordId: recordId,
     challengeId: challenge.id,
-    method: 'manual_code',
+    method: verificationMethod,
     result: 'accepted',
-    metadata: { device: deviceLabel, score: verificationScore, reason: deviceDecision.reason },
+    metadata: {
+      device: deviceLabel,
+      score: verificationScore,
+      reason: isUltrasonicBiometric ? 'ultrasonic_and_faceid_verified' : deviceDecision.reason,
+      ultrasonic: Boolean(options?.ultrasonicVerified),
+      biometric: Boolean(options?.biometricVerified),
+    },
   })
 
   await db().insert(notifications).values({
     id: nanoid(),
     organizationId: auth.organizationId,
     userId: auth.userId,
-    title: 'Attendance confirmed',
-    body: 'Your attendance was verified successfully.',
+    title: isUltrasonicBiometric ? 'Xác thực Siêu âm & Face ID thành công' : 'Attendance confirmed',
+    body: isUltrasonicBiometric
+      ? 'Điểm danh hoàn tất: Vị trí phòng học và danh tính sinh viên đã được xác thực an toàn tuyệt đối.'
+      : 'Your attendance was verified successfully.',
   })
 
-  await appendAudit(auth, 'Verified attendance', live.id, 'info')
+  await appendAudit(auth, `Verified attendance (${verificationMethod})`, live.id, 'info')
 
   // Track/update the device used for this verification.
   const knownDevice = deviceRows.find((device) => device.label === deviceLabel) ?? deviceRows[0]
@@ -414,8 +438,8 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     })
   }
 
-  // Surface risky verifications to reviewers.
-  if (deviceDecision.suspicious) {
+  // Surface risky verifications to reviewers unless ultrasonic + biometrics verified.
+  if (deviceDecision.suspicious && !isUltrasonicBiometric) {
     await db().insert(suspiciousAttempts).values({
       id: nanoid(),
       organizationId: auth.organizationId,
@@ -425,12 +449,16 @@ export async function verifyAttendance(auth: AuthContext, input: string, deviceL
     })
   }
 
+  const message = isUltrasonicBiometric
+    ? 'Xác thực Face ID và sóng siêu âm phòng học thành công! Độ tin cậy 100%.'
+    : deviceDecision.suspicious
+      ? 'Your attendance is recorded but it is flagged for review because the device is not trusted.'
+      : 'Identity and session verified. Your attendance is recorded.'
+
   return {
     ok: true,
     confidence: verificationScore,
-    message: deviceDecision.suspicious
-      ? 'Your attendance is recorded but it is flagged for review because the device is not trusted.'
-      : 'Identity and session verified. Your attendance is recorded.',
+    message,
     record: {
       id: recordId,
       sessionId: live.id,

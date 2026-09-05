@@ -345,3 +345,19 @@ export const leaveRequests = pgTable(
   ],
 )
 
+export const userPasskeys = pgTable(
+  'user_passkeys',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    credentialId: text('credential_id').notNull().unique(),
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull().default(0),
+    deviceLabel: text('device_label'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('user_passkeys_user_idx').on(table.userId)],
+)
+

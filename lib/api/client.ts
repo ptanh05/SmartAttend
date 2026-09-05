@@ -112,11 +112,33 @@ export const api = {
       body: JSON.stringify({ requestId, status }),
     })
   },
-  verify(code: string) {
+  verify(
+    code: string,
+    options?: {
+      method?: 'ultrasonic_faceid' | 'qr_scan' | 'manual_code' | string
+      ultrasonicVerified?: boolean
+      biometricVerified?: boolean
+      device?: string
+    },
+  ) {
     return request<{ ok: boolean; confidence: number; message: string }>('/api/attendance/verify', {
       method: 'POST',
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({
+        code,
+        method: options?.method ?? 'manual_code',
+        ultrasonicVerified: options?.ultrasonicVerified,
+        biometricVerified: options?.biometricVerified,
+        device: options?.device,
+      }),
     })
+  },
+  webauthnChallenge() {
+    return request<{
+      ok: boolean
+      challenge: string
+      hasEnrolledPasskey: boolean
+      passkeys?: { id: string; credentialId: string; deviceLabel: string }[]
+    }>('/api/auth/webauthn/challenge')
   },
   sessionAction(sessionId: string, action: 'start' | 'pause' | 'close' | 'rotate') {
     return request<{ ok: boolean; message?: string; challenge?: string; status?: string }>(

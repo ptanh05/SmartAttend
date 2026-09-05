@@ -145,19 +145,22 @@ describe.skipIf(!hasDb)('attendance flow (integration, real DB)', () => {
         const rotated = await rotateChallengeForSession(teacherAuth, sessionId!)
         expect(rotated.ok).toBe(true)
 
-        // --- Student 1 verifies with the issued challenge ---
+        // --- Student 1 verifies with the issued challenge via standard method ---
         const challengeCode = (rotated as { challenge: string }).challenge
         const result = await verifyAttendance(studentAuth, challengeCode, 'integration-test-device-1')
         expect(result.ok).toBe(true)
         expect(result.record?.status).toBe('present')
+        expect(result.record?.confidence).toBe(78)
 
-        // --- Student 2 ALSO verifies with the EXACT same challenge code (multi-student in classroom) ---
-        const result2 = await verifyAttendance(student2Auth, challengeCode, 'integration-test-device-2')
+        // --- Student 2 verifies with Dual-Factor Ultrasonic + Face ID (100% confidence) ---
+        const result2 = await verifyAttendance(student2Auth, challengeCode, 'integration-test-device-2', {
+          method: 'ultrasonic_faceid',
+          ultrasonicVerified: true,
+          biometricVerified: true,
+        })
         expect(result2.ok).toBe(true)
         expect(result2.record?.status).toBe('present')
-
-        // Device policy default (`requireTrustedDevice` false + unseen device) -> score 78.
-        expect(result.record?.confidence).toBe(78)
+        expect(result2.record?.confidence).toBe(100)
 
         // --- Confirm the records and devices were persisted ---
         const recordRows = await db()
