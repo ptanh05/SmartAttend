@@ -43,8 +43,8 @@ export function UtcLoginLanding({
 }) {
   const { t } = useI18n()
   const [portal, setPortal] = useState<'student' | 'staff'>('student')
-  const [identifier, setIdentifier] = useState('20260001')
-  const [password, setPassword] = useState('student123')
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -83,13 +83,8 @@ export function UtcLoginLanding({
   const handlePortalChange = (nextPortal: 'student' | 'staff') => {
     setPortal(nextPortal)
     setError('')
-    if (nextPortal === 'student') {
-      setIdentifier('20260001')
-      setPassword('student123')
-    } else {
-      setIdentifier('teacher@smartattend.edu.vn')
-      setPassword('12345678')
-    }
+    setIdentifier('')
+    setPassword('')
   }
 
   return (
@@ -224,35 +219,6 @@ export function UtcLoginLanding({
                     <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{t('landing.featLeaveSub')}</p>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Quick Demo Selector */}
-            <div className="mt-6 border-t border-slate-100 pt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <span className="font-semibold text-slate-600">Tài khoản thử nghiệm:</span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPortal('student')
-                    setIdentifier('20260001')
-                    setPassword('student123')
-                  }}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-700 hover:bg-blue-100 hover:text-blue-800 transition-colors cursor-pointer"
-                >
-                  Sinh viên (20260001)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPortal('staff')
-                    setIdentifier('teacher@smartattend.edu.vn')
-                    setPassword('12345678')
-                  }}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1 font-medium text-slate-700 hover:bg-blue-100 hover:text-blue-800 transition-colors cursor-pointer"
-                >
-                  Giảng viên
-                </button>
               </div>
             </div>
           </div>
