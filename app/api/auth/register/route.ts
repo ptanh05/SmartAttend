@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     return response
   } catch (error) {
     console.error('Registration failed', error)
-    return NextResponse.json({ ok: false, message: 'Unable to register right now.' }, { status: 500 })
+    const detail = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ ok: false, message: 'Unable to register right now.', detail }, { status: 500 })
   }
 }
