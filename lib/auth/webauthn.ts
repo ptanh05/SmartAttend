@@ -1,33 +1,38 @@
-import { randomBytes } from 'crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
 import { userPasskeys } from '@/lib/db/schema'
 
-// Memory store for active challenge tokens (keyed by userId)
-const activeChallenges = new Map<string, { challenge: string; expiresAt: number }>()
+const HMAC_SECRET = process.env.SESSION_SECRET || process.env.TEACHER_REGISTRATION_API_KEY || 'smartattend_webauthn_challenge_secret'
+
+function signChallenge(userId: string, nonce: string, expiresAt: number): string {
+  const data = `${userId}:${nonce}:${expiresAt}`
+  return createHmac('sha256', HMAC_SECRET).update(data).digest('base64url')
+}
 
 export function generateWebAuthnChallenge(userId: string): string {
-  const challenge = randomBytes(32).toString('base64url')
-  activeChallenges.set(userId, {
-    challenge,
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes TTL
-  })
-  return challenge
+  const nonce = randomBytes(16).toString('base64url')
+  const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes TTL
+  const signature = signChallenge(userId, nonce, expiresAt)
+  return `${nonce}.${expiresAt}.${signature}`
 }
 
 export function verifyWebAuthnChallenge(userId: string, incomingChallenge: string): boolean {
-  const record = activeChallenges.get(userId)
-  if (!record) return false
-  if (record.expiresAt < Date.now()) {
-    activeChallenges.delete(userId)
-    return false
-  }
-  const match = record.challenge === incomingChallenge
-  if (match) {
-    activeChallenges.delete(userId)
-  }
-  return match
+  if (!incomingChallenge || typeof incomingChallenge !== 'string') return false
+  const parts = incomingChallenge.split('.')
+  if (parts.length !== 3) return false
+
+  const [nonce, expiresAtStr, providedSignature] = parts
+  const expiresAt = Number(expiresAtStr)
+  if (!expiresAt || expiresAt < Date.now()) return false
+
+  const expectedSignature = signChallenge(userId, nonce, expiresAt)
+  const expectedBuffer = Buffer.from(expectedSignature)
+  const providedBuffer = Buffer.from(providedSignature)
+
+  if (expectedBuffer.length !== providedBuffer.length) return false
+  return timingSafeEqual(expectedBuffer, providedBuffer)
 }
 
 export async function saveUserPasskey(
@@ -38,6 +43,9 @@ export async function saveUserPasskey(
 ) {
   const existing = await db().select().from(userPasskeys).where(eq(userPasskeys.credentialId, credentialId))
   if (existing[0]) {
+    if (existing[0].userId !== userId) {
+      throw new Error('Credential ID is already registered to another user account.')
+    }
     await db()
       .update(userPasskeys)
       .set({ publicKey, deviceLabel })

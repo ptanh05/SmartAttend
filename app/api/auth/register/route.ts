@@ -3,9 +3,18 @@ import { sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
 import { verifyTeacherRegistrationApiKey } from '@/lib/auth/registration-key'
 import { registerTeacher } from '@/lib/auth/users'
 import { createAuthSession } from '@/lib/auth/session'
+import { clientIp, registerLimiter } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   try {
+    const rate = await registerLimiter.consume(clientIp(request))
+    if (!rate.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many registration attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+      )
+    }
+
     const body = await request.json()
     const name = typeof body.name === 'string' ? body.name : ''
     const email = typeof body.email === 'string' ? body.email : ''
@@ -31,7 +40,6 @@ export async function POST(request: Request) {
     return response
   } catch (error) {
     console.error('Registration failed', error)
-    const detail = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ ok: false, message: 'Unable to register right now.', detail }, { status: 500 })
+    return NextResponse.json({ ok: false, message: 'Unable to register right now.' }, { status: 500 })
   }
 }

@@ -3,12 +3,15 @@ import { generateState, generateCodeVerifier } from 'arctic'
 import { cookies } from 'next/headers'
 import { getMicrosoftAuth } from '@/lib/auth/oauth'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const portal = url.searchParams.get('portal') === 'staff' ? 'staff' : 'student'
+
     const msAuth = getMicrosoftAuth()
     const state = generateState()
     const codeVerifier = generateCodeVerifier()
-    const url = await msAuth.createAuthorizationURL(state, codeVerifier, ['openid', 'profile', 'email'])
+    const authUrl = await msAuth.createAuthorizationURL(state, codeVerifier, ['openid', 'profile', 'email'])
 
     const cookieStore = await cookies()
     cookieStore.set('microsoft_oauth_state', state, {
@@ -25,8 +28,15 @@ export async function GET() {
       maxAge: 60 * 10,
       sameSite: 'lax',
     })
+    cookieStore.set('microsoft_oauth_portal', portal, {
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 60 * 10,
+      sameSite: 'lax',
+    })
 
-    return NextResponse.redirect(url)
+    return NextResponse.redirect(authUrl)
   } catch (error) {
     console.error('Failed to initialize Microsoft OAuth:', error)
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { rotateChallengeForSession, transitionSessionState } from '@/lib/attendance/server'
 import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { clientIp, sessionActionLimiter } from '@/lib/rate-limit'
 import type { SessionStatus } from '@/lib/types/domain'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -8,6 +9,15 @@ type RouteContext = { params: Promise<{ id: string }> }
 export async function POST(_request: Request, context: RouteContext) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
+    const rateKey = `${clientIp(_request)}:${auth.userId}`
+    const rate = await sessionActionLimiter.consume(rateKey)
+    if (!rate.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Too many session actions. Please slow down.' },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
+      )
+    }
+
     const { id } = await context.params
     const body = await _request.json().catch(() => ({}))
     const action = body.action as 'start' | 'pause' | 'close' | 'rotate'

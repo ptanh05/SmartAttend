@@ -367,11 +367,15 @@ export function CountdownTimer({
 
   const [secondsLeft, setSecondsLeft] = useState<number>(calculateRemaining)
   const onExpireRef = useRef(onExpire)
-  onExpireRef.current = onExpire
   const hasExpiredRef = useRef(false)
 
   useEffect(() => {
+    onExpireRef.current = onExpire
+  })
+
+  useEffect(() => {
     hasExpiredRef.current = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSecondsLeft(calculateRemaining())
   }, [expiresAt, calculateRemaining])
 

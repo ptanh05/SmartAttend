@@ -400,14 +400,32 @@ export async function verifyAttendance(
     requireTrustedDevice: policy.requireTrustedDevice,
   })
 
-  // Award 100% verification score when verified with both in-room ultrasonic beacon & biometric face ID
-  const isUltrasonicBiometric = Boolean(options?.ultrasonicVerified && options?.biometricVerified)
-  const verificationScore = isUltrasonicBiometric ? 100 : normalizeScore(deviceDecision.score)
-
+  // Duplicate check-in idempotency: If student is already marked present or excused, return existing record
   const existing = await db()
     .select()
     .from(attendanceRecords)
     .where(and(eq(attendanceRecords.sessionId, live.id), eq(attendanceRecords.studentId, auth.userId)))
+
+  if (existing[0] && (existing[0].status === 'present' || existing[0].status === 'excused')) {
+    return {
+      ok: true,
+      confidence: existing[0].verificationScore,
+      message: 'Bạn đã hoàn tất điểm danh cho buổi học này rồi.',
+      record: {
+        id: existing[0].id,
+        sessionId: live.id,
+        studentId: auth.userId,
+        status: existing[0].status as AttendanceStatus,
+        confidence: existing[0].verificationScore,
+        verifiedAt: existing[0].verifiedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        device: existing[0].device ?? deviceLabel,
+      },
+    }
+  }
+
+  // Award 100% verification score when verified with both in-room ultrasonic beacon & biometric face ID
+  const isUltrasonicBiometric = Boolean(options?.ultrasonicVerified && options?.biometricVerified)
+  const verificationScore = isUltrasonicBiometric ? 100 : normalizeScore(deviceDecision.score)
 
   const recordId = existing[0]?.id ?? nanoid()
 
@@ -422,16 +440,27 @@ export async function verifyAttendance(
       })
       .where(eq(attendanceRecords.id, recordId))
   } else {
-    await db().insert(attendanceRecords).values({
-      id: recordId,
-      organizationId: auth.organizationId,
-      sessionId: live.id,
-      studentId: auth.userId,
-      status,
-      verificationScore,
-      verifiedAt,
-      device: deviceLabel,
-    })
+    await db()
+      .insert(attendanceRecords)
+      .values({
+        id: recordId,
+        organizationId: auth.organizationId,
+        sessionId: live.id,
+        studentId: auth.userId,
+        status,
+        verificationScore,
+        verifiedAt,
+        device: deviceLabel,
+      })
+      .onConflictDoUpdate({
+        target: [attendanceRecords.sessionId, attendanceRecords.studentId],
+        set: {
+          status,
+          verificationScore,
+          verifiedAt,
+          device: deviceLabel,
+        },
+      })
   }
 
   // Update consumedAt timestamp on the challenge while keeping it active for other students in the room
@@ -452,7 +481,7 @@ export async function verifyAttendance(
     metadata: {
       device: deviceLabel,
       score: verificationScore,
-      reason: isUltrasonicBiometric ? 'ultrasonic_and_faceid_verified' : deviceDecision.reason,
+      reason: deviceDecision.reason,
       ultrasonic: Boolean(options?.ultrasonicVerified),
       biometric: Boolean(options?.biometricVerified),
     },
@@ -462,9 +491,9 @@ export async function verifyAttendance(
     id: nanoid(),
     organizationId: auth.organizationId,
     userId: auth.userId,
-    title: isUltrasonicBiometric ? 'Xác thực Siêu âm & Face ID thành công' : 'Attendance confirmed',
+    title: isUltrasonicBiometric ? 'Xác thực Siêu âm & Sinh trắc học thành công' : 'Attendance confirmed',
     body: isUltrasonicBiometric
-      ? 'Điểm danh hoàn tất: Vị trí phòng học và danh tính sinh viên đã được xác thực an toàn tuyệt đối.'
+      ? 'Điểm danh hoàn tất: Vị trí phòng học và định danh sinh viên đã được ghi nhận.'
       : 'Your attendance was verified successfully.',
   })
 
@@ -485,8 +514,8 @@ export async function verifyAttendance(
     })
   }
 
-  // Surface risky verifications to reviewers unless ultrasonic + biometrics verified.
-  if (deviceDecision.suspicious && !isUltrasonicBiometric) {
+  // Always surface risky verifications to reviewers when device is suspicious
+  if (deviceDecision.suspicious) {
     await db().insert(suspiciousAttempts).values({
       id: nanoid(),
       organizationId: auth.organizationId,
@@ -497,7 +526,7 @@ export async function verifyAttendance(
   }
 
   const message = isUltrasonicBiometric
-    ? 'Xác thực Face ID và sóng siêu âm phòng học thành công! Độ tin cậy 100%.'
+    ? 'Xác thực sinh trắc học và sóng siêu âm thành công! Điểm danh đã được ghi nhận.'
     : deviceDecision.suspicious
       ? 'Your attendance is recorded but it is flagged for review because the device is not trusted.'
       : 'Identity and session verified. Your attendance is recorded.'
@@ -765,6 +794,15 @@ export async function listAuditLogs(auth: AuthContext) {
 }
 
 export async function listSuspicious(auth: AuthContext) {
+  const conditions = [
+    eq(suspiciousAttempts.organizationId, auth.organizationId),
+    eq(suspiciousAttempts.status, 'open'),
+  ]
+
+  if (auth.role === 'teacher') {
+    conditions.push(eq(courses.teacherId, auth.userId))
+  }
+
   const rows = await db()
     .select({
       suspicious: suspiciousAttempts,
@@ -773,8 +811,10 @@ export async function listSuspicious(auth: AuthContext) {
       membership: organizationMemberships,
     })
     .from(suspiciousAttempts)
-    .leftJoin(attendanceRecords, eq(suspiciousAttempts.attendanceRecordId, attendanceRecords.id))
-    .leftJoin(users, eq(attendanceRecords.studentId, users.id))
+    .innerJoin(attendanceRecords, eq(suspiciousAttempts.attendanceRecordId, attendanceRecords.id))
+    .innerJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+    .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .innerJoin(users, eq(attendanceRecords.studentId, users.id))
     .leftJoin(
       organizationMemberships,
       and(
@@ -782,7 +822,7 @@ export async function listSuspicious(auth: AuthContext) {
         eq(organizationMemberships.organizationId, auth.organizationId),
       ),
     )
-    .where(and(eq(suspiciousAttempts.organizationId, auth.organizationId), eq(suspiciousAttempts.status, 'open')))
+    .where(and(...conditions))
     .orderBy(desc(suspiciousAttempts.createdAt))
 
   return rows.map(({ suspicious, record, student, membership }) => ({
@@ -807,12 +847,23 @@ export async function resolveSuspiciousAttempt(
   }
 
   const rows = await db()
-    .select()
+    .select({
+      suspicious: suspiciousAttempts,
+      record: attendanceRecords,
+      course: courses,
+    })
     .from(suspiciousAttempts)
+    .leftJoin(attendanceRecords, eq(suspiciousAttempts.attendanceRecordId, attendanceRecords.id))
+    .leftJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+    .leftJoin(courses, eq(attendanceSessions.courseId, courses.id))
     .where(and(eq(suspiciousAttempts.id, attemptId), eq(suspiciousAttempts.organizationId, auth.organizationId)))
 
-  const attempt = rows[0]
-  if (!attempt) return { ok: false as const, message: 'Suspicious attempt not found.' }
+  const target = rows[0]
+  if (!target) return { ok: false as const, message: 'Suspicious attempt not found.' }
+
+  if (auth.role === 'teacher' && target.course && target.course.teacherId !== auth.userId) {
+    return { ok: false as const, message: 'Permission denied: You can only review attempts for courses you teach.' }
+  }
 
   const now = new Date()
 
@@ -825,31 +876,34 @@ export async function resolveSuspiciousAttempt(
     })
     .where(eq(suspiciousAttempts.id, attemptId))
 
-  if (action === 'dismissed' && attempt.attendanceRecordId) {
+  if (action === 'dismissed' && target.suspicious.attendanceRecordId) {
     await db()
       .update(attendanceRecords)
       .set({
         status: 'absent',
         verificationScore: 0,
-        flaggedReason: `Bác bỏ bởi ${auth.name}: ${attempt.reason}`,
+        flaggedReason: `Bác bỏ bởi ${auth.name}: ${target.suspicious.reason}`,
       })
-      .where(eq(attendanceRecords.id, attempt.attendanceRecordId))
-  } else if (action === 'approved' && attempt.attendanceRecordId) {
+      .where(eq(attendanceRecords.id, target.suspicious.attendanceRecordId))
+  } else if (action === 'approved' && target.suspicious.attendanceRecordId) {
     await db()
       .update(attendanceRecords)
       .set({
         verificationScore: 90,
         flaggedReason: `Được phê duyệt bởi ${auth.name}`,
       })
-      .where(eq(attendanceRecords.id, attempt.attendanceRecordId))
+      .where(eq(attendanceRecords.id, target.suspicious.attendanceRecordId))
   }
 
-  await appendAudit(
-    auth,
-    `Resolved suspicious attempt ${attemptId} (${action})`,
-    attemptId,
-    action === 'dismissed' ? 'warning' : 'info',
-  )
+  await db().insert(auditLogs).values({
+    id: nanoid(),
+    organizationId: auth.organizationId,
+    actorId: auth.userId,
+    actorName: auth.name,
+    action: `Resolved suspicious attempt ${attemptId} (${action})`,
+    target: attemptId,
+    severity: action === 'dismissed' ? 'warning' : 'info',
+  })
 
   return { ok: true as const }
 }

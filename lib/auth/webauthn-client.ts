@@ -133,6 +133,7 @@ export async function registerDeviceBiometrics(
       body: JSON.stringify({
         credentialId: credential.id,
         publicKey: publicKeyBase64,
+        challenge: challengeString,
         deviceLabel: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID)'
           : navigator.userAgent.includes('Macintosh')

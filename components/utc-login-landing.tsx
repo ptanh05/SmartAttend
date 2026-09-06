@@ -56,6 +56,7 @@ export function UtcLoginLanding({
       const urlParams = new URLSearchParams(window.location.search)
       const err = urlParams.get('error')
       if (err) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setError(err)
         window.history.replaceState({}, '', window.location.pathname)
       }

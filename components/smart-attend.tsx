@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
@@ -1477,6 +1477,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   useEffect(() => {
     if (data.policy && !policyDirty) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPolicyTtl(data.policy.challengeTtlSeconds)
       setPolicyLateAfter(data.policy.lateAfterMinutes)
       setPolicyRequireTrusted(data.policy.requireTrustedDevice)
@@ -1577,7 +1578,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     } catch (err) {
       setNotice(err instanceof Error ? err.message : t('teacher.rotateFailed'))
     }
-  }, [live?.sessionId, refresh, t])
+  }, [live, refresh, t])
 
   const deleteSection = async (sectionId: string) => {
     if (!confirm(t('common.confirmDeleteSchedule'))) return
@@ -2139,7 +2140,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 Thời gian ân hạn tính đi muộn (Grace Period)
               </label>
               <p className="text-xs text-muted-foreground">
-                Sinh viên điểm danh sau mốc thời gian này tính từ khi bắt đầu phiên sẽ tự động đánh dấu "Muộn".
+                Sinh viên điểm danh sau mốc thời gian này tính từ khi bắt đầu phiên sẽ tự động đánh dấu &quot;Muộn&quot;.
               </p>
               <select
                 value={policyLateAfter}
@@ -2202,7 +2203,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 <span className="ml-auto text-[10px] bg-emerald-600/20 text-emerald-700 px-2 py-0.5 rounded-full font-bold">CHUẨN FIDO2</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Xác thực WebAuthn Passkeys tận dụng Face ID/vân tay phần cứng trên điện thoại sinh viên. Tự động chấm điểm xác minh 100%.
+                Xác thực WebAuthn Passkeys tận dụng Face ID/vân tay trên thiết bị sinh viên theo chuẩn W3C/FIDO2. Hỗ trợ xác thực danh tính và nâng cao độ tin cậy điểm danh.
               </p>
             </div>
           </div>

@@ -20,6 +20,8 @@ export async function getLeaveRequests(auth: AuthContext, studentId?: string): P
   const conditions = [eq(leaveRequests.organizationId, auth.organizationId)]
   if (targetStudent) {
     conditions.push(eq(leaveRequests.studentId, targetStudent))
+  } else if (auth.role === 'teacher') {
+    conditions.push(eq(courses.teacherId, auth.userId))
   }
 
   const rows = await db()
@@ -118,19 +120,7 @@ export async function updateLeaveRequestStatus(
     throw new Error('Forbidden')
   }
 
-  const now = new Date()
-  await db()
-    .update(leaveRequests)
-    .set({
-      status,
-      reviewedBy: auth.userId,
-      reviewedByName: auth.name,
-      reviewedAt: now,
-    })
-    .where(and(eq(leaveRequests.id, requestId), eq(leaveRequests.organizationId, auth.organizationId)))
-
-  // Notify student
-  const updatedRows = await db()
+  const existingRows = await db()
     .select({
       req: leaveRequests,
       student: users,
@@ -149,8 +139,25 @@ export async function updateLeaveRequestStatus(
     .innerJoin(courses, eq(leaveRequests.courseId, courses.id))
     .where(and(eq(leaveRequests.id, requestId), eq(leaveRequests.organizationId, auth.organizationId)))
 
-  const row = updatedRows[0]
+  const row = existingRows[0]
   if (!row) return null
+
+  // Horizontal privilege check: Teachers can only review leave requests for courses they teach
+  if (auth.role === 'teacher' && row.course.teacherId !== auth.userId) {
+    throw new Error('Forbidden: You can only review leave requests for courses you teach.')
+  }
+
+  const now = new Date()
+
+  await db()
+    .update(leaveRequests)
+    .set({
+      status,
+      reviewedBy: auth.userId,
+      reviewedByName: auth.name,
+      reviewedAt: now,
+    })
+    .where(and(eq(leaveRequests.id, requestId), eq(leaveRequests.organizationId, auth.organizationId)))
 
   // If approved, automatically synchronize attendance record to 'excused'
   if (status === 'approved') {
@@ -239,9 +246,9 @@ export async function updateLeaveRequestStatus(
     date: row.req.date,
     reason: row.req.reason,
     evidenceNote: row.req.evidenceNote ?? undefined,
-    status: row.req.status as LeaveStatus,
+    status,
     createdAt: row.req.createdAt.toISOString(),
-    reviewedAt: row.req.reviewedAt?.toISOString(),
-    reviewedBy: row.req.reviewedByName ?? undefined,
+    reviewedAt: now.toISOString(),
+    reviewedBy: auth.name,
   }
 }

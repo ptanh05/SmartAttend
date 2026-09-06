@@ -66,6 +66,18 @@ export const loginLimiter = new RateLimiter(15 * 60 * 1000, 10)
 /** Attendance verification: up to 5 checks per minute per (IP + account). */
 export const verifyLimiter = new RateLimiter(60 * 1000, 5)
 
+/** Teacher registration: up to 5 attempts per 15 minutes per IP. */
+export const registerLimiter = new RateLimiter(15 * 60 * 1000, 5)
+
+/** Password change: up to 5 attempts per 15 minutes per user/IP. */
+export const changePasswordLimiter = new RateLimiter(15 * 60 * 1000, 5)
+
+/** Session lifecycle & rotate actions: up to 30 actions per minute. */
+export const sessionActionLimiter = new RateLimiter(60 * 1000, 30)
+
+/** CSV student roster import: up to 10 imports per 15 minutes. */
+export const importLimiter = new RateLimiter(15 * 60 * 1000, 10)
+
 /** Best-effort client IP extraction from common proxy headers. */
 export function clientIp(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for')
