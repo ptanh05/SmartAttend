@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:engine": "vitest run tests/integration/attendance-engine.test.ts",
     "test:load": "k6 run tests/load/attendance-spike.js",
+    "test:load-node": "node tests/load/run-spike-node.mjs",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts"
   },
