@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
-import { organizationMemberships, organizations, users } from '@/lib/db/schema'
-import type { AuthContext } from '@/lib/auth/session'
+import { externalAccounts, organizationMemberships, organizations, users } from '@/lib/db/schema'
+import { resolveMembershipForLogin, resolveMembershipForStudentLogin, type AuthContext } from '@/lib/auth/session'
+import type { Role } from '@/lib/types/domain'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 
 export function defaultStudentPassword(studentCode: string) {
@@ -209,4 +210,132 @@ export async function changeUserPassword(auth: AuthContext, currentPassword: str
     .where(eq(users.id, auth.userId))
 
   return { ok: true as const }
+}
+
+export async function selfServiceResetPassword(input: {
+  identifier: string
+  portal: 'student' | 'staff'
+  newPassword?: string
+}) {
+  const identifier = input.identifier.trim()
+  if (!identifier) {
+    return { ok: false as const, message: 'Vui lòng nhập Mã sinh viên hoặc Email đăng ký.' }
+  }
+
+  if (input.portal === 'student') {
+    const isEmail = identifier.includes('@')
+    const memberships = isEmail
+      ? await resolveMembershipForLogin(identifier)
+      : await resolveMembershipForStudentLogin(identifier)
+
+    const match = memberships.find((m) => m.role === 'student' && !m.disabledAt && m.membershipStatus === 'active')
+    if (!match) {
+      return { ok: false as const, message: 'Không tìm thấy thông tin sinh viên tương ứng với mã/email đã nhập.' }
+    }
+
+    const studentInfo = await db()
+      .select({ studentCode: organizationMemberships.studentCode, name: users.name })
+      .from(organizationMemberships)
+      .innerJoin(users, eq(organizationMemberships.userId, users.id))
+      .where(eq(organizationMemberships.id, match.membershipId))
+
+    const studentCode = studentInfo[0]?.studentCode || identifier
+    const defaultPassword = defaultStudentPassword(studentCode)
+    const passwordHash = await hashPassword(defaultPassword)
+
+    await db()
+      .update(users)
+      .set({ passwordHash, mustChangePassword: true })
+      .where(eq(users.id, match.userId))
+
+    return {
+      ok: true as const,
+      role: 'student' as const,
+      studentCode,
+      name: studentInfo[0]?.name ?? '',
+      temporaryPassword: defaultPassword,
+      message: `Mật khẩu đã được khôi phục về mặc định: ${defaultPassword}. Vui lòng đăng nhập và đổi mật khẩu mới.`,
+    }
+  }
+
+  // Staff portal
+  const memberships = await resolveMembershipForLogin(identifier.toLowerCase())
+  const match = memberships.find((m) => (m.role === 'teacher' || m.role === 'admin') && !m.disabledAt && m.membershipStatus === 'active')
+
+  if (!match) {
+    return { ok: false as const, message: 'Không tìm thấy tài khoản Cán bộ / Giảng viên tương ứng với email đã nhập.' }
+  }
+
+  const external = await db()
+    .select({ provider: externalAccounts.provider })
+    .from(externalAccounts)
+    .where(eq(externalAccounts.userId, match.userId))
+
+  if (external.length > 0) {
+    return {
+      ok: false as const,
+      isOAuth: true,
+      message: 'Tài khoản của bạn được liên kết qua Microsoft 365 UTC SSO. Vui lòng bấm "Đăng nhập với Microsoft 365" để truy cập.',
+    }
+  }
+
+  let newPass = input.newPassword?.trim()
+  if (!newPass) {
+    newPass = `Utc@${Math.floor(100000 + Math.random() * 900000)}`
+  } else if (newPass.length < 8) {
+    return { ok: false as const, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' }
+  }
+
+  const passwordHash = await hashPassword(newPass)
+  await db()
+    .update(users)
+    .set({ passwordHash, mustChangePassword: true })
+    .where(eq(users.id, match.userId))
+
+  return {
+    ok: true as const,
+    role: match.role as Role,
+    temporaryPassword: newPass,
+    message: `Đã khôi phục mật khẩu thành công! Mật khẩu tạm thời: ${newPass}. Vui lòng đăng nhập và đổi mật khẩu.`,
+  }
+}
+
+export async function adminResetStudentPassword(auth: AuthContext, studentId: string) {
+  const rows = await db()
+    .select({
+      membershipId: organizationMemberships.id,
+      userId: users.id,
+      studentCode: organizationMemberships.studentCode,
+      name: users.name,
+    })
+    .from(organizationMemberships)
+    .innerJoin(users, eq(organizationMemberships.userId, users.id))
+    .where(
+      and(
+        eq(organizationMemberships.organizationId, auth.organizationId),
+        eq(organizationMemberships.role, 'student'),
+        eq(users.id, studentId),
+      ),
+    )
+
+  const student = rows[0]
+  if (!student || !student.studentCode) {
+    return { ok: false as const, message: 'Không tìm thấy sinh viên trong tổ chức của bạn.' }
+  }
+
+  const defaultPassword = defaultStudentPassword(student.studentCode)
+  const passwordHash = await hashPassword(defaultPassword)
+
+  await db()
+    .update(users)
+    .set({ passwordHash, mustChangePassword: true })
+    .where(eq(users.id, student.userId))
+
+  return {
+    ok: true as const,
+    studentCode: student.studentCode,
+    name: student.name,
+    defaultPassword,
+    message: `Đã đặt lại mật khẩu cho sinh viên ${student.name} về mặc định (${defaultPassword}).`,
+  }
 }

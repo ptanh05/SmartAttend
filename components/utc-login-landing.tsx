@@ -50,6 +50,33 @@ export function UtcLoginLanding({
   const [error, setError] = useState('')
   const [featureModal, setFeatureModal] = useState<'qr' | 'schedule' | 'analytics' | 'leave' | null>(null)
   const [dialogModal, setDialogModal] = useState<{ title: string; detail: string; icon?: React.ReactNode } | null>(null)
+  const [forgotModalOpen, setForgotModalOpen] = useState(false)
+  const [forgotIdentifier, setForgotIdentifier] = useState('')
+  const [forgotPortal, setForgotPortal] = useState<'student' | 'staff'>('student')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotResult, setForgotResult] = useState<{
+    ok: boolean
+    message?: string
+    temporaryPassword?: string
+    isOAuth?: boolean
+  } | null>(null)
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setForgotLoading(true)
+    setForgotResult(null)
+    try {
+      const res = await api.forgotPassword(forgotIdentifier, forgotPortal)
+      setForgotResult(res)
+    } catch (err) {
+      setForgotResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Lỗi kết nối khi gửi yêu cầu khôi phục.',
+      })
+    } finally {
+      setForgotLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -311,13 +338,12 @@ export function UtcLoginLanding({
                 <div className="flex items-center justify-between text-xs">
                   <button
                     type="button"
-                    onClick={() =>
-                      setDialogModal({
-                        title: t('landing.forgotPasswordTitle'),
-                        detail: t('landing.forgotPasswordDetail'),
-                        icon: <KeyRound className="size-6 text-blue-600" />,
-                      })
-                    }
+                    onClick={() => {
+                      setForgotPortal(portal)
+                      setForgotIdentifier(identifier)
+                      setForgotResult(null)
+                      setForgotModalOpen(true)
+                    }}
                     className="font-medium text-blue-600 hover:underline cursor-pointer"
                   >
                     {t('login.forgotPassword')}
@@ -533,6 +559,185 @@ export function UtcLoginLanding({
                 {t('common.done')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Self-Service Forgot Password Modal */}
+      {forgotModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-slate-800 border border-slate-200">
+            <button
+              onClick={() => setForgotModalOpen(false)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <X className="size-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+                <KeyRound className="size-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 leading-snug">
+                  {t('landing.forgotPasswordModalTitle')}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {forgotPortal === 'student'
+                    ? t('landing.forgotPasswordModalSubStudent')
+                    : t('landing.forgotPasswordModalSubStaff')}
+                </p>
+              </div>
+            </div>
+
+            {/* Portal Switch Tabs in Modal */}
+            <div className="mt-4 flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotPortal('student')
+                  setForgotResult(null)
+                }}
+                className={`flex-1 rounded-lg py-1.5 transition-all cursor-pointer ${
+                  forgotPortal === 'student'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Sinh viên
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotPortal('staff')
+                  setForgotResult(null)
+                }}
+                className={`flex-1 rounded-lg py-1.5 transition-all cursor-pointer ${
+                  forgotPortal === 'staff'
+                    ? 'bg-white text-blue-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Cán bộ / Giảng viên
+              </button>
+            </div>
+
+            {forgotResult && forgotResult.ok ? (
+              <div className="mt-5 space-y-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900 leading-relaxed">
+                  <div className="flex items-center gap-2 font-bold text-emerald-800 text-sm mb-1.5">
+                    <CheckCircle2 className="size-4" />
+                    <span>Khôi phục mật khẩu thành công!</span>
+                  </div>
+                  <p>{forgotResult.message}</p>
+                  {forgotResult.temporaryPassword && (
+                    <div className="mt-2.5 flex items-center justify-between rounded-lg bg-white border border-emerald-300 p-2.5 font-mono text-sm font-bold text-emerald-950">
+                      <span>Mật khẩu: {forgotResult.temporaryPassword}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (forgotIdentifier) setIdentifier(forgotIdentifier)
+                      if (portal !== forgotPortal) handlePortalChange(forgotPortal)
+                      setForgotModalOpen(false)
+                    }}
+                    className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer text-center"
+                  >
+                    {t('landing.loginNowWithNewPassword')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} className="mt-5 flex flex-col gap-4">
+                {forgotResult && !forgotResult.ok && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 flex items-start gap-2">
+                    <CircleAlert className="size-4 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span>{forgotResult.message}</span>
+                      {forgotResult.isOAuth && (
+                          <a
+                            href={`/api/auth/microsoft?role=${forgotPortal}`}
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 underline"
+                          >
+                            Đăng nhập với Microsoft 365 ngay
+                          </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                    {t('landing.forgotPasswordIdentifier')}
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      value={forgotIdentifier}
+                      onChange={(e) => setForgotIdentifier(e.target.value)}
+                      placeholder={
+                        forgotPortal === 'student'
+                          ? 'Ví dụ: 20260001 hoặc email SV'
+                          : 'Ví dụ: giangvien@utc.edu.vn'
+                      }
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    {forgotPortal === 'student'
+                      ? 'Mật khẩu sẽ được khôi phục về định dạng mặc định Sv@{Mã SV}.'
+                      : 'Hệ thống sẽ cấp lại mật khẩu tạm hoặc hướng dẫn đăng nhập Microsoft.'}
+                  </p>
+                </div>
+
+                <div className="mt-1 flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDialogModal({
+                        title:
+                          forgotPortal === 'staff'
+                            ? t('landing.forgotPasswordStaffTitle')
+                            : t('landing.forgotPasswordTitle'),
+                        detail:
+                          forgotPortal === 'staff'
+                            ? t('landing.forgotPasswordStaffDetail')
+                            : t('landing.forgotPasswordDetail'),
+                        icon: <KeyRound className="size-6 text-blue-600" />,
+                      })
+                    }
+                    className="text-xs text-blue-600 hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <HelpCircle className="size-3" /> Hướng dẫn chi tiết
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForgotModalOpen(false)}
+                      className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      {t('common.back')}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer"
+                    >
+                      {forgotLoading
+                        ? t('landing.resetPasswordProcessing')
+                        : t('landing.resetPasswordSubmit')}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

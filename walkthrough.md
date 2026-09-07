@@ -47,6 +47,21 @@ All tasks in the approved implementation plan have been executed and verified.
 - **Truthful UI Copy** (`components/smart-attend.tsx`):
   - Corrected claims regarding WebAuthn FIDO2 authenticators and attendance confidence.
 
+### 5. Teacher Password Management & Forgot Password Recovery Flow
+- **Interactive Self-Service Recovery Modal** (`components/utc-login-landing.tsx`):
+  - Clicking "Quên mật khẩu?" now launches an interactive modal supporting both Student and Staff recovery.
+  - For students: Recovers password back to the university standard `Sv@{studentCode}`, enforces `mustChangePassword = true`, and autofills credentials into the login box.
+  - For staff: Recovers internal password with temporary token or directs to Microsoft 365 UTC SSO if external OAuth is detected.
+- **Admin & Teacher Reset Student Password** (`app/api/users/reset-student-password/route.ts`, `components/smart-attend.tsx`):
+  - Added dedicated "Đặt lại mật khẩu" action for each student in the Teacher/Staff roster directory.
+  - Enforced organization-scoped tenant isolation (Teacher in Org A cannot reset student in Org B).
+- **Teacher In-App Change Password** (`components/smart-attend.tsx`):
+  - Added Account Security & Password card under Teacher Settings (`page === 'settings'`).
+  - Integrated `ChangePasswordForm` calling `POST /api/auth/change-password`.
+  - Added clickable user profile chip in header linking to Settings/Profile.
+- **Integration Tests** (`tests/integration/password-reset.test.ts`):
+  - Automated tests covering student self-recovery, default password hash update, mustChangePassword flag, and tenant isolation IDOR prevention.
+
 ---
 
 ## Verification Results

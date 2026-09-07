@@ -72,6 +72,9 @@ export const registerLimiter = new RateLimiter(15 * 60 * 1000, 5)
 /** Password change: up to 5 attempts per 15 minutes per user/IP. */
 export const changePasswordLimiter = new RateLimiter(15 * 60 * 1000, 5)
 
+/** Password reset requests: up to 5 attempts per 15 minutes per IP/user. */
+export const resetPasswordLimiter = new RateLimiter(15 * 60 * 1000, 5)
+
 /** Session lifecycle & rotate actions: up to 30 actions per minute. */
 export const sessionActionLimiter = new RateLimiter(60 * 1000, 30)
 

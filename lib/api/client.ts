@@ -59,6 +59,30 @@ export const api = {
       body: JSON.stringify({ currentPassword, newPassword }),
     })
   },
+  forgotPassword(identifier: string, portal: 'student' | 'staff', newPassword?: string) {
+    return request<{
+      ok: boolean
+      role?: Role
+      studentCode?: string
+      temporaryPassword?: string
+      isOAuth?: boolean
+      message?: string
+    }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, portal, newPassword }),
+    })
+  },
+  resetStudentPassword(studentId: string) {
+    return request<{
+      ok: boolean
+      studentCode?: string
+      defaultPassword?: string
+      message?: string
+    }>('/api/users/reset-student-password', {
+      method: 'POST',
+      body: JSON.stringify({ studentId }),
+    })
+  },
   importStudents(csv: string) {
     return request<{
       ok: boolean

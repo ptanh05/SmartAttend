@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, Fingerprint, GraduationCap, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon, Play, Plus,
-  RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, Users, Volume2, Waves, Wifi, X
+  ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, Fingerprint, GraduationCap, KeyRound, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, Users, Volume2, Waves, Wifi, X
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
@@ -1423,6 +1423,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   const [courseModalOpen, setCourseModalOpen] = useState(false)
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
+  const [showStaffChangePassword, setShowStaffChangePassword] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState<string | undefined>()
   const [selectedSection, setSelectedSection] = useState<ClassSession | undefined>()
   const [projectorMode, setProjectorMode] = useState(false)
@@ -1466,6 +1467,22 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       await refresh()
     } catch {
       setNotice('Lỗi khi xử lý đơn nghỉ phép.')
+    }
+  }
+
+  const handleResetStudent = async (studentId: string, studentName: string, studentCode: string) => {
+    if (!window.confirm(t('teacher.resetPasswordConfirm', { name: studentName, code: studentCode }))) {
+      return
+    }
+    try {
+      const res = await api.resetStudentPassword(studentId)
+      if (res.ok) {
+        setNotice(res.message || t('teacher.resetPasswordSuccess', { name: studentName, password: `Sv@${studentCode}` }))
+      } else {
+        setNotice(res.message || 'Không thể đặt lại mật khẩu.')
+      }
+    } catch {
+      setNotice('Lỗi kết nối khi đặt lại mật khẩu.')
     }
   }
 
@@ -2073,6 +2090,14 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 <p className="text-sm font-medium">{student.name}</p>
                 <p className="text-xs text-muted-foreground">{student.studentCode || student.email}</p>
               </div>
+              <Button
+                variant="outline"
+                className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-primary hover:border-primary cursor-pointer"
+                onClick={() => handleResetStudent(student.id, student.name, student.studentCode)}
+              >
+                <KeyRound className="size-3.5" />
+                {t('teacher.resetPassword')}
+              </Button>
             </div>
           ))}
           {students.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t('teacher.noStudentsYet')}</p>}
@@ -2095,6 +2120,35 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           </div>
         )}
         <SectionHeader eyebrow={staffEyebrow} title={t('teacher.settingsTitle')} detail={t('teacher.settingsDetail')} />
+
+        <Card title={t('teacher.accountSecurity')} description={t('teacher.changePasswordDetail')}>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{user.name}</p>
+                <p className="text-xs text-muted-foreground">{user.email} · {role === 'admin' ? t('roles.admin') : t('roles.teacher')}</p>
+              </div>
+              {!showStaffChangePassword && (
+                <Button variant="outline" onClick={() => setShowStaffChangePassword(true)}>
+                  <LockKeyhole />{t('teacher.changePassword')}
+                </Button>
+              )}
+            </div>
+
+            {showStaffChangePassword && (
+              <div className="mt-2 border-t pt-4">
+                <ChangePasswordForm
+                  onSuccess={async () => {
+                    setShowStaffChangePassword(false)
+                    setNotice(t('teacher.passwordChangedSuccess'))
+                    await refresh()
+                  }}
+                  onCancel={() => setShowStaffChangePassword(false)}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
 
         <Card title={t('teacher.orgProfile')}>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -2440,6 +2494,29 @@ export default function SmartAttendApp() {
   const [authScreen, setAuthScreen] = useState<AuthScreen>('landing')
   const [page, setPage] = useState<PageKey>('overview')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('smartattend_sidebar_collapsed')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (stored === 'true') setSidebarCollapsed(true)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('smartattend_sidebar_collapsed', String(next))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }
   const [dark, setDark] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [data, setData] = useState<DashboardData>(emptyDashboard)
@@ -2613,7 +2690,7 @@ export default function SmartAttendApp() {
 
   return (
     <div className="min-h-screen utc-portal-bg flex flex-col selection:bg-blue-600 selection:text-white">
-      {mustChangePassword && role === 'student' && (
+      {mustChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-xl">
             <h2 className="text-lg font-semibold">{t('auth.mustChangePasswordTitle')}</h2>
@@ -2634,7 +2711,7 @@ export default function SmartAttendApp() {
 
       {/* Top Header Bar */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#111d33]/90 sm:px-6 shadow-xs">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
@@ -2642,6 +2719,18 @@ export default function SmartAttendApp() {
           >
             <Menu className="size-5" />
           </button>
+
+          {/* Desktop Sidebar Collapse / Expand Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="hidden lg:flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-all cursor-pointer shadow-2xs"
+            title={sidebarCollapsed ? t('header.expandNav') : t('header.collapseNav')}
+            aria-label={sidebarCollapsed ? t('header.expandNav') : t('header.collapseNav')}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="size-4.5" /> : <PanelLeftClose className="size-4.5" />}
+          </button>
+
           <div className="lg:hidden">
             <UtcLogo compact size={36} textColor="text-slate-800 dark:text-white" />
           </div>
@@ -2672,7 +2761,12 @@ export default function SmartAttendApp() {
           <NotificationBell notifications={data.notifications} role={role} go={go} t={t} />
 
           {/* User Profile Chip */}
-          <div className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => go(role === 'student' ? 'profile' : 'settings')}
+            className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer text-left"
+            title={role === 'student' ? t('student.accountSettings') : t('teacher.settingsTitle')}
+          >
             <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
               {appUser.initials}
             </div>
@@ -2680,22 +2774,33 @@ export default function SmartAttendApp() {
               {appUser.name}
             </span>
             <ChevronDown className="size-3.5 text-slate-400" />
-          </div>
+          </button>
         </div>
       </header>
 
       <div className="flex flex-1">
         {/* Sidebar Navigation */}
         <aside
-          className={
-            mobileOpen
-              ? 'fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg p-4 text-white shadow-xl lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:border-slate-800'
-              : 'hidden fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg p-4 text-white shadow-xl lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:w-64 lg:border-b-0 lg:border-r lg:border-slate-800'
-          }
+          className={`
+            fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg text-white shadow-xl transition-all duration-300 ease-in-out lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:border-b-0 lg:border-r lg:border-slate-800
+            ${mobileOpen ? 'block p-4' : 'hidden'}
+            ${sidebarCollapsed ? 'lg:w-[76px] lg:p-2.5' : 'lg:w-64 lg:p-4'}
+          `}
         >
-          {/* Top Logo inside Sidebar */}
-          <div className="mb-6 pb-4 border-b border-white/10 hidden lg:block">
-            <UtcLogo size={38} />
+          {/* Top Logo & Toggle inside Sidebar */}
+          <div className={`mb-6 pb-4 border-b border-white/10 hidden lg:flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
+            <UtcLogo compact={sidebarCollapsed} size={sidebarCollapsed ? 34 : 38} />
+            {!sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                title={t('header.collapseNav')}
+                aria-label={t('header.collapseNav')}
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            )}
           </div>
 
           <nav className="flex flex-col gap-1.5">
@@ -2703,17 +2808,20 @@ export default function SmartAttendApp() {
               <button
                 key={key}
                 onClick={() => go(key)}
-                className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                title={sidebarCollapsed ? t(labelKey) : undefined}
+                className={`flex items-center ${
+                  sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3.5 py-2.5'
+                } rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   page === key
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Icon className="size-4 shrink-0" />
-                  <span>{t(labelKey)}</span>
+                  {!sidebarCollapsed && <span className="truncate">{t(labelKey)}</span>}
                 </div>
-                {key !== 'overview' && key !== 'profile' && key !== 'settings' && (
+                {!sidebarCollapsed && key !== 'overview' && key !== 'profile' && key !== 'settings' && (
                   <ChevronRight className="size-3.5 opacity-50" />
                 )}
               </button>
@@ -2723,10 +2831,13 @@ export default function SmartAttendApp() {
 
             <button
               onClick={logout}
-              className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer"
+              title={sidebarCollapsed ? t('common.logout') : undefined}
+              className={`flex items-center ${
+                sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3.5 py-2.5'
+              } rounded-xl text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer`}
             >
-              <LogOut className="size-4" />
-              {t('common.logout')}
+              <LogOut className="size-4 shrink-0" />
+              {!sidebarCollapsed && <span>{t('common.logout')}</span>}
             </button>
           </nav>
         </aside>
