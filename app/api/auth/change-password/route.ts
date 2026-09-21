@@ -24,7 +24,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: result.message }, { status: 400 })
     }
 
-    return NextResponse.json({ ok: true })
+    // Issue freshly rotated session token for this client while all prior sessions are revoked
+    const { createAuthSession } = await import('@/lib/auth/session')
+    const { sessionCookieOptions, SESSION_COOKIE } = await import('@/lib/auth/cookies')
+    const { token, expiresAt } = await createAuthSession(auth.userId, auth.membershipId)
+    const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
+
+    const response = NextResponse.json({ ok: true })
+    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
+    return response
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     console.error('Change password failed', error)

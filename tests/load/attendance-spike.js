@@ -35,7 +35,7 @@ const BASE_URL = __ENV.TARGET_URL || 'https://smart-attend-snowy.vercel.app'
 const SESSION_COOKIE = __ENV.TEST_SESSION_COOKIE || 'sa_session=mock_valid_token'
 const TEST_CHALLENGE_CODE = __ENV.TEST_OTP || '123456'
 
-export default function () {
+export default function attendanceSpikeTest() {
   const url = `${BASE_URL}/api/attendance/verify`
 
   const payload = JSON.stringify({
@@ -70,7 +70,7 @@ export default function () {
     'Response ok is true': (r) => {
       try {
         return JSON.parse(r.body).ok === true
-      } catch (_) {
+      } catch {
         return false
       }
     },

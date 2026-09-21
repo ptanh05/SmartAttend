@@ -6,23 +6,18 @@ import {
   Calendar,
   CheckCircle2,
   CircleAlert,
-  ClipboardCheck,
   Eye,
   EyeOff,
-  FileCheck,
   GraduationCap,
   Headphones,
   HelpCircle,
-  Info,
   KeyRound,
   Lock,
   LockKeyhole,
   MapPin,
   PhoneCall,
   QrCode,
-  ScanLine,
   ShieldCheck,
-  Sparkles,
   UserRound,
   X,
 } from 'lucide-react'
@@ -35,11 +30,10 @@ import type { Role } from '@/lib/types/domain'
 export function UtcLoginLanding({
   onLogin,
   onRegister,
-  organizationName,
 }: {
   onLogin: (role: Role, mustChangePassword?: boolean) => void
   onRegister: () => void
-  organizationName: string
+  organizationName?: string
 }) {
   const { t } = useI18n()
   const [portal, setPortal] = useState<'student' | 'staff'>('student')

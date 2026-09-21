@@ -1,7 +1,15 @@
 import { and, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
-import { externalAccounts, organizationMemberships, organizations, users } from '@/lib/db/schema'
+import {
+  authSessions,
+  classEnrollments,
+  courseSections,
+  externalAccounts,
+  organizationMemberships,
+  organizations,
+  users,
+} from '@/lib/db/schema'
 import { resolveMembershipForLogin, resolveMembershipForStudentLogin, type AuthContext } from '@/lib/auth/session'
 import type { Role } from '@/lib/types/domain'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
@@ -137,6 +145,24 @@ export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]
       status: 'active',
     })
 
+    // Auto-enroll newly imported student into any existing course sections of this organization
+    const existingSections = await db()
+      .select({ id: courseSections.id })
+      .from(courseSections)
+      .where(eq(courseSections.organizationId, auth.organizationId))
+
+    for (const sec of existingSections) {
+      await db()
+        .insert(classEnrollments)
+        .values({
+          sectionId: sec.id,
+          studentId: userId,
+          organizationId: auth.organizationId,
+          status: 'active',
+        })
+        .onConflictDoNothing()
+    }
+
     created.push({ studentCode, name, defaultPassword })
   }
 
@@ -209,6 +235,9 @@ export async function changeUserPassword(auth: AuthContext, currentPassword: str
     .set({ passwordHash, mustChangePassword: false })
     .where(eq(users.id, auth.userId))
 
+  // Invalidate all active sessions for this user upon password change (forcing re-auth or rotated token)
+  await db().delete(authSessions).where(eq(authSessions.userId, auth.userId))
+
   return { ok: true as const }
 }
 
@@ -247,6 +276,9 @@ export async function selfServiceResetPassword(input: {
       .update(users)
       .set({ passwordHash, mustChangePassword: true })
       .where(eq(users.id, match.userId))
+
+    // Invalidate all active sessions on password recovery to kick out unauthorized sessions
+    await db().delete(authSessions).where(eq(authSessions.userId, match.userId))
 
     return {
       ok: true as const,
@@ -292,6 +324,9 @@ export async function selfServiceResetPassword(input: {
     .set({ passwordHash, mustChangePassword: true })
     .where(eq(users.id, match.userId))
 
+  // Invalidate all active sessions on staff password recovery
+  await db().delete(authSessions).where(eq(authSessions.userId, match.userId))
+
   return {
     ok: true as const,
     role: match.role as Role,
@@ -330,6 +365,9 @@ export async function adminResetStudentPassword(auth: AuthContext, studentId: st
     .update(users)
     .set({ passwordHash, mustChangePassword: true })
     .where(eq(users.id, student.userId))
+
+  // Invalidate all active sessions for the student when administrator resets their password
+  await db().delete(authSessions).where(eq(authSessions.userId, student.userId))
 
   return {
     ok: true as const,

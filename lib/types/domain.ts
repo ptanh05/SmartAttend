@@ -16,6 +16,7 @@ export type ClassSession = {
   autoStart?: boolean
   status: SessionStatus
   challenge: string
+  acousticProof?: { sessionId: string; sequence: number; timestamp: number; signature: string }
   enrolledCount?: number
 }
 export type AttendanceRecord = { id: string; sessionId: string; studentId: string; status: AttendanceStatus; confidence: number; verifiedAt?: string; device: string; flaggedReason?: string }

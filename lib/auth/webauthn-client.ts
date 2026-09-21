@@ -33,9 +33,31 @@ export function base64UrlToUint8Array(base64url: string): Uint8Array {
   return outputArray
 }
 
+export function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+export function spkiDerToPem(spkiDer: ArrayBuffer): string {
+  const b64 = bufferToBase64(spkiDer)
+  const lines = b64.match(/.{1,64}/g) || [b64]
+  return `-----BEGIN PUBLIC KEY-----\n${lines.join('\n')}\n-----END PUBLIC KEY-----\n`
+}
+
 export type BiometricAuthResult = {
   ok: boolean
   credentialId?: string
+  assertion?: {
+    credentialId: string
+    clientDataJSON: string
+    authenticatorData: string
+    signature: string
+    challenge: string
+  }
   error?: string
 }
 
@@ -60,18 +82,26 @@ export async function authenticateWithBiometrics(
         userVerification: 'required',
         timeout: 45000,
       },
-    })) as PublicKeyCredential | null
+    })) as (PublicKeyCredential & { response: AuthenticatorAssertionResponse }) | null
 
     if (!credential) {
       return { ok: false, error: 'No credential returned' }
     }
 
+    const assertion = {
+      credentialId: credential.id,
+      clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+      authenticatorData: bufferToBase64Url(credential.response.authenticatorData),
+      signature: bufferToBase64Url(credential.response.signature),
+      challenge: challengeString,
+    }
+
     return {
       ok: true,
       credentialId: credential.id,
+      assertion,
     }
   } catch (err) {
-    // If no registered credential was found on this domain, we can offer to create one seamlessly!
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: msg }
   }
@@ -118,13 +148,26 @@ export async function registerDeviceBiometrics(
         timeout: 60000,
         attestation: 'none',
       },
-    })) as (PublicKeyCredential & { response: AuthenticatorAttestationResponse }) | null
+    })) as (PublicKeyCredential & {
+      response: AuthenticatorAttestationResponse & { getPublicKey?: () => ArrayBuffer | null }
+    }) | null
 
     if (!credential) {
       return { ok: false, error: 'Failed to create biometric credential' }
     }
 
-    const publicKeyBase64 = bufferToBase64Url(credential.response.clientDataJSON)
+    let publicKeyPem = ''
+    if (typeof credential.response.getPublicKey === 'function') {
+      const spkiDer = credential.response.getPublicKey()
+      if (spkiDer) {
+        publicKeyPem = spkiDerToPem(spkiDer)
+      }
+    }
+
+    if (!publicKeyPem) {
+      // Fallback: If getPublicKey is not available on this browser, use base64 representation of attestationObject
+      publicKeyPem = bufferToBase64(credential.response.attestationObject)
+    }
 
     // Register credential on server
     const res = await fetch('/api/auth/webauthn/register', {
@@ -132,7 +175,7 @@ export async function registerDeviceBiometrics(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         credentialId: credential.id,
-        publicKey: publicKeyBase64,
+        publicKey: publicKeyPem,
         challenge: challengeString,
         deviceLabel: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID)'

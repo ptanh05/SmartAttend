@@ -1,6 +1,7 @@
 import { config } from 'dotenv'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
+import { createHash, generateKeyPairSync, sign } from 'crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
@@ -19,12 +20,14 @@ import {
   organizationMemberships,
   organizations,
   suspiciousAttempts,
+  userPasskeys,
   users,
 } from '@/lib/db/schema'
 import {
   createCourse,
   createCourseSection,
   deleteCourseSection,
+  getActiveChallenge,
   getOrCreateLiveSession,
   listClassSessions,
   rotateChallengeForSession,
@@ -32,6 +35,8 @@ import {
   updateCourseSection,
   verifyAttendance,
 } from '@/lib/attendance/server'
+import { generateWebAuthnChallenge, saveUserPasskey } from '@/lib/auth/webauthn'
+import { generateAcousticProofToken } from '@/lib/attendance/ultrasonic'
 import type { AuthContext } from '@/lib/auth/session'
 import { hashPassword } from '@/lib/auth/password'
 
@@ -153,10 +158,48 @@ describe.skipIf(!hasDb)('attendance flow (integration, real DB)', () => {
         expect(result.record?.confidence).toBe(78)
 
         // --- Student 2 verifies with Dual-Factor Ultrasonic + Face ID (100% confidence) ---
+        const credId = `cred_${nanoid(10)}`
+        const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          publicKeyEncoding: { type: 'spki', format: 'pem' },
+          privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        })
+        await saveUserPasskey(student2Id, credId, publicKey)
+
+        const webauthnChallenge = generateWebAuthnChallenge(student2Id)
+        const configuredOrigin = process.env.WEBAUTHN_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const clientDataJSONBuf = Buffer.from(JSON.stringify({
+          type: 'webauthn.get',
+          challenge: webauthnChallenge,
+          origin: configuredOrigin,
+        }))
+        const clientDataJSON = clientDataJSONBuf.toString('base64url')
+
+        const configuredRpId = process.env.WEBAUTHN_RP_ID || 'localhost'
+        const rpIdHash = createHash('sha256').update(configuredRpId).digest()
+        const authDataBuf = Buffer.alloc(37)
+        rpIdHash.copy(authDataBuf, 0, 0, 32)
+        authDataBuf[32] = 0x01 | 0x04 // UP & UV
+        authDataBuf.writeUInt32BE(1, 33)
+        const authenticatorData = authDataBuf.toString('base64url')
+
+        const clientDataHash = createHash('sha256').update(clientDataJSONBuf).digest()
+        const signedData = Buffer.concat([authDataBuf, clientDataHash])
+        const signature = sign('SHA256', signedData, privateKey).toString('base64url')
+
+        const activeChallenge = await getActiveChallenge(sessionId!)
+        const acousticProof = generateAcousticProofToken(sessionId!, activeChallenge!.sequence)
+
         const result2 = await verifyAttendance(student2Auth, challengeCode, 'integration-test-device-2', {
           method: 'ultrasonic_faceid',
-          ultrasonicVerified: true,
-          biometricVerified: true,
+          webauthnAssertion: {
+            credentialId: credId,
+            challenge: webauthnChallenge,
+            clientDataJSON,
+            authenticatorData,
+            signature,
+          },
+          acousticProof,
         })
         expect(result2.ok).toBe(true)
         expect(result2.record?.status).toBe('present')
@@ -190,6 +233,7 @@ describe.skipIf(!hasDb)('attendance flow (integration, real DB)', () => {
         await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
         await db().delete(courses).where(eq(courses.organizationId, orgId))
         await db().delete(attendancePolicies).where(eq(attendancePolicies.organizationId, orgId))
+        await db().delete(userPasskeys).where(eq(userPasskeys.userId, student2Id))
         await db().delete(authSessions).where(inArray(authSessions.userId, [teacherId, studentId, student2Id]))
         await db().delete(organizationMemberships).where(inArray(organizationMemberships.userId, [teacherId, studentId, student2Id]))
         await db().delete(users).where(inArray(users.id, [teacherId, studentId, student2Id]))

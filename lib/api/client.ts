@@ -142,6 +142,20 @@ export const api = {
       method?: 'ultrasonic_faceid' | 'qr_scan' | 'manual_code' | string
       ultrasonicVerified?: boolean
       biometricVerified?: boolean
+      webauthnAssertion?: {
+        credentialId: string
+        clientDataJSON: string
+        authenticatorData: string
+        signature: string
+        challenge: string
+        origin?: string
+      }
+      acousticProof?: {
+        sessionId: string
+        sequence: number
+        timestamp: number
+        signature: string
+      }
       device?: string
     },
   ) {
@@ -152,6 +166,8 @@ export const api = {
         method: options?.method ?? 'manual_code',
         ultrasonicVerified: options?.ultrasonicVerified,
         biometricVerified: options?.biometricVerified,
+        webauthnAssertion: options?.webauthnAssertion,
+        acousticProof: options?.acousticProof,
         device: options?.device,
       }),
     })

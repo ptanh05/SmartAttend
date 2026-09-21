@@ -368,7 +368,8 @@ describe.skipIf(!hasDb)('Production Security & Integrity Audit Test Suite', () =
       })
 
       expect(firstAttempt.ok).toBe(true)
-      expect(firstAttempt.confidence).toBe(100)
+      // Under Zero Client Trust, naked booleans without cryptographic proof are neutralized (55 instead of spoofed 100)
+      expect(firstAttempt.confidence).toBe(55)
 
       // Verify suspicious attempt was recorded and not bypassed
       const suspRows = await db()

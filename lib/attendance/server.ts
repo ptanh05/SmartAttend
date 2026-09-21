@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
 import { evaluateDevicePolicy, normalizeScore } from '@/lib/attendance/device-policy'
+import { generateAcousticProofToken, verifyAcousticProofToken, type AcousticProofInput } from '@/lib/attendance/ultrasonic'
+import { verifyWebAuthnAssertion, type WebAuthnAssertionInput } from '@/lib/auth/webauthn'
 import type { AuthContext } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import {
@@ -90,11 +92,29 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
     .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
     .where(and(eq(attendanceSessions.organizationId, organizationId), eq(attendanceSessions.status, 'active')))
 
+  const liveSessionIds = liveSessions.map((item) => item.session.id)
   const challengeBySession = new Map<string, string>()
-  for (const live of liveSessions) {
-    const activeChallenge = await getActiveChallenge(live.session.id)
-    const challenge = activeChallenge?.code ?? (await getActiveChallengePlain(live.session.id))
-    if (challenge) challengeBySession.set(live.session.id, challenge)
+  const proofBySession = new Map<string, AcousticProofInput>()
+
+  if (liveSessionIds.length > 0) {
+    const activeChallenges = await db()
+      .select()
+      .from(attendanceChallenges)
+      .where(
+        and(
+          inArray(attendanceChallenges.sessionId, liveSessionIds),
+          eq(attendanceChallenges.status, 'active'),
+        ),
+      )
+      .orderBy(desc(attendanceChallenges.sequence))
+
+    for (const ch of activeChallenges) {
+      if (!challengeBySession.has(ch.sessionId)) {
+        const plain = ch.code ?? (await getActiveChallengePlain(ch.sessionId))
+        if (plain) challengeBySession.set(ch.sessionId, plain)
+        proofBySession.set(ch.sessionId, generateAcousticProofToken(ch.sessionId, ch.sequence))
+      }
+    }
   }
 
   const seen = new Set<string>()
@@ -120,6 +140,7 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
       enrolledCount: enrollmentCountBySection.get(row.section.id) ?? 0,
       status,
       challenge: live ? challengeBySession.get(live.session.id) ?? '------' : '------',
+      acousticProof: live ? proofBySession.get(live.session.id) : undefined,
     })
   }
 
@@ -176,7 +197,7 @@ export async function updateAttendancePolicy(
   return { ok: true as const, policy: updated }
 }
 
-async function getActiveChallenge(sessionId: string) {
+export async function getActiveChallenge(sessionId: string) {
   const rows = await db()
     .select()
     .from(attendanceChallenges)
@@ -247,7 +268,8 @@ export async function rotateChallengeForSession(auth: AuthContext, sessionId: st
 
   await appendAudit(auth, 'Rotated session challenge', sessionId, 'info')
 
-  return { ok: true as const, challenge: value, expiresAt: expiresAt.toISOString() }
+  const acousticProof = generateAcousticProofToken(sessionId, sequence)
+  return { ok: true as const, challenge: value, acousticProof, expiresAt: expiresAt.toISOString() }
 }
 
 async function getSessionScoped(organizationId: string, sessionId: string) {
@@ -307,17 +329,20 @@ async function finalizeAbsentRecords(organizationId: string, sessionId: string) 
 
   const existingIds = new Set(existing.map((row) => row.studentId))
 
-  for (const row of enrolled) {
-    if (existingIds.has(row.studentId)) continue
-    await db().insert(attendanceRecords).values({
+  const absentRecords = enrolled
+    .filter((row) => !existingIds.has(row.studentId))
+    .map((row) => ({
       id: nanoid(),
       organizationId,
       sessionId,
       studentId: row.studentId,
-      status: 'absent',
+      status: 'absent' as const,
       verificationScore: 0,
       device: null,
-    })
+    }))
+
+  if (absentRecords.length > 0) {
+    await db().insert(attendanceRecords).values(absentRecords).onConflictDoNothing()
   }
 }
 
@@ -340,6 +365,8 @@ export type VerificationOptions = {
   method?: 'ultrasonic_faceid' | 'qr_scan' | 'manual_code' | string
   ultrasonicVerified?: boolean
   biometricVerified?: boolean
+  webauthnAssertion?: WebAuthnAssertionInput
+  acousticProof?: AcousticProofInput
 }
 
 export async function verifyAttendance(
@@ -384,6 +411,26 @@ export async function verifyAttendance(
     return { ok: false, confidence: 22, message: 'That challenge is incorrect. Ask your teacher for the current code.' }
   }
 
+  // 1. WebAuthn Cryptographic Assertion Verification
+  let verifiedBiometric = false
+  if (options?.webauthnAssertion) {
+    const webauthnRes = await verifyWebAuthnAssertion(auth.userId, options.webauthnAssertion)
+    if (!webauthnRes.ok) {
+      return { ok: false, confidence: 0, message: webauthnRes.reason || 'Xác thực sinh trắc học WebAuthn thất bại.' }
+    }
+    verifiedBiometric = true
+  }
+
+  // 2. Ultrasonic Acoustic Proof Verification (Bound to session & challenge sequence)
+  let verifiedUltrasonic = false
+  if (options?.acousticProof) {
+    const acousticRes = verifyAcousticProofToken(options.acousticProof, live.id, challenge.sequence)
+    if (!acousticRes.ok) {
+      return { ok: false, confidence: 0, message: acousticRes.reason || 'Xác thực sóng siêu âm phòng học không hợp lệ hoặc đã hết hạn.' }
+    }
+    verifiedUltrasonic = true
+  }
+
   const policy = await getPolicy(auth.organizationId)
   const verifiedAt = new Date()
   const lateThresholdMs = (policy.lateAfterMinutes ?? 10) * 60 * 1000
@@ -423,11 +470,12 @@ export async function verifyAttendance(
     }
   }
 
-  // Award 100% verification score when verified with both in-room ultrasonic beacon & biometric face ID
-  const isUltrasonicBiometric = Boolean(options?.ultrasonicVerified && options?.biometricVerified)
+  // Award 100% verification score ONLY when verified with both in-room acoustic proof & cryptographic biometric assertion.
+  // Naked client booleans without cryptographic proof are strictly neutralized under Zero Client Trust.
+  const isUltrasonicBiometric = Boolean(verifiedUltrasonic && verifiedBiometric)
   const verificationScore = isUltrasonicBiometric ? 100 : normalizeScore(deviceDecision.score)
 
-  const recordId = existing[0]?.id ?? nanoid()
+  let finalRecordId = existing[0]?.id ?? nanoid()
 
   if (existing[0]) {
     await db()
@@ -438,12 +486,12 @@ export async function verifyAttendance(
         verifiedAt,
         device: deviceLabel,
       })
-      .where(eq(attendanceRecords.id, recordId))
+      .where(eq(attendanceRecords.id, finalRecordId))
   } else {
-    await db()
+    const upsertRows = await db()
       .insert(attendanceRecords)
       .values({
-        id: recordId,
+        id: finalRecordId,
         organizationId: auth.organizationId,
         sessionId: live.id,
         studentId: auth.userId,
@@ -461,6 +509,11 @@ export async function verifyAttendance(
           device: deviceLabel,
         },
       })
+      .returning({ id: attendanceRecords.id })
+
+    if (upsertRows[0]?.id) {
+      finalRecordId = upsertRows[0].id
+    }
   }
 
   // Update consumedAt timestamp on the challenge while keeping it active for other students in the room
@@ -474,7 +527,7 @@ export async function verifyAttendance(
   await db().insert(attendanceVerifications).values({
     id: nanoid(),
     organizationId: auth.organizationId,
-    attendanceRecordId: recordId,
+    attendanceRecordId: finalRecordId,
     challengeId: challenge.id,
     method: verificationMethod,
     result: 'accepted',
@@ -482,8 +535,9 @@ export async function verifyAttendance(
       device: deviceLabel,
       score: verificationScore,
       reason: deviceDecision.reason,
-      ultrasonic: Boolean(options?.ultrasonicVerified),
-      biometric: Boolean(options?.biometricVerified),
+      ultrasonic: verifiedUltrasonic,
+      biometric: verifiedBiometric,
+      proofVerified: isUltrasonicBiometric,
     },
   })
 
@@ -519,7 +573,7 @@ export async function verifyAttendance(
     await db().insert(suspiciousAttempts).values({
       id: nanoid(),
       organizationId: auth.organizationId,
-      attendanceRecordId: recordId,
+      attendanceRecordId: finalRecordId,
       reason: `Verification from a non-trusted device under the trusted-device policy (${deviceDecision.reason}).`,
       status: 'open',
     })
@@ -536,7 +590,7 @@ export async function verifyAttendance(
     confidence: verificationScore,
     message,
     record: {
-      id: recordId,
+      id: finalRecordId,
       sessionId: live.id,
       studentId: auth.userId,
       status,
@@ -1042,13 +1096,18 @@ export async function createCourseSection(
     .from(organizationMemberships)
     .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student')))
 
-  for (const st of orgStudents) {
-    await db().insert(classEnrollments).values({
-      sectionId,
-      studentId: st.userId,
-      organizationId: auth.organizationId,
-      status: 'active',
-    }).onConflictDoNothing()
+  if (orgStudents.length > 0) {
+    await db()
+      .insert(classEnrollments)
+      .values(
+        orgStudents.map((st) => ({
+          sectionId,
+          studentId: st.userId,
+          organizationId: auth.organizationId,
+          status: 'active' as const,
+        })),
+      )
+      .onConflictDoNothing()
   }
 
   await appendAudit(auth, `Created recurring section schedule in room ${data.room}`, sectionId, 'info')
@@ -1089,16 +1148,43 @@ export async function deleteCourseSection(auth: AuthContext, sectionId: string) 
   return { ok: true as const }
 }
 
-export async function overrideRecordStatus(auth: AuthContext, recordId: string, status: AttendanceStatus) {
+export async function overrideRecordStatus(auth: AuthContext, recordId: string, status: AttendanceStatus, note?: string) {
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
   }
+
+  const rows = await db()
+    .select({
+      record: attendanceRecords,
+      session: attendanceSessions,
+      course: courses,
+    })
+    .from(attendanceRecords)
+    .innerJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+    .leftJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .where(and(eq(attendanceRecords.id, recordId), eq(attendanceRecords.organizationId, auth.organizationId)))
+
+  const target = rows[0]
+  if (!target) {
+    return { ok: false as const, message: 'Attendance record not found.' }
+  }
+
+  // Horizontal privilege check: Teachers can only override records for courses or sessions they teach
+  if (auth.role === 'teacher') {
+    const isAssignedTeacher =
+      target.session.teacherId === auth.userId ||
+      (target.course && target.course.teacherId === auth.userId)
+    if (!isAssignedTeacher) {
+      return { ok: false as const, message: 'Forbidden: You can only override attendance records for courses you teach.' }
+    }
+  }
+
   await db()
     .update(attendanceRecords)
     .set({ status })
-    .where(and(eq(attendanceRecords.id, recordId), eq(attendanceRecords.organizationId, auth.organizationId)))
+    .where(eq(attendanceRecords.id, recordId))
 
-  await appendAudit(auth, `Overrode attendance record ${recordId} to ${status}`, recordId, 'warning')
+  await appendAudit(auth, `Overrode attendance record ${recordId} to ${status}${note ? ` (${note})` : ''}`, recordId, 'warning')
   return { ok: true as const }
 }
 

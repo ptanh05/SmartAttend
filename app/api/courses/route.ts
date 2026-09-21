@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createCourse, listCourses } from '@/lib/attendance/server'
-import { AuthError, getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { AuthError, requireAuth } from '@/lib/auth/context'
 
 export async function GET() {
   try {

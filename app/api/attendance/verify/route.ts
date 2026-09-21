@@ -18,13 +18,15 @@ export async function POST(request: Request) {
     const code = challengeCode(body.code)
     const device = typeof body.device === 'string' ? body.device : 'This browser'
     const method = typeof body.method === 'string' ? body.method : 'manual_code'
-    const ultrasonicVerified = Boolean(body.ultrasonicVerified)
-    const biometricVerified = Boolean(body.biometricVerified)
+    const webauthnAssertion = body.webauthnAssertion && typeof body.webauthnAssertion === 'object' ? body.webauthnAssertion : undefined
+    const acousticProof = body.acousticProof && typeof body.acousticProof === 'object' ? body.acousticProof : undefined
 
     const result = await verifyAttendance(auth, code, device, {
       method,
-      ultrasonicVerified,
-      biometricVerified,
+      ultrasonicVerified: Boolean(body.ultrasonicVerified),
+      biometricVerified: Boolean(body.biometricVerified),
+      webauthnAssertion,
+      acousticProof,
     })
     return NextResponse.json(result, { status: result.ok ? 200 : 400 })
   } catch (error) {

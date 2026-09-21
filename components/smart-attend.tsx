@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, Fingerprint, GraduationCap, KeyRound, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
+  ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, Fingerprint, KeyRound, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
   PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, Users, Volume2, Waves, Wifi, X
 } from 'lucide-react'
 import {
@@ -26,10 +26,6 @@ import { authenticateWithBiometrics, registerDeviceBiometrics } from '@/lib/auth
 
 
 
-function PublicLanding({ onSelect }: { onSelect: (portal: 'student' | 'staff') => void }) {
-  const { t } = useI18n()
-  return <main className="min-h-screen bg-background"><header className="flex items-center justify-between border-b px-5 py-4 sm:px-8"><Logo /><div className="flex items-center gap-2"><LanguageSwitcher /><Button variant="ghost" onClick={() => onSelect('student')}>{t('landing.studentPortal')}</Button><Button variant="outline" onClick={() => onSelect('staff')}>{t('landing.staffPortal')}</Button></div></header><section className="mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-28"><div><Status>{t('landing.trustedBy')}</Status><h1 className="mt-6 max-w-3xl text-balance text-5xl font-semibold tracking-tight sm:text-6xl">{t('landing.heroTitle')}</h1><p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">{t('landing.heroDetail')}</p><div className="mt-8 flex flex-wrap gap-3"><Button onClick={() => onSelect('student')}><GraduationCap />{t('landing.studentPortal')}</Button><Button variant="outline" onClick={() => onSelect('staff')}><Users />{t('landing.staffPortal')}</Button></div><div className="mt-8 flex flex-wrap gap-5 text-sm text-muted-foreground"><span><ShieldCheck className="mr-2 inline size-4 text-primary" />{t('landing.sessionVerified')}</span><span><Smartphone className="mr-2 inline size-4 text-primary" />{t('landing.deviceAware')}</span><span><Activity className="mr-2 inline size-4 text-primary" />{t('landing.liveInsights')}</span></div></div><div className="rounded-3xl border bg-muted/40 p-5 shadow-sm sm:p-8"><div className="rounded-2xl border bg-card p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">{t('landing.todaysAttendance')}</p><p className="mt-2 text-4xl font-semibold">—</p></div><div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-primary"><BarChart3 /></div></div><div className="mt-8 flex h-36 items-end gap-2">{[38, 56, 48, 72, 67, 82, 78, 94, 86, 91].map((height, index) => <div key={index} className="flex-1 rounded-t bg-primary/80" style={{ height: `${height}%` }} />)}</div><div className="mt-6 flex items-center justify-between border-t pt-4 text-sm"><span className="text-muted-foreground">{t('common.activeSession')}</span><Status>{t('common.liveNow')}</Status></div></div></div></section></main>
-}
 
 function ChangePasswordForm({
   forced = false,
@@ -119,120 +115,6 @@ function ChangePasswordForm({
   )
 }
 
-function LoginScreen({
-  portal,
-  onLogin,
-  onSwitch,
-  onRegister,
-  onHome,
-  organizationName,
-}: {
-  portal: 'student' | 'staff'
-  onLogin: (role: Role, mustChangePassword?: boolean) => void
-  onSwitch: () => void
-  onRegister: () => void
-  onHome: () => void
-  organizationName: string
-}) {
-  const { t } = useI18n()
-  const [identifier, setIdentifier] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoading(true)
-    setError('')
-    try {
-      const result = await api.login(identifier, password, portal)
-      if (!result.ok || !result.role) {
-        setError(result.message ?? t('common.signInFailed'))
-        return
-      }
-      onLogin(result.role, result.mustChangePassword)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.signInFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <main className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
-      <div className="hidden bg-primary p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
-        <Logo onClick={onHome} />
-        <div className="max-w-md">
-          <p className="mb-5 text-sm font-medium uppercase tracking-[0.18em] text-primary-foreground/70">
-            {portal === 'student' ? t('login.studentPortal') : t('login.staffPortal')}
-          </p>
-          <h1 className="text-5xl font-semibold leading-tight tracking-tight">{t('login.heroTitle')}</h1>
-          <p className="mt-6 text-lg leading-8 text-primary-foreground/75">{t('login.heroDetail', { organization: organizationName })}</p>
-        </div>
-        <p className="text-sm text-primary-foreground/60">SmartAttend</p>
-      </div>
-      <div className="flex items-center justify-center bg-background p-6 sm:p-12">
-        <div className="w-full max-w-md">
-          <div className="mb-10 flex items-center justify-between lg:hidden">
-            <Logo onClick={onHome} />
-            <LanguageSwitcher compact />
-          </div>
-          <p className="text-sm font-medium text-primary">
-            SmartAttend {portal === 'student' ? t('roles.student') : t('roles.teacher')}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('login.welcomeBack')}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {portal === 'student' ? t('login.studentDetail') : t('login.staffDetail')}
-          </p>
-          <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              {portal === 'student' ? t('login.studentId') : t('login.emailStaff')}
-              <input
-                className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                type={portal === 'student' ? 'text' : 'email'}
-                autoComplete={portal === 'student' ? 'username' : 'email'}
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              {t('login.password')}
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            {portal === 'student' && (
-              <p className="text-xs text-muted-foreground">{t('login.studentPasswordHint')}</p>
-            )}
-            {error && (
-              <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
-                <CircleAlert className="mr-2 inline size-4" />
-                {error}
-              </div>
-            )}
-            <Button type="submit" className="h-12">
-              {loading ? t('login.signingIn') : portal === 'student' ? t('login.signInStudent') : t('login.signInStaff')}
-            </Button>
-          </form>
-          <div className="mt-6 flex flex-col gap-3 text-center text-sm">
-            <button onClick={onSwitch} className="text-primary hover:underline">
-              {portal === 'student' ? t('login.switchToStaff') : t('login.switchToStudent')}
-            </button>
-            {portal === 'staff' && (
-              <button onClick={onRegister} className="text-muted-foreground hover:text-foreground">
-                {t('auth.registerTeacher')}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </main>
-  )
-}
 
 function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role: Role) => void; onBack: () => void; onHome: () => void }) {
   const { t } = useI18n()
@@ -370,11 +252,6 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const liveCourse = liveSession ? courses.find((course) => course.id === liveSession.courseId) : null
   const rate = calcAttendanceRate(records)
   const presentCount = records.filter((row) => row.status === 'present' || row.status === 'late').length
-
-  const todayDay = new Date().getDay()
-  const todayDayOfWeek = todayDay === 0 ? 7 : todayDay
-  const todaySessions = sessions.filter((s) => s.dayOfWeek === todayDayOfWeek)
-
   const verify = async (overrideCode?: string) => {
     const codeToVerify = overrideCode || code
     if (!codeToVerify.trim()) return
@@ -470,15 +347,22 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
       // Seamless enrollment if device doesn't have an enrolled credential on this origin yet
       if (!bioAuth.ok && !challengeRes.hasEnrolledPasskey) {
         setStepNotice('Đang đăng ký Face ID / Vân tay của thiết bị này...')
-        bioAuth = await registerDeviceBiometrics(
+        const regRes = await registerDeviceBiometrics(
           user.id || '',
           user.name,
           user.email,
           challengeRes.challenge,
         )
+        if (regRes.ok) {
+          bioAuth = await authenticateWithBiometrics(
+            user.id || '',
+            user.email,
+            challengeRes.challenge,
+          )
+        }
       }
 
-      if (!bioAuth.ok) {
+      if (!bioAuth.ok || !bioAuth.assertion) {
         setBiometricStatus('error')
         setStepNotice(`Face ID / Vân tay: ${bioAuth.error || 'Xác thực sinh trắc học thất bại'}`)
         return
@@ -511,6 +395,8 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
         method: 'ultrasonic_faceid',
         ultrasonicVerified: true,
         biometricVerified: true,
+        webauthnAssertion: bioAuth.assertion,
+        acousticProof: liveSession.acousticProof,
         device: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID + Ultrasonic)'
           : navigator.userAgent.includes('Android')
@@ -1410,7 +1296,6 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const { t } = useI18n()
   const { courses, sessions, live, metrics, suspicious, auditEvents, users, departments, leaveRequests = [] } = data
   const [search, setSearch] = useState('')
-  const [reviewed, setReviewed] = useState<string[]>([])
   const [notice, setNotice] = useState('')
   const [saved, setSaved] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -1499,7 +1384,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       setPolicyLateAfter(data.policy.lateAfterMinutes)
       setPolicyRequireTrusted(data.policy.requireTrustedDevice)
     }
-  }, [data.policy?.challengeTtlSeconds, data.policy?.lateAfterMinutes, data.policy?.requireTrustedDevice, policyDirty])
+  }, [data.policy, policyDirty])
 
   const handleSavePolicy = async () => {
     setSavingPolicy(true)
@@ -2490,7 +2375,6 @@ export default function SmartAttendApp() {
   const router = useRouter()
   const { t } = useI18n()
   const [role, setRole] = useState<AuthUser>(null)
-  const [portal, setPortal] = useState<'student' | 'staff'>('student')
   const [authScreen, setAuthScreen] = useState<AuthScreen>('landing')
   const [page, setPage] = useState<PageKey>('overview')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -2546,12 +2430,6 @@ export default function SmartAttendApp() {
     }
   }
 
-  const openPortal = (next: 'student' | 'staff') => {
-    setPortal(next)
-    setAuthScreen('login')
-    router.push(next === 'student' ? '/student/login' : '/staff/login')
-  }
-
   const openRegister = () => {
     setAuthScreen('register')
     router.push('/staff/register')
@@ -2574,8 +2452,6 @@ export default function SmartAttendApp() {
     const id = window.setTimeout(async () => {
       const path = window.location.pathname
       setAuthScreen(initialAuthScreen(path))
-      if (path.startsWith('/student')) setPortal('student')
-      else if (path.startsWith('/staff') || path.startsWith('/teacher') || path.startsWith('/admin')) setPortal('staff')
 
       try {
         const me = await api.me()
@@ -2643,7 +2519,6 @@ export default function SmartAttendApp() {
     setAppUser(null)
     setMustChangePassword(false)
     setData(emptyDashboard)
-    setPortal('student')
     setAuthScreen('login')
     router.push('/student/login')
   }

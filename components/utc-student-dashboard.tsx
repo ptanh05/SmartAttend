@@ -2,24 +2,14 @@
 
 import React, { useState } from 'react'
 import {
-  AlertTriangle,
   Bell,
   Calendar,
   CheckCircle2,
-  ChevronRight,
   ClipboardCheck,
   Clock,
-  FileCheck,
-  FileText,
   GraduationCap,
-  Inbox,
   Pin,
-  QrCode,
   ScanLine,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
 } from 'lucide-react'
 import { useI18n } from '@/components/i18n-provider'
 import type { AppUser, PageKey, ViewProps } from './smart-attend-ui'
@@ -53,11 +43,10 @@ export function formatUtcDate(locale: string = 'vi'): { greeting: string; dateSt
 export function UtcStudentDashboard({
   user,
   go,
-  data,
 }: {
   user: AppUser
   go: (p: PageKey) => void
-  data: ViewProps['data']
+  data?: ViewProps['data']
 }) {
   const { t, locale } = useI18n()
   const { greeting, dateString } = formatUtcDate(locale)

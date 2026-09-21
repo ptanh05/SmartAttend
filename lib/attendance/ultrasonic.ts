@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'crypto'
+
 /**
  * Ultrasonic Acoustic Beacon Engine (Web Audio API)
  *
@@ -248,3 +250,87 @@ export async function detectUltrasonicBeacon({
     }
   }
 }
+
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.TEACHER_REGISTRATION_API_KEY
+  if (secret) return secret
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: SESSION_SECRET or TEACHER_REGISTRATION_API_KEY environment variable is required in production.')
+  }
+  return 'smartattend_acoustic_proof_secret'
+}
+
+export type AcousticProofInput = {
+  sessionId: string
+  sequence: number
+  timestamp: number
+  signature: string
+}
+
+/**
+ * Creates an in-room acoustic verification proof bound to the teacher's active session challenge.
+ *
+ * NOTE (Architecture & Security Model):
+ * 1. Physical Layer: Teacher screen emits an analog 18.75 kHz tone; student microphone uses Web Audio FFT.
+ *    This is a localized analog proximity heuristic (Level 1), not a hardware-backed cryptographic proof.
+ * 2. Token Layer: Server HMAC ensures integrity of the session ID, rotation sequence, and 60s time window (Level 4).
+ *    HMAC proves token authenticity, NOT absolute physical presence.
+ */
+export function generateAcousticProofToken(sessionId: string, sequence: number, timestamp = Date.now()): AcousticProofInput {
+  const secret = getSessionSecret()
+  const timeSlot = Math.floor(timestamp / 30000)
+  const payload = `${sessionId}:${sequence}:${timeSlot}`
+  const signature = createHmac('sha256', secret).update(payload).digest('base64url')
+  return {
+    sessionId,
+    sequence,
+    timestamp,
+    signature,
+  }
+}
+
+/**
+ * Server-side authoritative verification of the acoustic proof.
+ * Validates session binding, sequence matching, time window TTL, and cryptographic HMAC.
+ */
+export function verifyAcousticProofToken(
+  proof: AcousticProofInput,
+  expectedSessionId: string,
+  expectedSequence: number,
+  maxWindowMs = 60000,
+): { ok: boolean; reason?: string } {
+  if (!proof || !proof.sessionId || !proof.signature) {
+    return { ok: false, reason: 'Missing acoustic proof data.' }
+  }
+
+  if (proof.sessionId !== expectedSessionId) {
+    return { ok: false, reason: 'Acoustic proof belongs to a different session.' }
+  }
+
+  if (proof.sequence !== expectedSequence) {
+    return { ok: false, reason: 'Acoustic proof sequence does not match the active session challenge sequence.' }
+  }
+
+  const now = Date.now()
+  if (Math.abs(now - proof.timestamp) > maxWindowMs) {
+    return { ok: false, reason: 'Acoustic proof timestamp has expired (outside valid physical room window).' }
+  }
+
+  const secret = getSessionSecret()
+  const timeSlot = Math.floor(proof.timestamp / 30000)
+  const validSlots = [timeSlot, timeSlot - 1, timeSlot + 1]
+  const isValid = validSlots.some((slot) => {
+    const expectedPayload = `${proof.sessionId}:${proof.sequence}:${slot}`
+    const expectedSig = createHmac('sha256', secret).update(expectedPayload).digest('base64url')
+    const expectedBuf = Buffer.from(expectedSig)
+    const providedBuf = Buffer.from(proof.signature)
+    return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf)
+  })
+
+  if (!isValid) {
+    return { ok: false, reason: 'Invalid acoustic proof cryptographic signature.' }
+  }
+
+  return { ok: true }
+}
+
