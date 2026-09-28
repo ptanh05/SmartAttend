@@ -17,11 +17,11 @@ import type { AppUser, PageKey, ViewProps } from './smart-attend-ui'
 export function formatUtcDate(locale: string = 'vi'): { greeting: string; dateString: string } {
   const now = new Date()
   const hour = now.getHours()
-  let greeting = 'Chào buổi sáng,'
+  let greeting = locale === 'vi' ? 'Chào buổi sáng,' : 'Good morning,'
   if (hour >= 12 && hour < 18) {
-    greeting = 'Chào buổi chiều,'
+    greeting = locale === 'vi' ? 'Chào buổi chiều,' : 'Good afternoon,'
   } else if (hour >= 18) {
-    greeting = 'Chào buổi tối,'
+    greeting = locale === 'vi' ? 'Chào buổi tối,' : 'Good evening,'
   }
 
   const daysVi = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
@@ -52,47 +52,103 @@ export function UtcStudentDashboard({
   const { greeting, dateString } = formatUtcDate(locale)
   const [newsModal, setNewsModal] = useState<{ title: string; date: string; content: string } | null>(null)
 
-  const schoolNews = [
-    {
-      id: 'sn-1',
-      title: 'Quy định đánh giá điểm chuyên cần và điều kiện dự thi kết thúc học phần Học kỳ I',
-      date: '21/08/2026',
-      content: 'Sinh viên có tỷ lệ vắng mặt vượt quá 20% tổng số tiết của học phần sẽ không đủ điều kiện dự thi kết thúc học phần. Đề nghị sinh viên theo dõi tỷ lệ chuyên cần thường xuyên trên hệ thống SmartAttend.',
-    },
-    {
-      id: 'sn-2',
-      title: 'Hướng dẫn quét mã QR động điểm danh qua ứng dụng SmartAttend tại phòng học',
-      date: '21/08/2026',
-      content: 'Mã QR tại giảng đường được tự động làm mới theo chu kỳ để đảm bảo tính minh bạch. Sinh viên cần kết nối mạng Wi-Fi trường và cấp quyền định vị vị trí để hoàn tất điểm danh hợp lệ.',
-    },
-    {
-      id: 'sn-3',
-      title: 'Quy trình gửi đơn xin phép vắng học và nộp minh chứng y tế / công tác trực tuyến',
-      date: '11/08/2026',
-      content: 'Sinh viên gửi đơn kèm ảnh chụp minh chứng qua mục Lịch sử chuyên cần trong vòng 48 giờ kể từ buổi học cần xin phép để được giảng viên phụ trách xem xét duyệt vắng có phép.',
-    },
-  ]
+  const schoolNews =
+    locale === 'vi'
+      ? [
+          {
+            id: 'sn-1',
+            title: 'Quy định đánh giá điểm chuyên cần và điều kiện dự thi kết thúc học phần Học kỳ I',
+            date: '21/08/2026',
+            content:
+              'Sinh viên có tỷ lệ vắng mặt vượt quá 20% tổng số tiết của học phần sẽ không đủ điều kiện dự thi kết thúc học phần. Đề nghị sinh viên theo dõi tỷ lệ chuyên cần thường xuyên trên hệ thống SmartAttend.',
+          },
+          {
+            id: 'sn-2',
+            title: 'Hướng dẫn quét mã QR động điểm danh qua ứng dụng SmartAttend tại phòng học',
+            date: '21/08/2026',
+            content:
+              'Mã QR tại giảng đường được tự động làm mới theo chu kỳ để đảm bảo tính minh bạch. Sinh viên cần kết nối mạng Wi-Fi trường và cấp quyền định vị vị trí để hoàn tất điểm danh hợp lệ.',
+          },
+          {
+            id: 'sn-3',
+            title: 'Quy trình gửi đơn xin phép vắng học và nộp minh chứng y tế / công tác trực tuyến',
+            date: '11/08/2026',
+            content:
+              'Sinh viên gửi đơn kèm ảnh chụp minh chứng qua mục Lịch sử chuyên cần trong vòng 48 giờ kể từ buổi học cần xin phép để được giảng viên phụ trách xem xét duyệt vắng có phép.',
+          },
+        ]
+      : [
+          {
+            id: 'sn-1',
+            title: 'Regulations on Attendance Grading and Final Exam Eligibility for Semester I',
+            date: '21/08/2026',
+            content:
+              'Students with an absence rate exceeding 20% of total class hours will not be eligible to take the final course exam. Please monitor your attendance rate regularly on SmartAttend.',
+          },
+          {
+            id: 'sn-2',
+            title: 'Instructions for Scanning Dynamic QR Codes via SmartAttend in Lecture Halls',
+            date: '21/08/2026',
+            content:
+              'Lecture hall QR codes automatically refresh periodically to ensure integrity. Students must connect to campus Wi-Fi and grant location permissions to complete check-in.',
+          },
+          {
+            id: 'sn-3',
+            title: 'Online Workflow for Submitting Leave Requests and Medical / Official Evidence',
+            date: '11/08/2026',
+            content:
+              'Students must submit leave requests with attached evidence via the Attendance History section within 48 hours of the missed session for instructor review and approval.',
+          },
+        ]
 
-  const trainingNews = [
-    {
-      id: 'tn-1',
-      title: 'Lưu ý bật định vị GPS và cấp quyền Camera khi thực hiện quét mã điểm danh',
-      date: '22/08/2026',
-      content: 'Hệ thống yêu cầu xác thực vị trí phòng học để chống điểm danh hộ từ xa. Vui lòng đảm bảo thiết bị đã bật GPS và trình duyệt cho phép truy cập vị trí.',
-    },
-    {
-      id: 'tn-2',
-      title: 'Thông báo lịch mở phiên điểm danh học bù cho các lớp học phần Tuần 12',
-      date: '22/08/2026',
-      content: 'Giảng viên các lớp học phần có lịch học bù đã cập nhật phiên điểm danh mới. Sinh viên theo dõi mục Lịch học để vào điểm danh đúng khung giờ quy định.',
-    },
-    {
-      id: 'tn-3',
-      title: 'Cảnh báo tự động: Hệ thống đã gửi thông báo đến các sinh viên chạm ngưỡng vắng 15%',
-      date: '22/08/2026',
-      content: 'Sinh viên nhận được cảnh báo cần kiểm tra lại lịch sử điểm danh, các đơn nghỉ phép đã gửi và liên hệ trực tiếp với Giảng viên nếu có sai sót.',
-    },
-  ]
+  const trainingNews =
+    locale === 'vi'
+      ? [
+          {
+            id: 'tn-1',
+            title: 'Lưu ý bật định vị GPS và cấp quyền Camera khi thực hiện quét mã điểm danh',
+            date: '22/08/2026',
+            content:
+              'Hệ thống yêu cầu xác thực vị trí phòng học để chống điểm danh hộ từ xa. Vui lòng đảm bảo thiết bị đã bật GPS và trình duyệt cho phép truy cập vị trí.',
+          },
+          {
+            id: 'tn-2',
+            title: 'Thông báo lịch mở phiên điểm danh học bù cho các lớp học phần Tuần 12',
+            date: '22/08/2026',
+            content:
+              'Giảng viên các lớp học phần có lịch học bù đã cập nhật phiên điểm danh mới. Sinh viên theo dõi mục Lịch học để vào điểm danh đúng khung giờ quy định.',
+          },
+          {
+            id: 'tn-3',
+            title: 'Cảnh báo tự động: Hệ thống đã gửi thông báo đến các sinh viên chạm ngưỡng vắng 15%',
+            date: '22/08/2026',
+            content:
+              'Sinh viên nhận được cảnh báo cần kiểm tra lại lịch sử điểm danh, các đơn nghỉ phép đã gửi và liên hệ trực tiếp với Giảng viên nếu có sai sót.',
+          },
+        ]
+      : [
+          {
+            id: 'tn-1',
+            title: 'Reminder: Enable GPS and Grant Camera Permissions for Attendance QR Scanning',
+            date: '22/08/2026',
+            content:
+              'The system validates classroom geo-location to prevent proxy attendance from outside. Please make sure GPS is turned on and your browser has camera/location access.',
+          },
+          {
+            id: 'tn-2',
+            title: 'Notice: Make-up Class Attendance Session Schedules for Week 12 Modules',
+            date: '22/08/2026',
+            content:
+              'Instructors of modules with make-up classes have updated new attendance sessions. Students should check the Class Timetable to check in during the designated time windows.',
+          },
+          {
+            id: 'tn-3',
+            title: 'Automated Warning: Notifications Dispatched to Students Reaching 15% Absence Threshold',
+            date: '22/08/2026',
+            content:
+              'Students receiving warnings should review their attendance history, submitted leave requests, and contact their instructors directly if there are any discrepancies.',
+          },
+        ]
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +173,7 @@ export function UtcStudentDashboard({
                 <>
                   <span className="opacity-60">•</span>
                   <span className="rounded-md bg-white/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-white backdrop-blur-xs">
-                    MSV: {user.studentCode}
+                    {locale === 'vi' ? 'MSV' : 'Student ID'}: {user.studentCode}
                   </span>
                 </>
               )}

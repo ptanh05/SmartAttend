@@ -178,7 +178,7 @@ export function UtcLoginLanding({
 
               {/* University Intro */}
               <p className="mt-4 text-sm font-medium leading-relaxed text-slate-700">
-                <strong className="text-blue-950">Trường Đại học Giao thông Vận tải</strong> — nơi đào tạo nguồn nhân lực chất lượng cao trong lĩnh vực Giao thông Vận tải, Kinh tế, Kỹ thuật và Công nghệ.
+                <strong className="text-blue-950">{t('landing.welcomeOrgBold')}</strong> — {t('landing.welcomeOrgDesc')}
               </p>
               <p className="mt-2 text-xs leading-normal text-slate-500">
                 {t('landing.welcomeDetail')}
@@ -256,7 +256,7 @@ export function UtcLoginLanding({
               {/* Form Title */}
               <div className="mt-3 text-center">
                 <h2 className="text-xl font-black uppercase tracking-wider text-slate-900">
-                  {portal === 'student' ? 'ĐĂNG NHẬP' : 'ĐĂNG NHẬP CÁN BỘ'}
+                  {portal === 'student' ? t('login.signInStudent') : t('login.signInStaff')}
                 </h2>
                 <div className="mt-2 inline-flex rounded-full bg-slate-100 p-0.5 text-xs font-semibold">
                   <button
@@ -268,7 +268,7 @@ export function UtcLoginLanding({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Sinh viên
+                    {t('landing.tabStudent')}
                   </button>
                   <button
                     type="button"
@@ -279,7 +279,7 @@ export function UtcLoginLanding({
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Giảng viên / Quản trị
+                    {t('landing.tabStaff')}
                   </button>
                 </div>
               </div>
@@ -296,7 +296,7 @@ export function UtcLoginLanding({
                       type={portal === 'student' ? 'text' : 'email'}
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder={portal === 'student' ? 'Nhập tài khoản hoặc email' : 'Email giảng viên'}
+                      placeholder={portal === 'student' ? t('landing.studentPlaceholder') : t('landing.staffPlaceholder')}
                       required
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
                     />
@@ -313,7 +313,7 @@ export function UtcLoginLanding({
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Mật khẩu"
+                      placeholder={t('login.password')}
                       required
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-10 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
                     />
@@ -371,7 +371,7 @@ export function UtcLoginLanding({
                   disabled={loading}
                   className="h-11 w-full rounded-xl bg-gradient-to-r from-[#173a74] via-[#1d4ed8] to-[#1e40af] text-sm font-bold uppercase tracking-wider text-white shadow-md shadow-blue-900/20 transition-all hover:brightness-110 hover:shadow-lg active:scale-[0.99] disabled:opacity-50 cursor-pointer"
                 >
-                  {loading ? 'ĐANG XÁC THỰC…' : 'ĐĂNG NHẬP'}
+                  {loading ? t('landing.authenticating') : (portal === 'student' ? t('login.signInStudent') : t('login.signInStaff'))}
                 </button>
               </form>
 
@@ -598,7 +598,7 @@ export function UtcLoginLanding({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sinh viên
+                {t('landing.tabStudent')}
               </button>
               <button
                 type="button"
@@ -612,7 +612,7 @@ export function UtcLoginLanding({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Cán bộ / Giảng viên
+                {t('landing.tabStaff')}
               </button>
             </div>
 
@@ -621,12 +621,12 @@ export function UtcLoginLanding({
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900 leading-relaxed">
                   <div className="flex items-center gap-2 font-bold text-emerald-800 text-sm mb-1.5">
                     <CheckCircle2 className="size-4" />
-                    <span>Khôi phục mật khẩu thành công!</span>
+                    <span>{t('landing.forgotSuccessTitle')}</span>
                   </div>
                   <p>{forgotResult.message}</p>
                   {forgotResult.temporaryPassword && (
                     <div className="mt-2.5 flex items-center justify-between rounded-lg bg-white border border-emerald-300 p-2.5 font-mono text-sm font-bold text-emerald-950">
-                      <span>Mật khẩu: {forgotResult.temporaryPassword}</span>
+                      <span>{t('login.password')}: {forgotResult.temporaryPassword}</span>
                     </div>
                   )}
                 </div>
@@ -657,7 +657,7 @@ export function UtcLoginLanding({
                             href={`/api/auth/microsoft?role=${forgotPortal}`}
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 underline"
                           >
-                            Đăng nhập với Microsoft 365 ngay
+                            {t('landing.signInWithMicrosoftNow')}
                           </a>
                       )}
                     </div>
@@ -675,8 +675,8 @@ export function UtcLoginLanding({
                       onChange={(e) => setForgotIdentifier(e.target.value)}
                       placeholder={
                         forgotPortal === 'student'
-                          ? 'Ví dụ: 20260001 hoặc email SV'
-                          : 'Ví dụ: giangvien@utc.edu.vn'
+                          ? t('landing.forgotStudentPlaceholder')
+                          : t('landing.forgotStaffPlaceholder')
                       }
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
                       required
@@ -685,8 +685,8 @@ export function UtcLoginLanding({
                   </div>
                   <p className="mt-1.5 text-[11px] text-slate-500">
                     {forgotPortal === 'student'
-                      ? 'Mật khẩu sẽ được khôi phục về định dạng mặc định Sv@{Mã SV}.'
-                      : 'Hệ thống sẽ cấp lại mật khẩu tạm hoặc hướng dẫn đăng nhập Microsoft.'}
+                      ? t('landing.forgotStudentNote')
+                      : t('landing.forgotStaffNote')}
                   </p>
                 </div>
 
@@ -708,7 +708,7 @@ export function UtcLoginLanding({
                     }
                     className="text-xs text-blue-600 hover:underline cursor-pointer flex items-center gap-1"
                   >
-                    <HelpCircle className="size-3" /> Hướng dẫn chi tiết
+                    <HelpCircle className="size-3" /> {t('landing.detailedGuide')}
                   </button>
 
                   <div className="flex gap-2">

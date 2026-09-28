@@ -717,12 +717,12 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                       <span className="font-bold text-sm text-foreground">{req.courseName}</span>
                       <span className="text-muted-foreground">({req.date})</span>
                     </div>
-                    <p className="text-muted-foreground"><strong>Lý do:</strong> {req.reason}</p>
-                    {req.evidenceNote && <p className="text-muted-foreground text-[11px]"><strong>Minh chứng:</strong> {req.evidenceNote}</p>}
+                    <p className="text-muted-foreground"><strong>{t('student.reasonLabel')}</strong> {req.reason}</p>
+                    {req.evidenceNote && <p className="text-muted-foreground text-[11px]"><strong>{t('student.evidenceLabel')}</strong> {req.evidenceNote}</p>}
                   </div>
                   <div className="flex items-center gap-3">
                     <Status tone={req.status === 'approved' ? 'success' : req.status === 'rejected' ? 'danger' : 'warning'}>
-                      {req.status === 'approved' ? 'Đã duyệt' : req.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                      {req.status === 'approved' ? t('teacher.approved') : req.status === 'rejected' ? t('teacher.rejected') : t('common.pending')}
                     </Status>
                   </div>
                 </div>
@@ -1416,13 +1416,13 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     try {
       const res = await api.resolveSuspicious(attemptId, action)
       if (res.ok) {
-        setNotice(action === 'approved' ? 'Đã duyệt điểm danh hợp lệ cho sinh viên.' : 'Đã hủy bỏ kết quả điểm danh do gian lận.')
+        setNotice(action === 'approved' ? t('teacher.approvedSuccess') : t('teacher.rejectedSuccess'))
         await refresh()
       } else {
-        setNotice(res.message || 'Lỗi khi xử lý điểm danh đáng ngờ.')
+        setNotice(res.message || t('common.verificationFailed'))
       }
     } catch {
-      setNotice('Lỗi kết nối khi cập nhật điểm danh đáng ngờ.')
+      setNotice(t('common.verificationFailed'))
     }
   }
 
@@ -2048,14 +2048,14 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           </div>
         </Card>
 
-        <Card title={t('teacher.attendancePolicy')} description="Cấu hình cơ chế điểm danh thông minh chống gian lận & proxy check-in">
+        <Card title={t('teacher.attendancePolicy')} description={t('teacher.attendancePolicyDesc')}>
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-foreground">
-                Tần suất xoay mã Challenge (Dynamic QR / Code)
+                {t('teacher.policyTtlLabel')}
               </label>
               <p className="text-xs text-muted-foreground">
-                Mã sẽ tự động làm mới sau khoảng thời gian này. Ngăn chặn chụp ảnh gửi cho bạn bè ở nhà điểm danh hộ.
+                {t('teacher.policyTtlDesc')}
               </p>
               <select
                 value={policyTtl}
@@ -2066,20 +2066,20 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 }}
                 className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
               >
-                <option value={15}>15 giây (Bảo mật tối đa)</option>
-                <option value={30}>30 giây (Tiêu chuẩn khuyên dùng)</option>
-                <option value={45}>45 giây</option>
-                <option value={60}>60 giây (1 phút)</option>
-                <option value={120}>120 giây (2 phút)</option>
+                <option value={15}>{t('teacher.ttl15')}</option>
+                <option value={30}>{t('teacher.ttl30')}</option>
+                <option value={45}>{t('teacher.ttl45')}</option>
+                <option value={60}>{t('teacher.ttl60')}</option>
+                <option value={120}>{t('teacher.ttl120')}</option>
               </select>
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-foreground">
-                Thời gian ân hạn tính đi muộn (Grace Period)
+                {t('teacher.policyGraceLabel')}
               </label>
               <p className="text-xs text-muted-foreground">
-                Sinh viên điểm danh sau mốc thời gian này tính từ khi bắt đầu phiên sẽ tự động đánh dấu &quot;Muộn&quot;.
+                {t('teacher.policyGraceDesc')}
               </p>
               <select
                 value={policyLateAfter}
@@ -2090,11 +2090,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 }}
                 className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
               >
-                <option value={5}>5 phút sau khi bắt đầu</option>
-                <option value={10}>10 phút sau khi bắt đầu (Tiêu chuẩn)</option>
-                <option value={15}>15 phút sau khi bắt đầu</option>
-                <option value={20}>20 phút sau khi bắt đầu</option>
-                <option value={30}>30 phút sau khi bắt đầu</option>
+                <option value={5}>{t('teacher.grace5')}</option>
+                <option value={10}>{t('teacher.grace10')}</option>
+                <option value={15}>{t('teacher.grace15')}</option>
+                <option value={20}>{t('teacher.grace20')}</option>
+                <option value={30}>{t('teacher.grace30')}</option>
               </select>
             </div>
           </div>
@@ -2115,10 +2115,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             </div>
             <label htmlFor="requireTrustedDevice" className="flex-1 cursor-pointer">
               <span className="text-sm font-semibold text-foreground block">
-                Bắt buộc thiết bị tin cậy (Device Trust & Hardware Fingerprint)
+                {t('teacher.requireTrustedTitle')}
               </span>
               <span className="text-xs text-muted-foreground block mt-0.5">
-                Chỉ cho phép điểm danh trên thiết bị sinh viên đã liên kết. Ngăn chặn trường hợp 1 sinh viên cầm 2 điện thoại điểm danh hộ.
+                {t('teacher.requireTrustedDesc')}
               </span>
             </label>
           </div>
@@ -2127,29 +2127,29 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
               <div className="flex items-center gap-2 text-primary font-semibold text-sm">
                 <Waves className="size-4" />
-                <span>Sóng âm siêu âm 18.75 kHz (Ultrasonic)</span>
-                <span className="ml-auto text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">KÍCH HOẠT</span>
+                <span>{t('teacher.ultrasonicFeatureTitle')}</span>
+                <span className="ml-auto text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">{t('teacher.activeBadge')}</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Sóng siêu âm không xuyên qua được tường và cửa kính phòng học. Sinh viên bắt buộc phải có mặt trực tiếp trong phòng để micrô giải mã beacon.
+                {t('teacher.ultrasonicFeatureDesc')}
               </p>
             </div>
 
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
               <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm">
                 <Fingerprint className="size-4" />
-                <span>Sinh trắc học Native (Face ID / Touch ID)</span>
-                <span className="ml-auto text-[10px] bg-emerald-600/20 text-emerald-700 px-2 py-0.5 rounded-full font-bold">CHUẨN FIDO2</span>
+                <span>{t('teacher.biometricFeatureTitle')}</span>
+                <span className="ml-auto text-[10px] bg-emerald-600/20 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{t('teacher.fido2Badge')}</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Xác thực WebAuthn Passkeys tận dụng Face ID/vân tay trên thiết bị sinh viên theo chuẩn W3C/FIDO2. Hỗ trợ xác thực danh tính và nâng cao độ tin cậy điểm danh.
+                {t('teacher.biometricFeatureDesc')}
               </p>
             </div>
           </div>
 
           <div className="mt-6 flex justify-end">
             <Button onClick={handleSavePolicy} disabled={savingPolicy}>
-              {savingPolicy ? 'Đang lưu...' : saved ? <><Check />{t('common.saved')}</> : t('common.saveChanges')}
+              {savingPolicy ? t('teacher.saving') : saved ? <><Check />{t('common.saved')}</> : t('common.saveChanges')}
             </Button>
           </div>
         </Card>
@@ -2220,7 +2220,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     </>
                   ) : (
                     <Status tone={req.status === 'approved' ? 'success' : 'danger'}>
-                      {req.status === 'approved' ? 'Đã duyệt có phép' : 'Đã từ chối'}
+                      {req.status === 'approved' ? t('status.excused') : t('teacher.rejected')}
                     </Status>
                   )}
                 </div>
@@ -2238,8 +2238,8 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         {suspicious.length === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
             <CheckCircle2 className="size-8 text-emerald-500" />
-            <p className="font-medium text-foreground">Không có lượt điểm danh đáng ngờ nào</p>
-            <p className="text-xs">Hệ thống bảo vệ bằng sóng âm siêu âm và sinh trắc học Face ID đang hoạt động an toàn.</p>
+            <p className="font-medium text-foreground">{t('teacher.noSuspicious')}</p>
+            <p className="text-xs">{t('teacher.noSuspiciousDesc')}</p>
           </div>
         ) : (
           <div className="divide-y">
@@ -2249,7 +2249,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                   <CircleAlert className="mt-0.5 size-5 text-amber-500 shrink-0" />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-foreground">{item.studentName ?? 'Sinh viên'}</span>
+                      <span className="font-medium text-sm text-foreground">{item.studentName ?? t('roles.student')}</span>
                       {item.studentCode && (
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
                           {item.studentCode}
