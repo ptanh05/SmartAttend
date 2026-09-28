@@ -242,7 +242,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
       setLeaveModalOpen(false)
       await refresh()
     } catch {
-      setLeaveNotice('Không thể gửi đơn xin phép vắng. Vui lòng thử lại.')
+      setLeaveNotice(t('student.leaveSubmitError'))
     } finally {
       setSubmittingLeave(false)
     }
@@ -336,7 +336,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
     try {
       // Step 1: WebAuthn Challenge & Face ID verification
       const challengeRes = await api.webauthnChallenge()
-      if (!challengeRes.ok) throw new Error('Không thể khởi tạo phiên xác thực sinh trắc học.')
+      if (!challengeRes.ok) throw new Error(t('student.biometricInitError'))
 
       let bioAuth = await authenticateWithBiometrics(
         user.id || '',
@@ -346,7 +346,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
       // Seamless enrollment if device doesn't have an enrolled credential on this origin yet
       if (!bioAuth.ok && !challengeRes.hasEnrolledPasskey) {
-        setStepNotice('Đang đăng ký Face ID / Vân tay của thiết bị này...')
+        setStepNotice(t('student.registeringBiometric'))
         const regRes = await registerDeviceBiometrics(
           user.id || '',
           user.name,
@@ -364,7 +364,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
       if (!bioAuth.ok || !bioAuth.assertion) {
         setBiometricStatus('error')
-        setStepNotice(`Face ID / Vân tay: ${bioAuth.error || 'Xác thực sinh trắc học thất bại'}`)
+        setStepNotice(`${t('student.biometricPrefix')}${bioAuth.error || t('student.biometricError')}`)
         return
       }
 
@@ -409,7 +409,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
         await refresh()
       }
     } catch (err) {
-      setStepNotice(err instanceof Error ? err.message : 'Xác thực thất bại')
+      setStepNotice(err instanceof Error ? err.message : t('common.verificationFailed'))
       setBiometricStatus('error')
     }
   }
@@ -449,7 +449,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
               >
                 <Sparkles className="size-3.5 text-indigo-500" />
                 <span className="hidden sm:inline">{t('student.ultrasonicMode')}</span>
-                <span className="sm:hidden">Siêu âm + Face ID</span>
+                <span className="sm:hidden">{t('student.ultrasonicShort')}</span>
               </button>
               <button
                 type="button"
@@ -490,10 +490,10 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
                 <div>
                   <h4 className="font-bold text-base text-foreground">
-                    Xác thực Kép: Face ID & Sóng âm Siêu âm
+                    {t('student.dualVerificationTitle')}
                   </h4>
                   <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
-                    Bảo mật tuyệt đối: Quét Face ID để xác nhận chính chủ, micrô thu sóng siêu âm 18.75 kHz để xác thực bạn đang ngồi trong phòng học.
+                    {t('student.dualVerificationDesc')}
                   </p>
                 </div>
 
@@ -501,7 +501,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 {ultrasonicStatus === 'listening' && (
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
-                      <span>Đang phân tích phổ tần số âm thanh phòng học...</span>
+                      <span>{t('student.analyzingAudio')}</span>
                       <span>{ultrasonicProgress}%</span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100 dark:bg-indigo-950">
@@ -535,17 +535,17 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                   {biometricStatus === 'verifying' ? (
                     <>
                       <Fingerprint className="size-4 animate-spin" />
-                      Đang kích hoạt Face ID...
+                      {t('student.activatingFaceId')}
                     </>
                   ) : ultrasonicStatus === 'listening' ? (
                     <>
                       <Waves className="size-4 animate-pulse" />
-                      Đang thu sóng siêu âm phòng học...
+                      {t('student.capturingUltrasonic')}
                     </>
                   ) : (
                     <>
                       <Sparkles className="size-4" />
-                      Điểm danh ngay (Face ID + Sóng âm)
+                      {t('student.verifyNowDual')}
                     </>
                   )}
                 </Button>
@@ -810,7 +810,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                   </Button>
                   <Button type="submit" disabled={submittingLeave}>
                     <Send className="size-4" />
-                    {submittingLeave ? 'Đang gửi…' : t('student.sendLeaveRequest')}
+                    {submittingLeave ? t('student.sendingLeave') : t('student.sendLeaveRequest')}
                   </Button>
                 </div>
               </form>
@@ -1351,7 +1351,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       setNotice(status === 'approved' ? t('teacher.leaveApproved') : t('teacher.leaveRejected'))
       await refresh()
     } catch {
-      setNotice('Lỗi khi xử lý đơn nghỉ phép.')
+      setNotice(t('teacher.leaveReviewError'))
     }
   }
 
@@ -1364,10 +1364,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       if (res.ok) {
         setNotice(res.message || t('teacher.resetPasswordSuccess', { name: studentName, password: `Sv@${studentCode}` }))
       } else {
-        setNotice(res.message || 'Không thể đặt lại mật khẩu.')
+        setNotice(res.message || t('teacher.resetPasswordError'))
       }
     } catch {
-      setNotice('Lỗi kết nối khi đặt lại mật khẩu.')
+      setNotice(t('teacher.resetPasswordError'))
     }
   }
 
@@ -1403,10 +1403,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         }
         await refresh()
       } else {
-        setNotice(res.message || 'Lỗi khi lưu chính sách')
+        setNotice(res.message || t('teacher.savePolicyError'))
       }
     } catch {
-      setNotice('Lỗi kết nối khi lưu cài đặt.')
+      setNotice(t('teacher.savePolicyError'))
     } finally {
       setSavingPolicy(false)
     }
@@ -1705,7 +1705,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       }`}
                     >
                       {ultrasonicActive ? <Volume2 className="size-4 animate-pulse text-indigo-200" /> : <Waves className="size-4 text-indigo-300" />}
-                      {ultrasonicActive ? 'Đang phát sóng 18.75 kHz' : 'Bật phát sóng siêu âm'}
+                      {ultrasonicActive ? t('teacher.ultrasonicBeaconActive') : t('teacher.toggleUltrasonic')}
                     </button>
                   </div>
 
@@ -1716,7 +1716,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
                 {/* Bottom Footer Info */}
                 <div className="flex items-center justify-between border-t border-white/10 pt-4 text-xs text-slate-400">
-                  <span>Hệ thống Điểm danh Thông minh UTC · Chống gian lận thời gian thực</span>
+                  <span>{t('teacher.systemFooterNote')}</span>
                   <button
                     type="button"
                     onClick={rotateChallenge}

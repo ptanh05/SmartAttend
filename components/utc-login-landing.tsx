@@ -65,7 +65,7 @@ export function UtcLoginLanding({
     } catch (err) {
       setForgotResult({
         ok: false,
-        message: err instanceof Error ? err.message : 'Lỗi kết nối khi gửi yêu cầu khôi phục.',
+        message: err instanceof Error ? err.message : t('landing.forgotConnectionError'),
       })
     } finally {
       setForgotLoading(false)

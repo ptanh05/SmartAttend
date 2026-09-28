@@ -441,6 +441,7 @@ export function UltrasonicWaveVisualizer({
   frequency?: number
   className?: string
 }) {
+  const { t } = useI18n()
   return (
     <div
       className={`flex items-center gap-3 rounded-xl border p-2.5 transition-all ${
@@ -460,10 +461,12 @@ export function UltrasonicWaveVisualizer({
       </div>
       <div className="flex flex-col text-left text-xs">
         <span className="font-semibold tracking-wide">
-          {active ? `Sóng siêu âm: ${(frequency / 1000).toFixed(2)} kHz (Đang phát)` : 'Sóng siêu âm: Đang tắt'}
+          {active
+            ? t('teacher.ultrasonicBroadcasting', { freq: (frequency / 1000).toFixed(2) })
+            : t('teacher.ultrasonicInactive')}
         </span>
         <span className="text-[10px] opacity-80">
-          {active ? 'Xác thực hiện diện trong phòng kín' : 'Bật để chống chụp ảnh gửi về nhà'}
+          {active ? t('teacher.ultrasonicEnclosedSpace') : t('teacher.ultrasonicTurnOnHint')}
         </span>
       </div>
     </div>
