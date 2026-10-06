@@ -2564,7 +2564,7 @@ export default function SmartAttendApp() {
   }
 
   return (
-    <div className="min-h-screen utc-portal-bg flex flex-col selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen utc-portal-bg flex selection:bg-blue-600 selection:text-white">
       {mustChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-xl">
@@ -2584,88 +2584,105 @@ export default function SmartAttendApp() {
         </div>
       )}
 
-      {/* Top Header Bar */}
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#111d33]/90 sm:px-6 shadow-xs">
-        <div className="flex items-center gap-2.5 sm:gap-3">
+      {/* Mobile Backdrop Overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Mobile Slide-out Drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 flex-col utc-sidebar-bg text-white shadow-2xl transition-transform duration-300 ease-in-out lg:hidden flex ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex h-16 items-center justify-between border-b border-white/10 px-4 shrink-0">
+          <UtcLogo
+            compact={false}
+            size={36}
+            titleClassName="text-[12px] leading-tight"
+            subtitleClassName="text-[9.5px] text-[#c8d3e2] max-w-[155px] truncate"
+          />
           <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
-            aria-label={t('header.openNav')}
+            onClick={() => setMobileOpen(false)}
+            className="flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            aria-label={t('common.cancel') || 'Close'}
           >
-            <Menu className="size-5" />
-          </button>
-
-          {/* Desktop Sidebar Collapse / Expand Toggle Button */}
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            className="hidden lg:flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-all cursor-pointer shadow-2xs"
-            title={sidebarCollapsed ? t('header.expandNav') : t('header.collapseNav')}
-            aria-label={sidebarCollapsed ? t('header.expandNav') : t('header.collapseNav')}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen className="size-4.5" /> : <PanelLeftClose className="size-4.5" />}
-          </button>
-
-          <div className="lg:hidden">
-            <UtcLogo compact size={36} textColor="text-slate-800 dark:text-white" />
-          </div>
-        </div>
-
-        {/* Central Search Capsule Bar */}
-        <div className="flex-1 max-w-md mx-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder={t('student.searchPlaceholder')}
-              className="h-9 w-full rounded-full border border-slate-200 bg-slate-100/80 pl-9 pr-4 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800"
-            />
-          </div>
-        </div>
-
-        {/* Right Tools & User Profile Chip */}
-        <div className="flex items-center gap-2.5">
-          <LanguageSwitcher compact />
-          <button
-            onClick={() => setDark(!dark)}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-            aria-label={t('header.toggleDark')}
-          >
-            <Moon className="size-4" />
-          </button>
-          <NotificationBell notifications={data.notifications} role={role} go={go} t={t} />
-
-          {/* User Profile Chip */}
-          <button
-            type="button"
-            onClick={() => go(role === 'student' ? 'profile' : 'settings')}
-            className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer text-left"
-            title={role === 'student' ? t('student.accountSettings') : t('teacher.settingsTitle')}
-          >
-            <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
-              {appUser.initials}
-            </div>
-            <span className="hidden text-xs font-bold text-slate-800 dark:text-slate-100 sm:inline-block">
-              {appUser.name}
-            </span>
-            <ChevronDown className="size-3.5 text-slate-400" />
+            <X className="size-5" />
           </button>
         </div>
-      </header>
+        <nav className="flex-1 overflow-y-auto p-4 flex flex-col gap-1.5 scrollbar-thin">
+          {items.map(({ key, labelKey, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => {
+                go(key)
+                setMobileOpen(false)
+              }}
+              className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                page === key
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon className="size-4 shrink-0" />
+                <span className="truncate">{t(labelKey)}</span>
+              </div>
+              {key !== 'overview' && key !== 'profile' && key !== 'settings' && (
+                <ChevronRight className="size-3.5 opacity-50" />
+              )}
+            </button>
+          ))}
+          <div className="my-3 border-t border-white/10" />
+          <button
+            onClick={() => {
+              setMobileOpen(false)
+              logout()
+            }}
+            className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer"
+          >
+            <LogOut className="size-4 shrink-0" />
+            <span>{t('common.logout')}</span>
+          </button>
+        </nav>
+      </aside>
 
-      <div className="flex flex-1">
-        {/* Sidebar Navigation */}
-        <aside
-          className={`
-            fixed inset-x-0 top-16 z-20 border-b utc-sidebar-bg text-white shadow-xl transition-all duration-300 ease-in-out lg:static lg:block lg:min-h-[calc(100vh-4rem)] lg:border-b-0 lg:border-r lg:border-slate-800
-            ${mobileOpen ? 'block p-4' : 'hidden'}
-            ${sidebarCollapsed ? 'lg:w-[76px] lg:p-2.5' : 'lg:w-64 lg:p-4'}
-          `}
+      {/* Desktop Persistent Full-Height Sidebar */}
+      <aside
+        className={`hidden lg:flex flex-col h-screen sticky top-0 shrink-0 z-30 border-r border-slate-800/80 utc-sidebar-bg text-white shadow-xl transition-all duration-300 ease-in-out ${
+          sidebarCollapsed ? 'w-[76px]' : 'w-72'
+        }`}
+      >
+        {/* Top Logo & Single Toggle Button */}
+        <div
+          className={`h-16 flex items-center border-b border-white/10 px-4 shrink-0 ${
+            sidebarCollapsed ? 'justify-center' : 'justify-between gap-2'
+          }`}
         >
-          {/* Top Logo & Toggle inside Sidebar */}
-          <div className={`mb-6 pb-4 border-b border-white/10 hidden lg:flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
-            <UtcLogo compact={sidebarCollapsed} size={sidebarCollapsed ? 34 : 38} />
-            {!sidebarCollapsed && (
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="flex size-10 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition-all cursor-pointer group"
+              title={t('header.expandNav')}
+              aria-label={t('header.expandNav')}
+            >
+              <UtcLogo compact size={34} />
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center min-w-0">
+                <UtcLogo
+                  compact={false}
+                  size={36}
+                  titleClassName="text-[12px] leading-tight"
+                  subtitleClassName="text-[9.5px] text-[#c8d3e2] max-w-[155px] truncate"
+                />
+              </div>
               <button
                 type="button"
                 onClick={toggleSidebar}
@@ -2675,47 +2692,132 @@ export default function SmartAttendApp() {
               >
                 <PanelLeftClose className="size-4" />
               </button>
+            </>
+          )}
+        </div>
+
+        {/* Navigation Items */}
+        <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5 scrollbar-thin">
+          {items.map(({ key, labelKey, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => go(key)}
+              title={sidebarCollapsed ? t(labelKey) : undefined}
+              className={`flex items-center ${
+                sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3.5 py-2.5'
+              } rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                page === key
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <Icon className="size-4 shrink-0" />
+                {!sidebarCollapsed && <span className="truncate">{t(labelKey)}</span>}
+              </div>
+              {!sidebarCollapsed && key !== 'overview' && key !== 'profile' && key !== 'settings' && (
+                <ChevronRight className="size-3.5 opacity-50" />
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Sidebar Footer with Logout Button */}
+        <div className="p-3 border-t border-white/10 shrink-0">
+          <button
+            onClick={logout}
+            title={sidebarCollapsed ? t('common.logout') : undefined}
+            className={`w-full flex items-center ${
+              sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3.5 py-2.5'
+            } rounded-xl text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer`}
+          >
+            <LogOut className="size-4 shrink-0" />
+            {!sidebarCollapsed && <span>{t('common.logout')}</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Column: Header + Content */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#111d33]/90 sm:px-6 shadow-xs">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            {/* Mobile Hamburger Button */}
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+              aria-label={t('header.openNav')}
+            >
+              <Menu className="size-5" />
+            </button>
+
+            {/* Mobile UTC Logo */}
+            <div className="lg:hidden">
+              <UtcLogo compact size={34} textColor="text-slate-800 dark:text-white" />
+            </div>
+
+            {/* Desktop: When collapsed, show expand button in header */}
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="hidden lg:flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-all cursor-pointer shadow-2xs mr-1"
+                title={t('header.expandNav')}
+                aria-label={t('header.expandNav')}
+              >
+                <PanelLeftOpen className="size-4.5" />
+              </button>
             )}
+
+            {/* Breadcrumb / Workspace eyebrow badge on desktop */}
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-xs font-bold tracking-wider uppercase text-blue-600 dark:text-blue-400">
+                {role === 'student' ? t('student.workspace') : role === 'admin' ? t('admin.administration') : t('teacher.workspace')}
+              </span>
+            </div>
           </div>
 
-          <nav className="flex flex-col gap-1.5">
-            {items.map(({ key, labelKey, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => go(key)}
-                title={sidebarCollapsed ? t(labelKey) : undefined}
-                className={`flex items-center ${
-                  sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3.5 py-2.5'
-                } rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  page === key
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                  <Icon className="size-4 shrink-0" />
-                  {!sidebarCollapsed && <span className="truncate">{t(labelKey)}</span>}
-                </div>
-                {!sidebarCollapsed && key !== 'overview' && key !== 'profile' && key !== 'settings' && (
-                  <ChevronRight className="size-3.5 opacity-50" />
-                )}
-              </button>
-            ))}
+          {/* Central Search Capsule Bar */}
+          <div className="flex-1 max-w-md mx-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder={t('student.searchPlaceholder')}
+                className="h-9 w-full rounded-full border border-slate-200 bg-slate-100/80 pl-9 pr-4 text-xs text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:bg-slate-800"
+              />
+            </div>
+          </div>
 
-            <div className="my-3 border-t border-white/10" />
-
+          {/* Right Tools & User Profile Chip */}
+          <div className="flex items-center gap-2.5">
+            <LanguageSwitcher compact />
             <button
-              onClick={logout}
-              title={sidebarCollapsed ? t('common.logout') : undefined}
-              className={`flex items-center ${
-                sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3.5 py-2.5'
-              } rounded-xl text-xs font-bold text-slate-300 hover:bg-rose-500/20 hover:text-rose-300 transition-colors cursor-pointer`}
+              onClick={() => setDark(!dark)}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              aria-label={t('header.toggleDark')}
             >
-              <LogOut className="size-4 shrink-0" />
-              {!sidebarCollapsed && <span>{t('common.logout')}</span>}
+              <Moon className="size-4" />
             </button>
-          </nav>
-        </aside>
+            <NotificationBell notifications={data.notifications} role={role} go={go} t={t} />
+
+            {/* User Profile Chip */}
+            <button
+              type="button"
+              onClick={() => go(role === 'student' ? 'profile' : 'settings')}
+              className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer text-left"
+              title={role === 'student' ? t('student.accountSettings') : t('teacher.settingsTitle')}
+            >
+              <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
+                {appUser.initials}
+              </div>
+              <span className="hidden text-xs font-bold text-slate-800 dark:text-slate-100 sm:inline-block">
+                {appUser.name}
+              </span>
+              <ChevronDown className="size-3.5 text-slate-400" />
+            </button>
+          </div>
+        </header>
 
         {/* Main Content Area */}
         <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
