@@ -1,6 +1,21 @@
 import { NextResponse } from 'next/server'
-import { deleteCourseSection, updateCourseSection } from '@/lib/attendance/server'
+import { deleteCourseSection, listSectionStudents, updateCourseSection } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireAuth(['teacher', 'admin'])
+    const { id } = await params
+    const students = await listSectionStudents(auth, id)
+    return NextResponse.json({ ok: true, students })
+  } catch (error) {
+    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    return NextResponse.json({ ok: false, message: 'Unable to load section students.' }, { status: 500 })
+  }
+}
 
 export async function PATCH(
   request: Request,

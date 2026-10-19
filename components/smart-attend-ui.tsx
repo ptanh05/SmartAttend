@@ -100,7 +100,7 @@ export const nav: Record<Role, { key: PageKey; labelKey: string; icon: IconType 
     { key: 'analytics', labelKey: 'nav.teacher.analytics', icon: BarChart3 }, { key: 'reports', labelKey: 'nav.teacher.reports', icon: FileText }, { key: 'settings', labelKey: 'nav.teacher.settings', icon: Settings2 },
   ],
   admin: [
-    { key: 'overview', labelKey: 'nav.admin.overview', icon: LayoutDashboard }, { key: 'students', labelKey: 'nav.admin.students', icon: GraduationCap },
+    { key: 'overview', labelKey: 'nav.admin.overview', icon: LayoutDashboard }, { key: 'students', labelKey: 'nav.admin.users', icon: Users },
     { key: 'courses', labelKey: 'nav.admin.courses', icon: BookOpen }, { key: 'departments', labelKey: 'nav.admin.departments', icon: Activity },
     { key: 'analytics', labelKey: 'nav.admin.analytics', icon: BarChart3 }, { key: 'reports', labelKey: 'nav.admin.reports', icon: FileText }, { key: 'audit', labelKey: 'nav.admin.audit', icon: Activity }, { key: 'settings', labelKey: 'nav.admin.settings', icon: Settings2 },
   ],

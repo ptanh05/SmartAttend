@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
@@ -37,6 +37,30 @@ export async function listCourses(organizationId: string): Promise<Course[]> {
     .from(courses)
     .where(and(eq(courses.organizationId, organizationId), eq(courses.status, 'active')))
 
+  // Calculate live enrolled counts by counting distinct students across all sections of each course
+  const enrollments = await db()
+    .select({
+      courseId: courseSections.courseId,
+      studentId: classEnrollments.studentId,
+    })
+    .from(courseSections)
+    .innerJoin(
+      classEnrollments,
+      and(
+        eq(classEnrollments.sectionId, courseSections.id),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+    .where(eq(courseSections.organizationId, organizationId))
+
+  const countByCourse = new Map<string, Set<string>>()
+  for (const en of enrollments) {
+    if (!countByCourse.has(en.courseId)) {
+      countByCourse.set(en.courseId, new Set())
+    }
+    countByCourse.get(en.courseId)!.add(en.studentId)
+  }
+
   return rows.map((row) => ({
     id: row.id,
     organizationId: row.organizationId,
@@ -44,7 +68,7 @@ export async function listCourses(organizationId: string): Promise<Course[]> {
     name: row.name,
     department: row.department,
     teacherId: row.teacherId,
-    enrolled: row.enrolled,
+    enrolled: countByCourse.get(row.id)?.size ?? row.enrolled,
     color: row.color,
   }))
 }
@@ -785,6 +809,7 @@ export async function listUsers(auth: AuthContext, role?: string) {
     .from(organizationMemberships)
     .innerJoin(users, eq(organizationMemberships.userId, users.id))
     .where(where)
+    .orderBy(desc(organizationMemberships.createdAt), desc(users.createdAt))
 
   return rows.map((row) => ({
     id: row.id,
@@ -795,6 +820,43 @@ export async function listUsers(auth: AuthContext, role?: string) {
     initials: row.initials,
     department: row.department ?? '',
     studentCode: row.studentCode ?? '',
+  }))
+}
+
+export async function listSectionStudents(auth: AuthContext, sectionId: string) {
+  const rows = await db()
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      studentCode: organizationMemberships.studentCode,
+      department: organizationMemberships.department,
+      status: classEnrollments.status,
+    })
+    .from(classEnrollments)
+    .innerJoin(users, eq(classEnrollments.studentId, users.id))
+    .innerJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, users.id),
+        eq(organizationMemberships.organizationId, auth.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(classEnrollments.sectionId, sectionId),
+        eq(classEnrollments.organizationId, auth.organizationId),
+      ),
+    )
+    .orderBy(asc(organizationMemberships.studentCode), asc(users.name))
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    studentCode: r.studentCode ?? '',
+    department: r.department ?? '',
+    status: r.status,
   }))
 }
 
@@ -1108,6 +1170,18 @@ export async function createCourseSection(
         })),
       )
       .onConflictDoNothing()
+
+    try {
+      const enrollRes = await db()
+        .select({ studentId: classEnrollments.studentId })
+        .from(classEnrollments)
+        .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+        .where(and(eq(courseSections.courseId, data.courseId), eq(classEnrollments.status, 'active')))
+      const distinctCount = new Set(enrollRes.map((r) => r.studentId)).size
+      await db().update(courses).set({ enrolled: distinctCount }).where(eq(courses.id, data.courseId))
+    } catch {
+      /* ignore sync error */
+    }
   }
 
   await appendAudit(auth, `Created recurring section schedule in room ${data.room}`, sectionId, 'info')

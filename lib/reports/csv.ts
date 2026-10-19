@@ -2,7 +2,13 @@
  * Minimal, dependency-free CSV helpers for exported attendance reports.
  * Follows RFC 4180 quoting: cells containing a comma, quote, CR or LF are
  * double-quoted and embedded quotes are doubled.
+ *
+ * To ensure Microsoft Excel (especially on Windows) displays Vietnamese and other
+ * UTF-8 characters correctly without mojibake/lỗi phông, UTF-8 Byte Order Mark
+ * (\uFEFF) is prepended by default when exporting CSV.
  */
+
+export const UTF8_BOM = '\uFEFF'
 
 export function escapeCsvCell(value: unknown): string {
   const str = value === null || value === undefined ? '' : String(value)
@@ -11,10 +17,24 @@ export function escapeCsvCell(value: unknown): string {
 
 export type CsvColumn = { header: string; key: string }
 
-export function toCsv(columns: CsvColumn[], rows: Record<string, unknown>[]): string {
+export type CsvOptions = {
+  /**
+   * Whether to include the UTF-8 Byte Order Mark (\uFEFF) at the start of the file.
+   * Defaults to true so Excel on Windows opens Vietnamese characters cleanly.
+   */
+  bom?: boolean
+}
+
+export function toCsv(
+  columns: CsvColumn[],
+  rows: Record<string, unknown>[],
+  options?: CsvOptions,
+): string {
   const header = columns.map((c) => escapeCsvCell(c.header)).join(',')
   const body = rows.map((row) => columns.map((c) => escapeCsvCell(row[c.key])).join(','))
-  return [header, ...body].join('\r\n')
+  const content = [header, ...body].join('\r\n')
+  const includeBom = options?.bom ?? true
+  return includeBom ? `${UTF8_BOM}${content}` : content
 }
 
 /** Counts occurrences of each attendance status in a set of records. */

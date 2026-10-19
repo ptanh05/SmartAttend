@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attendanceRate, attendanceSummary, escapeCsvCell, toCsv } from './csv'
+import { attendanceRate, attendanceSummary, escapeCsvCell, toCsv, UTF8_BOM } from './csv'
 
 describe('escapeCsvCell', () => {
   it('returns plain values unchanged', () => {
@@ -17,7 +17,7 @@ describe('escapeCsvCell', () => {
 })
 
 describe('toCsv', () => {
-  it('writes a header and rows separated by CRLF', () => {
+  it('writes a header and rows separated by CRLF with UTF-8 BOM by default', () => {
     const csv = toCsv(
       [
         { header: 'Student', key: 'student' },
@@ -28,25 +28,35 @@ describe('toCsv', () => {
         { student: 'Bob "B"', status: 'late, ' },
       ],
     )
-    expect(csv).toBe('Student,Status\r\nAnna,present\r\n"Bob ""B""","late, "')
+    expect(csv.startsWith(UTF8_BOM)).toBe(true)
+    expect(csv).toBe(`${UTF8_BOM}Student,Status\r\nAnna,present\r\n"Bob ""B""","late, "`)
   })
 
-  it('produces just a header for no rows', () => {
-    expect(toCsv([{ header: 'A', key: 'a' }], [])).toBe('A')
+  it('produces just a header with BOM for no rows', () => {
+    expect(toCsv([{ header: 'A', key: 'a' }], [])).toBe(`${UTF8_BOM}A`)
   })
 
-  it('correctly formats detailed record rows for export', () => {
+  it('allows disabling BOM with { bom: false }', () => {
+    const csv = toCsv([{ header: 'A', key: 'a' }], [{ a: '1' }], { bom: false })
+    expect(csv.startsWith(UTF8_BOM)).toBe(false)
+    expect(csv).toBe('A\r\n1')
+  })
+
+  it('correctly formats detailed record rows with Vietnamese characters and UTF-8 BOM for Excel compatibility', () => {
     const columns = [
-      { header: 'Student', key: 'student' },
-      { header: 'Course', key: 'course' },
-      { header: 'Score', key: 'score' },
+      { header: 'Sinh viên', key: 'student' },
+      { header: 'Môn học', key: 'course' },
+      { header: 'Điểm', key: 'score' },
     ]
     const rows = [
-      { student: 'Nguyen Van A', course: 'CS101 · Web Dev', score: 100 },
-      { student: 'Tran Thi B', course: 'CS102 · Data Struct', score: 85 },
+      { student: 'Nguyễn Văn An', course: 'CS101 · Lập trình Web', score: 100 },
+      { student: 'Trần Thị Bích', course: 'CS102 · Cấu trúc dữ liệu', score: 85 },
     ]
     const csv = toCsv(columns, rows)
-    expect(csv).toBe('Student,Course,Score\r\nNguyen Van A,CS101 · Web Dev,100\r\nTran Thi B,CS102 · Data Struct,85')
+    expect(csv.charCodeAt(0)).toBe(0xfeff)
+    expect(csv).toBe(
+      `${UTF8_BOM}Sinh viên,Môn học,Điểm\r\nNguyễn Văn An,CS101 · Lập trình Web,100\r\nTrần Thị Bích,CS102 · Cấu trúc dữ liệu,85`,
+    )
   })
 })
 

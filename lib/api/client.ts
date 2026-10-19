@@ -21,6 +21,7 @@ type MeResponse = {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
+    cache: 'no-store',
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -258,6 +259,11 @@ export const api = {
   sections() {
     return request<{ ok: boolean; sections: ClassSession[] }>('/api/courses/sections')
   },
+  sectionStudents(sectionId: string) {
+    return request<{ ok: boolean; students: { id: string; name: string; email: string; studentCode: string; department: string; status: string }[] }>(
+      `/api/courses/sections/${sectionId}`,
+    )
+  },
   createSection(data: { courseId: string; room: string; startsAt: string; endsAt: string; dayOfWeek?: number; autoStart?: boolean }) {
     return request<{ ok: boolean; sectionId?: string; message?: string }>('/api/courses/sections', {
       method: 'POST',
@@ -339,12 +345,13 @@ export type DashboardData = {
 export async function loadDashboard(role?: Role): Promise<DashboardData> {
   const isAdmin = role === 'admin'
   const isStaff = role === 'teacher' || isAdmin
+  const isStudent = role === 'student'
   const emptyAudit: AuditLogsResponse = { ok: true, events: [] }
   const emptyDepartments: DepartmentsResponse = { ok: true, departments: [] }
 
   const [coursesRes, sessionsRes, recordsRes, notificationsRes, analyticsRes, auditRes, usersRes, devicesRes, departmentsRes, leaveRes, policyRes] =
     await Promise.all([
-      api.courses().catch(() => ({ courses: [] as Course[] })),
+      isStaff ? api.courses().catch(() => ({ courses: [] as Course[] })) : Promise.resolve({ ok: true, courses: [] as Course[] }),
       api.sessions().catch(() => ({ sessions: [] as ClassSession[], live: null })),
       api.records().catch(() => ({ records: [] as AttendanceRecord[] })),
       api.notifications().catch(() => ({ notifications: [] })),
@@ -354,14 +361,38 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
       })),
       isAdmin ? api.auditLogs().catch(() => emptyAudit) : Promise.resolve(emptyAudit),
       api.users().catch(() => ({ users: [] })),
-      role === 'student' ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
+      isStudent ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
       isAdmin ? api.departments().catch(() => emptyDepartments) : Promise.resolve(emptyDepartments),
       api.leaveRequests().catch(() => ({ requests: [] as LeaveRequest[] })),
       isStaff ? api.policy().catch(() => ({ ok: false, policy: { challengeTtlSeconds: 30, lateAfterMinutes: 10, requireTrustedDevice: false } })) : Promise.resolve({ ok: false, policy: undefined }),
     ])
 
+  const coursesList: Course[] =
+    coursesRes.courses && coursesRes.courses.length > 0
+      ? coursesRes.courses
+      : Array.from(
+          new Map(
+            (sessionsRes.sessions || [])
+              .filter((s) => s.courseId && (s.courseName || s.courseCode))
+              .map((s) => [
+                s.courseId,
+                {
+                  id: s.courseId,
+                  organizationId: '',
+                  code: s.courseCode ?? s.courseId,
+                  name: s.courseName ?? s.courseCode ?? 'Course',
+                  department: '',
+                  teacherId: '',
+                  enrolled: s.enrolledCount ?? 0,
+                  color: 'blue',
+                  status: 'active',
+                } as Course,
+              ])
+          ).values()
+        )
+
   return {
-    courses: coursesRes.courses,
+    courses: coursesList,
     sessions: sessionsRes.sessions,
     records: recordsRes.records,
     notifications: notificationsRes.notifications,

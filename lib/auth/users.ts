@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import {
   authSessions,
   classEnrollments,
+  courses,
   courseSections,
   externalAccounts,
   organizationMemberships,
@@ -95,6 +96,7 @@ export type ImportStudentsResult = {
 export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]): Promise<ImportStudentsResult> {
   const created: ImportStudentsResult['created'] = []
   const skipped: ImportStudentsResult['skipped'] = []
+  const seenCodes = new Set<string>()
 
   for (const row of rows) {
     const studentCode = row.studentCode.trim()
@@ -102,97 +104,225 @@ export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]
     const department = row.department?.trim() || null
 
     if (!studentCode || !name) {
-      skipped.push({ studentCode: studentCode || '(empty)', reason: 'Missing student ID or name.' })
+      skipped.push({ studentCode: studentCode || '(empty)', reason: 'Thiếu mã sinh viên hoặc họ tên.' })
       continue
     }
 
-    const existing = await db()
-      .select({ id: organizationMemberships.id })
-      .from(organizationMemberships)
-      .where(
-        and(
-          eq(organizationMemberships.organizationId, auth.organizationId),
-          eq(organizationMemberships.studentCode, studentCode),
-        ),
-      )
-
-    if (existing.length > 0) {
-      skipped.push({ studentCode, reason: 'Student ID already exists in this organization.' })
+    if (seenCodes.has(studentCode.toLowerCase())) {
+      skipped.push({ studentCode, reason: 'Mã sinh viên bị trùng trong danh sách import.' })
       continue
     }
+    seenCodes.add(studentCode.toLowerCase())
 
-    const userId = `stu_${nanoid(10)}`
-    const email = studentEmail(auth.organizationId, studentCode)
-    const defaultPassword = defaultStudentPassword(studentCode)
-    const passwordHash = await hashPassword(defaultPassword)
+    try {
+      const existing = await db()
+        .select({ id: organizationMemberships.id })
+        .from(organizationMemberships)
+        .where(
+          and(
+            eq(organizationMemberships.organizationId, auth.organizationId),
+            eq(organizationMemberships.studentCode, studentCode),
+          ),
+        )
 
-    await db().insert(users).values({
-      id: userId,
-      email,
-      passwordHash,
-      name,
-      initials: makeInitials(name),
-      mustChangePassword: true,
-    })
+      if (existing.length > 0) {
+        skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong tổ chức.' })
+        continue
+      }
 
-    await db().insert(organizationMemberships).values({
-      id: nanoid(),
-      organizationId: auth.organizationId,
-      userId,
-      role: 'student',
-      department,
-      studentCode,
-      status: 'active',
-    })
+      const email = studentEmail(auth.organizationId, studentCode)
+      const defaultPassword = defaultStudentPassword(studentCode)
+      const passwordHash = await hashPassword(defaultPassword)
 
-    // Auto-enroll newly imported student into any existing course sections of this organization
-    const existingSections = await db()
-      .select({ id: courseSections.id })
+      // Reuse existing user if identical email exists, otherwise insert new user
+      const existingUser = await db()
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+
+      let userId = existingUser[0]?.id
+      if (!userId) {
+        userId = `stu_${nanoid(10)}`
+        await db().insert(users).values({
+          id: userId,
+          email,
+          passwordHash,
+          name,
+          initials: makeInitials(name),
+          mustChangePassword: true,
+        })
+      } else {
+        await db().update(users).set({
+          passwordHash,
+          name,
+          mustChangePassword: true,
+        }).where(eq(users.id, userId))
+      }
+
+      await db().insert(organizationMemberships).values({
+        id: nanoid(),
+        organizationId: auth.organizationId,
+        userId,
+        role: 'student',
+        department,
+        studentCode,
+        status: 'active',
+      })
+
+      // Auto-enroll newly imported student into all existing course sections of this organization
+      const existingSections = await db()
+        .select({ id: courseSections.id })
+        .from(courseSections)
+        .where(eq(courseSections.organizationId, auth.organizationId))
+
+      for (const sec of existingSections) {
+        await db()
+          .insert(classEnrollments)
+          .values({
+            sectionId: sec.id,
+            studentId: userId,
+            organizationId: auth.organizationId,
+            status: 'active',
+          })
+          .onConflictDoNothing()
+      }
+
+      created.push({ studentCode, name, defaultPassword })
+    } catch (err) {
+      console.error(`Failed to import student ${studentCode}`, err)
+      skipped.push({ studentCode, reason: err instanceof Error ? err.message : 'Lỗi hệ thống khi tạo tài khoản.' })
+    }
+  }
+
+  // Update enrolled count in courses table for all course sections in this organization
+  try {
+    const orgSections = await db()
+      .select({ courseId: courseSections.courseId })
       .from(courseSections)
       .where(eq(courseSections.organizationId, auth.organizationId))
 
-    for (const sec of existingSections) {
-      await db()
-        .insert(classEnrollments)
-        .values({
-          sectionId: sec.id,
-          studentId: userId,
-          organizationId: auth.organizationId,
-          status: 'active',
-        })
-        .onConflictDoNothing()
-    }
+    const courseIds = Array.from(new Set(orgSections.map((s) => s.courseId)))
+    for (const cId of courseIds) {
+      const countRes = await db()
+        .select({ studentId: classEnrollments.studentId })
+        .from(classEnrollments)
+        .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+        .where(and(eq(courseSections.courseId, cId), eq(classEnrollments.status, 'active')))
 
-    created.push({ studentCode, name, defaultPassword })
+      const distinctCount = new Set(countRes.map((r) => r.studentId)).size
+      await db().update(courses).set({ enrolled: distinctCount }).where(eq(courses.id, cId))
+    }
+  } catch (err) {
+    console.error('Failed to sync course enrolled counts after student import', err)
   }
 
   return { created, skipped }
 }
 
+function normalizeHeader(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+}
+
+function splitCsvLine(line: string, delimiter: string): string[] {
+  if (delimiter === '\t') {
+    return line.split('\t').map((c) => c.trim().replace(/^"|"$/g, ''))
+  }
+  const result: string[] = []
+  let cur = ''
+  let inQuote = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      if (inQuote && line[i + 1] === '"') {
+        cur += '"'
+        i++
+      } else {
+        inQuote = !inQuote
+      }
+    } else if (char === delimiter && !inQuote) {
+      result.push(cur.trim().replace(/^"|"$/g, ''))
+      cur = ''
+    } else {
+      cur += char
+    }
+  }
+  result.push(cur.trim().replace(/^"|"$/g, ''))
+  return result
+}
+
 export function parseStudentCsv(text: string): ImportStudentRow[] {
-  const lines = text
+  const cleanText = text.replace(/^\uFEFF/, '').trim()
+  const lines = cleanText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
 
   if (lines.length === 0) return []
 
-  const delimiter = lines[0].includes(';') ? ';' : ','
-  const firstCells = lines[0].split(delimiter).map((cell) => cell.trim().toLowerCase())
+  // Detect delimiter: check \t first (from Excel copy-paste), then ;, fallback to ,
+  let delimiter = ','
+  if (lines[0].includes('\t')) {
+    delimiter = '\t'
+  } else if (lines[0].includes(';')) {
+    delimiter = ';'
+  }
 
-  const studentCodeKeys = ['studentid', 'student_id', 'student code', 'studentcode', 'ma_sinh_vien', 'masinhvien', 'mssv']
-  const nameKeys = ['name', 'full name', 'fullname', 'ho_ten', 'hoten', 'ten']
-  const departmentKeys = ['department', 'dept', 'khoa', 'bo_mon', 'bomon']
+  const rawFirstCells = splitCsvLine(lines[0], delimiter)
+  const firstCells = rawFirstCells.map(normalizeHeader)
+
+  const studentCodeKeys = new Set([
+    'masinhvien',
+    'masv',
+    'mssv',
+    'masosinhvien',
+    'mahocvien',
+    'msv',
+    'studentid',
+    'student_id',
+    'studentcode',
+    'student',
+    'code',
+    'id',
+  ])
+  const nameKeys = new Set([
+    'hovaten',
+    'hoten',
+    'hovatensinhvien',
+    'tensinhvien',
+    'hotensinhvien',
+    'fullname',
+    'name',
+    'ten',
+    'ho',
+  ])
+  const departmentKeys = new Set([
+    'khoavien',
+    'khoa',
+    'bomon',
+    'nganh',
+    'chuyennganh',
+    'department',
+    'dept',
+    'lop',
+    'malop',
+  ])
 
   let startIndex = 0
   let codeIndex = 0
   let nameIndex = 1
   let departmentIndex = 2
 
-  if (studentCodeKeys.some((key) => firstCells.includes(key)) || nameKeys.some((key) => firstCells.includes(key))) {
-    codeIndex = firstCells.findIndex((cell) => studentCodeKeys.includes(cell))
-    nameIndex = firstCells.findIndex((cell) => nameKeys.includes(cell))
-    departmentIndex = firstCells.findIndex((cell) => departmentKeys.includes(cell))
+  const hasCodeHeader = firstCells.some((cell) => studentCodeKeys.has(cell))
+  const hasNameHeader = firstCells.some((cell) => nameKeys.has(cell))
+
+  if (hasCodeHeader || hasNameHeader) {
+    codeIndex = firstCells.findIndex((cell) => studentCodeKeys.has(cell))
+    nameIndex = firstCells.findIndex((cell) => nameKeys.has(cell))
+    departmentIndex = firstCells.findIndex((cell) => departmentKeys.has(cell))
     startIndex = 1
     if (codeIndex < 0) codeIndex = 0
     if (nameIndex < 0) nameIndex = 1
@@ -200,7 +330,7 @@ export function parseStudentCsv(text: string): ImportStudentRow[] {
 
   const rows: ImportStudentRow[] = []
   for (const line of lines.slice(startIndex)) {
-    const cells = line.split(delimiter).map((cell) => cell.trim().replace(/^"|"$/g, ''))
+    const cells = splitCsvLine(line, delimiter)
     const studentCode = cells[codeIndex] ?? ''
     const name = cells[nameIndex] ?? ''
     const department = departmentIndex >= 0 ? cells[departmentIndex] : undefined

@@ -203,7 +203,29 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
 
 function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewProps) {
   const { t } = useI18n()
-  const { courses, records, sessions, notifications, devices, leaveRequests = [] } = data
+  const { courses: rawCourses = [], records, sessions, notifications, devices, leaveRequests = [] } = data
+  const courses: Course[] = rawCourses.length > 0
+    ? rawCourses
+    : Array.from(
+        new Map(
+          sessions
+            .filter((s) => s.courseId && (s.courseName || s.courseCode))
+            .map((s) => [
+              s.courseId,
+              {
+                id: s.courseId,
+                organizationId: '',
+                code: s.courseCode ?? s.courseId,
+                name: s.courseName ?? s.courseCode ?? 'Course',
+                department: '',
+                teacherId: '',
+                enrolled: s.enrolledCount ?? 0,
+                color: 'blue',
+                status: 'active',
+              } as Course,
+            ])
+        ).values()
+      )
   const [code, setCode] = useState('')
   const [result, setResult] = useState<{ ok: boolean; confidence: number; message: string } | null>(null)
   const [filter, setFilter] = useState('all')
@@ -225,12 +247,13 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
   const handleLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!leaveCourseId || !leaveReason.trim()) return
+    const targetCourseId = leaveCourseId || courses[0]?.id || ''
+    if (!targetCourseId || !leaveReason.trim()) return
     setSubmittingLeave(true)
     try {
-      const selectedCourse = courses.find((c) => c.id === leaveCourseId)
+      const selectedCourse = courses.find((c) => c.id === targetCourseId)
       await api.submitLeaveRequest({
-        courseId: leaveCourseId,
+        courseId: targetCourseId,
         courseName: selectedCourse ? `${selectedCourse.code} - ${selectedCourse.name}` : undefined,
         date: leaveDate,
         reason: leaveReason.trim(),
@@ -654,7 +677,15 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
           detail={t('student.historyDetail')}
           action={
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setLeaveModalOpen(true)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (courses.length > 0 && !leaveCourseId) {
+                    setLeaveCourseId(courses[0].id)
+                  }
+                  setLeaveModalOpen(true)
+                }}
+              >
                 <FileCheck />{t('student.submitLeave')}
               </Button>
               <Button variant="outline">
@@ -978,7 +1009,7 @@ function StudentImportPanel({
   }
 
   const downloadTemplate = () => {
-    const template = 'studentId,name,department\n20210001,Nguyen Van A,Computer Science\n20210002,Tran Thi B,Computer Science'
+    const template = '\uFEFFstudentId,name,department\n20210001,Nguyen Van A,Computer Science\n20210002,Tran Thi B,Computer Science'
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -1057,6 +1088,109 @@ function StudentImportPanel({
         </div>
       )}
     </Card>
+  )
+}
+
+function ClassRosterModal({
+  section,
+  students,
+  loading,
+  search,
+  setSearch,
+  onClose,
+  t,
+}: {
+  section: ClassSession
+  students: { id: string; name: string; email: string; studentCode: string; department: string; status: string }[]
+  loading: boolean
+  search: string
+  setSearch: (v: string) => void
+  onClose: () => void
+  t: (k: string, p?: Record<string, string | number>) => string
+}) {
+  const filtered = students.filter(
+    (s) => `${s.name} ${s.studentCode} ${s.email} ${s.department}`.toLowerCase().includes(search.toLowerCase()),
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl rounded-2xl border bg-card p-6 shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-start justify-between border-b pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+              <Users className="size-5 text-primary" />
+              {t('admin.classRoster')}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {section.courseCode} · {section.courseName} · {section.room} · {section.startsAt} – {section.endsAt}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="text-xs font-medium text-muted-foreground">
+            {t('admin.enrolledStudentsCount', { count: students.length })}
+          </div>
+          <div className="flex flex-1 max-w-xs items-center gap-2 rounded-lg border px-2.5 py-1">
+            <Search className="size-3.5 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('common.search')}
+              className="w-full bg-transparent text-xs outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex-1 overflow-y-auto rounded-xl border">
+          {loading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</div>
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">{t('admin.noUsersFound')}</div>
+          ) : (
+            <table className="w-full text-left text-xs">
+              <thead className="bg-muted/60 sticky top-0 border-b">
+                <tr>
+                  <th className="p-3 font-semibold">{t('login.studentId')}</th>
+                  <th className="p-3 font-semibold">{t('auth.fullName')}</th>
+                  <th className="p-3 font-semibold">{t('login.email')}</th>
+                  <th className="p-3 font-semibold">{t('common.department')}</th>
+                  <th className="p-3 font-semibold text-right">{t('common.status')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filtered.map((st) => (
+                  <tr key={st.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="p-3 font-mono font-medium text-primary">{st.studentCode || '—'}</td>
+                    <td className="p-3 font-medium text-foreground">{st.name}</td>
+                    <td className="p-3 text-muted-foreground">{st.email}</td>
+                    <td className="p-3 text-muted-foreground">{st.department || '—'}</td>
+                    <td className="p-3 text-right">
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        {t('common.active')}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button variant="outline" onClick={onClose}>
+            {t('common.close')}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1314,6 +1448,30 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [projectorMode, setProjectorMode] = useState(false)
   const [ultrasonicActive, setUltrasonicActive] = useState(false)
   const beaconRef = useRef<BeaconController | null>(null)
+
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all')
+  const [rosterSection, setRosterSection] = useState<ClassSession | null>(null)
+  const [rosterStudents, setRosterStudents] = useState<{ id: string; name: string; email: string; studentCode: string; department: string; status: string }[]>([])
+  const [rosterLoading, setRosterLoading] = useState(false)
+  const [rosterSearch, setRosterSearch] = useState('')
+
+  const openRoster = async (sec: ClassSession) => {
+    setRosterSection(sec)
+    setRosterLoading(true)
+    setRosterSearch('')
+    try {
+      const res = await api.sectionStudents(sec.sectionId)
+      if (res.ok) {
+        setRosterStudents(res.students)
+      } else {
+        setRosterStudents([])
+      }
+    } catch {
+      setRosterStudents([])
+    } finally {
+      setRosterLoading(false)
+    }
+  }
 
   const toggleUltrasonic = () => {
     if (ultrasonicActive) {
@@ -1881,9 +2039,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                                 <Status tone="neutral">{t('common.off')}</Status>
                               )}
                             </td>
-                            <td className="py-3 text-muted-foreground">{sec.enrolledCount ?? 0}</td>
+                            <td className="py-3">
+                              <button
+                                type="button"
+                                onClick={() => openRoster(sec)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs transition-colors cursor-pointer"
+                                title={t('admin.viewRoster')}
+                              >
+                                <Users className="size-3.5" />
+                                <span>{sec.enrolledCount ?? 0}</span>
+                              </button>
+                            </td>
                             <td className="py-3 text-right">
                               <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  className="h-8 px-2.5 text-xs"
+                                  onClick={() => openRoster(sec)}
+                                >
+                                  <Users className="size-3" />
+                                  <span className="hidden sm:inline">{t('admin.viewRoster')}</span>
+                                </Button>
                                 <Button
                                   variant="primary"
                                   className="h-8 px-2.5 text-xs"
@@ -1936,60 +2112,145 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             )
           })}
         </div>
+
+        {rosterSection && (
+          <ClassRosterModal
+            section={rosterSection}
+            students={rosterStudents}
+            loading={rosterLoading}
+            search={rosterSearch}
+            setSearch={setRosterSearch}
+            onClose={() => setRosterSection(null)}
+            t={t}
+          />
+        )}
       </div>
     )
   }
 
-  if (page === 'students') return (
-    <div className="flex flex-col gap-6">
-      {notice && <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary" role="status">{notice}</div>}
-      <SectionHeader
-        eyebrow={staffEyebrow}
-        title={t('teacher.studentsTitle')}
-        detail={t('teacher.rosterDetail')}
-        action={<Button onClick={() => setImportOpen(!importOpen)}><FileText />{t('teacher.importStudents')}</Button>}
-      />
-      {importOpen && (
-        <StudentImportPanel
-          csvText={csvText}
-          setCsvText={setCsvText}
-          importing={importing}
-          importResult={importResult}
-          onImport={runImport}
-          onClose={() => setImportOpen(false)}
-          t={t}
+  if (page === 'students') {
+    const studentCount = users.filter((u) => u.role === 'student').length
+    const teacherCount = users.filter((u) => u.role === 'teacher').length
+    const adminCount = users.filter((u) => u.role === 'admin').length
+
+    const filteredUsers = users.filter((u) => {
+      const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter
+      const matchSearch = `${u.name} ${u.studentCode ?? ''} ${u.email} ${u.department ?? ''}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+      return matchRole && matchSearch
+    })
+
+    return (
+      <div className="flex flex-col gap-6">
+        {notice && <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary" role="status">{notice}</div>}
+        <SectionHeader
+          eyebrow={staffEyebrow}
+          title={isAdmin ? t('admin.usersTitle') : t('teacher.studentsTitle')}
+          detail={isAdmin ? t('admin.usersDetail') : t('teacher.rosterDetail')}
+          action={<Button onClick={() => setImportOpen(!importOpen)}><FileText />{t('teacher.importStudents')}</Button>}
         />
-      )}
-      <Card title={t('teacher.studentDirectory')} description={organization.name}>
-        <div className="mb-4 flex items-center gap-2 rounded-lg border px-3">
-          <Search className="size-4 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 flex-1 bg-transparent text-sm outline-none" placeholder={t('common.search')} />
-        </div>
-        <div className="divide-y">
-          {students.filter((s) => `${s.name} ${s.studentCode}`.toLowerCase().includes(search.toLowerCase())).map((student) => (
-            <div key={student.id} className="flex items-center gap-3 py-4">
-              <div className="grid size-9 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                {student.initials?.slice(0, 2) ?? student.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">{student.name}</p>
-                <p className="text-xs text-muted-foreground">{student.studentCode || student.email}</p>
-              </div>
-              <Button
-                variant="outline"
-                className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-primary hover:border-primary cursor-pointer"
-                onClick={() => handleResetStudent(student.id, student.name, student.studentCode)}
-              >
-                <KeyRound className="size-3.5" />
-                {t('teacher.resetPassword')}
-              </Button>
+        {importOpen && (
+          <StudentImportPanel
+            csvText={csvText}
+            setCsvText={setCsvText}
+            importing={importing}
+            importResult={importResult}
+            onImport={runImport}
+            onClose={() => setImportOpen(false)}
+            t={t}
+          />
+        )}
+        <Card
+          title={isAdmin ? t('admin.userDirectory') : t('teacher.studentDirectory')}
+          description={`${organization.name} · ${filteredUsers.length} ${t('admin.allUsers')}`}
+        >
+          {/* Role Filter Tabs (All, Students, Teachers, Admins) */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/60 rounded-xl">
+              {([
+                { key: 'all' as const, label: t('admin.filterAll'), count: users.length },
+                { key: 'student' as const, label: t('admin.filterStudents'), count: studentCount },
+                { key: 'teacher' as const, label: t('admin.filterTeachers'), count: teacherCount },
+                { key: 'admin' as const, label: t('admin.filterAdmins'), count: adminCount },
+              ]).map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setUserRoleFilter(tab.key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    userRoleFilter === tab.key
+                      ? 'bg-background text-foreground shadow-sm font-semibold'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+                    userRoleFilter === tab.key ? 'bg-primary/10 text-primary font-bold' : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
             </div>
-          ))}
-          {students.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t('teacher.noStudentsYet')}</p>}
-        </div>
-      </Card>
-    </div>
-  )
+
+            <div className="flex flex-1 min-w-[200px] max-w-sm items-center gap-2 rounded-lg border px-3">
+              <Search className="size-4 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 flex-1 bg-transparent text-sm outline-none" placeholder={t('common.search')} />
+            </div>
+          </div>
+
+          <div className="divide-y">
+            {filteredUsers.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 py-4">
+                <div className={`grid size-9 place-items-center rounded-full text-xs font-semibold ${
+                  item.role === 'admin'
+                    ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                    : item.role === 'teacher'
+                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {item.initials?.slice(0, 2) ?? item.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{item.name}</p>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      item.role === 'admin'
+                        ? 'bg-purple-50 text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-950/40 dark:text-purple-300'
+                        : item.role === 'teacher'
+                        ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10 dark:bg-blue-950/40 dark:text-blue-300'
+                        : 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-700/10 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    }`}>
+                      {t(`roles.${item.role}`)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {item.studentCode ? `MSSV: ${item.studentCode} · ` : ''}
+                    {item.email}
+                    {item.department ? ` · ${item.department}` : ''}
+                  </p>
+                </div>
+                {item.role === 'student' && (
+                  <Button
+                    variant="outline"
+                    className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-primary hover:border-primary cursor-pointer"
+                    onClick={() => handleResetStudent(item.id, item.name, item.studentCode)}
+                  >
+                    <KeyRound className="size-3.5" />
+                    {t('teacher.resetPassword')}
+                  </Button>
+                )}
+              </div>
+            ))}
+            {filteredUsers.length === 0 && (
+              <p className="py-8 text-center text-sm text-muted-foreground">{t('admin.noUsersFound')}</p>
+            )}
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   if (page === 'analytics' || page === 'reports') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={staffEyebrow} title={page === 'reports' ? t('teacher.reportsTitle') : t('teacher.analyticsTitle')} detail={t('teacher.analyticsDetail')} action={<Button variant="outline" onClick={() => api.downloadAttendanceReport()}><Download />{page === 'reports' ? t('common.exportReport') : t('common.exportData')}</Button>} /><div className="grid gap-4 sm:grid-cols-3"><Metric label={t('teacher.averageAttendance')} value={metrics.attendanceRate} detail={t('common.organizationAverage')} icon={BarChart3} /><Metric label={t('teacher.students')} value={String(metrics.students)} detail={t('common.enrolled')} icon={Users} /><Metric label={t('teacher.suspiciousAttempts')} value={String(metrics.flagged)} detail={t('common.needsReview')} icon={CircleAlert} tone="warning" /></div><Card title={t('teacher.attendanceByCourse')}><div className="flex flex-col gap-5">{courses.map((course) => <div key={course.id}><div className="mb-2 flex justify-between text-sm"><span className="font-medium">{course.code} · {course.name}</span><span className="text-muted-foreground">{t('teacher.enrolledCount', { count: course.enrolled })}</span></div><div className="h-2 rounded-full bg-muted"><div className="h-2 w-3/4 rounded-full bg-primary" /></div><div className="mt-3 flex items-center gap-2"><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id })}><Download />{t('common.export')}</Button><Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id, scope: 'detail' })}><Download />{t('teacher.detailedCsv')}</Button></div></div>)}</div></Card></div>
   if (page === 'audit') return <div className="flex flex-col gap-6"><SectionHeader eyebrow={adminEyebrow} title={t('teacher.activityLog')} detail={t('teacher.activityDetail')} action={<Button variant="outline" onClick={() => api.downloadAuditReport()}><Download />{t('common.exportLog')}</Button>} /><Card title={t('teacher.recentActivity')} description={organization.name}><div className="divide-y">{auditEvents.map((event) => <div key={event.id} className="flex gap-4 py-4"><div className={`mt-1 size-2 rounded-full ${event.severity === 'warning' ? 'bg-amber-500' : 'bg-primary'}`} /><div className="flex-1"><p className="text-sm"><span className="font-medium">{event.actor}</span> {event.action}</p><p className="mt-1 text-xs text-muted-foreground">{event.target} · {event.createdAt}</p></div><Status tone={event.severity === 'warning' ? 'warning' : 'neutral'}>{statusText(t, event.severity)}</Status></div>)}</div></Card></div>
