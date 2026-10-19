@@ -73,7 +73,28 @@ export async function listCourses(organizationId: string): Promise<Course[]> {
   }))
 }
 
-export async function listClassSessions(organizationId: string): Promise<ClassSession[]> {
+export async function listClassSessions(organizationId: string, studentId?: string): Promise<ClassSession[]> {
+  let enrolledSectionIds: Set<string> | null = null
+  if (studentId) {
+    const studentEnrollments = await db()
+      .select({ sectionId: classEnrollments.sectionId })
+      .from(classEnrollments)
+      .where(
+        and(
+          eq(classEnrollments.organizationId, organizationId),
+          eq(classEnrollments.studentId, studentId),
+          eq(classEnrollments.status, 'active'),
+        ),
+      )
+    enrolledSectionIds = new Set(studentEnrollments.map((e) => e.sectionId))
+    if (enrolledSectionIds.size === 0) return []
+  }
+
+  const conditions = [eq(courseSections.organizationId, organizationId)]
+  if (enrolledSectionIds !== null) {
+    conditions.push(inArray(courseSections.id, Array.from(enrolledSectionIds)))
+  }
+
   const rows = await db()
     .select({
       section: courseSections,
@@ -93,7 +114,7 @@ export async function listClassSessions(organizationId: string): Promise<ClassSe
       attendanceChallenges,
       and(eq(attendanceChallenges.sessionId, attendanceSessions.id), eq(attendanceChallenges.status, 'active')),
     )
-    .where(eq(courseSections.organizationId, organizationId))
+    .where(and(...conditions))
 
   const enrollments = await db()
     .select({
@@ -860,6 +881,181 @@ export async function listSectionStudents(auth: AuthContext, sectionId: string) 
   }))
 }
 
+export async function enrollStudentsToSection(
+  auth: AuthContext,
+  sectionId: string,
+  identifiers: string[],
+): Promise<{ ok: boolean; enrolledCount: number; message?: string }> {
+  if (!['teacher', 'admin', 'staff'].includes(auth.role)) {
+    return { ok: false, enrolledCount: 0, message: 'Permission denied.' }
+  }
+
+  const sec = await db()
+    .select({ id: courseSections.id, courseId: courseSections.courseId })
+    .from(courseSections)
+    .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+
+  if (!sec[0]) {
+    return { ok: false, enrolledCount: 0, message: 'Course section not found.' }
+  }
+
+  const cleanIdentifiers = identifiers.map((id) => id.trim()).filter(Boolean)
+  if (cleanIdentifiers.length === 0) {
+    return { ok: false, enrolledCount: 0, message: 'No student identifiers provided.' }
+  }
+
+  const orgStudents = await db()
+    .select({
+      userId: organizationMemberships.userId,
+      studentCode: organizationMemberships.studentCode,
+    })
+    .from(organizationMemberships)
+    .where(
+      and(
+        eq(organizationMemberships.organizationId, auth.organizationId),
+        eq(organizationMemberships.role, 'student'),
+      ),
+    )
+
+  const identifierSet = new Set(cleanIdentifiers.map((i) => i.toLowerCase()))
+  const matchedUserIds = new Set<string>()
+
+  for (const st of orgStudents) {
+    if (identifierSet.has(st.userId.toLowerCase()) || (st.studentCode && identifierSet.has(st.studentCode.toLowerCase()))) {
+      matchedUserIds.add(st.userId)
+    }
+  }
+
+  if (matchedUserIds.size === 0) {
+    return { ok: false, enrolledCount: 0, message: 'No matching students found in this organization.' }
+  }
+
+  let enrolledCount = 0
+  for (const studentId of matchedUserIds) {
+    await db()
+      .insert(classEnrollments)
+      .values({
+        sectionId,
+        studentId,
+        organizationId: auth.organizationId,
+        status: 'active',
+      })
+      .onConflictDoUpdate({
+        target: [classEnrollments.sectionId, classEnrollments.studentId],
+        set: { status: 'active' },
+      })
+    enrolledCount++
+  }
+
+  try {
+    const countRes = await db()
+      .select({ studentId: classEnrollments.studentId })
+      .from(classEnrollments)
+      .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+      .where(and(eq(courseSections.courseId, sec[0].courseId), eq(classEnrollments.status, 'active')))
+    const distinctCount = new Set(countRes.map((r) => r.studentId)).size
+    await db().update(courses).set({ enrolled: distinctCount }).where(eq(courses.id, sec[0].courseId))
+  } catch {
+    /* ignore sync error */
+  }
+
+  await appendAudit(auth, `Ghi danh ${enrolledCount} sinh viên vào lớp học phần`, sectionId, 'info')
+  return { ok: true, enrolledCount }
+}
+
+export async function removeStudentFromSection(
+  auth: AuthContext,
+  sectionId: string,
+  studentId: string,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!['teacher', 'admin', 'staff'].includes(auth.role)) {
+    return { ok: false, message: 'Permission denied.' }
+  }
+
+  const sec = await db()
+    .select({ id: courseSections.id, courseId: courseSections.courseId })
+    .from(courseSections)
+    .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+
+  if (!sec[0]) {
+    return { ok: false, message: 'Course section not found.' }
+  }
+
+  await db()
+    .delete(classEnrollments)
+    .where(
+      and(
+        eq(classEnrollments.sectionId, sectionId),
+        eq(classEnrollments.studentId, studentId),
+        eq(classEnrollments.organizationId, auth.organizationId),
+      ),
+    )
+
+  try {
+    const countRes = await db()
+      .select({ studentId: classEnrollments.studentId })
+      .from(classEnrollments)
+      .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+      .where(and(eq(courseSections.courseId, sec[0].courseId), eq(classEnrollments.status, 'active')))
+    const distinctCount = new Set(countRes.map((r) => r.studentId)).size
+    await db().update(courses).set({ enrolled: distinctCount }).where(eq(courses.id, sec[0].courseId))
+  } catch {
+    /* ignore sync error */
+  }
+
+  await appendAudit(auth, `Xóa sinh viên ${studentId} khỏi lớp học phần`, sectionId, 'info')
+  return { ok: true }
+}
+
+export async function searchAvailableStudentsForSection(
+  auth: AuthContext,
+  sectionId: string,
+  query: string,
+) {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+
+  const enrolled = await db()
+    .select({ studentId: classEnrollments.studentId })
+    .from(classEnrollments)
+    .where(
+      and(
+        eq(classEnrollments.sectionId, sectionId),
+        eq(classEnrollments.organizationId, auth.organizationId),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+  const enrolledSet = new Set(enrolled.map((e) => e.studentId))
+
+  const allStudents = await db()
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      studentCode: organizationMemberships.studentCode,
+      department: organizationMemberships.department,
+    })
+    .from(organizationMemberships)
+    .innerJoin(users, eq(organizationMemberships.userId, users.id))
+    .where(
+      and(
+        eq(organizationMemberships.organizationId, auth.organizationId),
+        eq(organizationMemberships.role, 'student'),
+      ),
+    )
+
+  return allStudents
+    .filter(
+      (s) =>
+        !enrolledSet.has(s.id) &&
+        ((s.studentCode && s.studentCode.toLowerCase().includes(q)) ||
+          s.name.toLowerCase().includes(q) ||
+          s.email.toLowerCase().includes(q) ||
+          (s.department && s.department.toLowerCase().includes(q))),
+    )
+    .slice(0, 20)
+}
+
 export async function listNotifications(auth: AuthContext) {
   const rows = await db()
     .select()
@@ -1134,6 +1330,8 @@ export async function createCourseSection(
     endsAt: string
     dayOfWeek?: number
     autoStart?: boolean
+    enrollAll?: boolean
+    initialStudentIds?: string[]
   }
 ) {
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
@@ -1152,24 +1350,39 @@ export async function createCourseSection(
     status: 'scheduled',
   })
 
-  // Auto-enroll active students of the organization into this new section so attendance is seamless
-  const orgStudents = await db()
-    .select({ userId: organizationMemberships.userId })
-    .from(organizationMemberships)
-    .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student')))
-
-  if (orgStudents.length > 0) {
+  // Optional enrollment: only if initialStudentIds or enrollAll is explicitly requested
+  if (data.initialStudentIds && data.initialStudentIds.length > 0) {
     await db()
       .insert(classEnrollments)
       .values(
-        orgStudents.map((st) => ({
+        data.initialStudentIds.map((studentId) => ({
           sectionId,
-          studentId: st.userId,
+          studentId,
           organizationId: auth.organizationId,
           status: 'active' as const,
         })),
       )
       .onConflictDoNothing()
+  } else if (data.enrollAll) {
+    const orgStudents = await db()
+      .select({ userId: organizationMemberships.userId })
+      .from(organizationMemberships)
+      .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student')))
+
+    if (orgStudents.length > 0) {
+      await db()
+        .insert(classEnrollments)
+        .values(
+          orgStudents.map((st) => ({
+            sectionId,
+            studentId: st.userId,
+            organizationId: auth.organizationId,
+            status: 'active' as const,
+          })),
+        )
+        .onConflictDoNothing()
+    }
+  }
 
     try {
       const enrollRes = await db()
@@ -1182,7 +1395,6 @@ export async function createCourseSection(
     } catch {
       /* ignore sync error */
     }
-  }
 
   await appendAudit(auth, `Created recurring section schedule in room ${data.room}`, sectionId, 'info')
   return { ok: true as const, sectionId }

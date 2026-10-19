@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
   ClipboardCheck, Clock, Download, Edit3, FileCheck, FileText, Fingerprint, KeyRound, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
-  PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, Users, Volume2, Waves, Wifi, X
+  PanelLeftClose, PanelLeftOpen, Play, Plus, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
@@ -985,6 +985,9 @@ function StudentImportPanel({
   setCsvText,
   importing,
   importResult,
+  targetSectionId,
+  setTargetSectionId,
+  sections,
   onImport,
   onClose,
   t,
@@ -996,6 +999,9 @@ function StudentImportPanel({
     created: { studentCode: string; name: string; defaultPassword: string }[]
     skipped: { studentCode: string; reason: string }[]
   } | null
+  targetSectionId: string
+  setTargetSectionId: (value: string) => void
+  sections?: ClassSession[]
   onImport: () => void
   onClose: () => void
   t: (key: string, params?: Record<string, string | number>) => string
@@ -1021,6 +1027,25 @@ function StudentImportPanel({
 
   return (
     <Card title={t('teacher.importStudents')} description={t('teacher.importStudentsDetail')}>
+      <div className="mb-3 space-y-1">
+        <label className="text-xs font-semibold text-foreground">
+          {t('admin.selectSectionForImport')}
+        </label>
+        <select
+          value={targetSectionId}
+          onChange={(e) => setTargetSectionId(e.target.value)}
+          className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">{t('admin.importTargetAll')}</option>
+          {sections &&
+            sections.map((sec) => (
+              <option key={sec.sectionId} value={sec.sectionId}>
+                {sec.courseCode} · {sec.courseName} ({sec.room} · {sec.startsAt})
+              </option>
+            ))}
+        </select>
+      </div>
+
       <p className="mb-3 text-sm text-muted-foreground">{t('teacher.importFormat')}</p>
       <p className="mb-3 rounded-lg bg-muted/50 p-3 font-mono text-xs">
         studentId,name,department{'\n'}20210001,Nguyen Van A,Computer Science
@@ -1098,6 +1123,7 @@ function ClassRosterModal({
   search,
   setSearch,
   onClose,
+  onRefresh,
   t,
 }: {
   section: ClassSession
@@ -1106,15 +1132,185 @@ function ClassRosterModal({
   search: string
   setSearch: (v: string) => void
   onClose: () => void
+  onRefresh: () => Promise<void>
   t: (k: string, p?: Record<string, string | number>) => string
 }) {
+  const [activeTab, setActiveTab] = useState<'roster' | 'add' | 'import'>('roster')
+
+  // Add student state
+  const [addQuery, setAddQuery] = useState('')
+  const [searchingAvailable, setSearchingAvailable] = useState(false)
+  const [availableStudents, setAvailableStudents] = useState<
+    { id: string; name: string; email: string; studentCode: string; department: string }[]
+  >([])
+  const [addingId, setAddingId] = useState<string | null>(null)
+  const [batchCodes, setBatchCodes] = useState('')
+  const [batchEnrolling, setBatchEnrolling] = useState(false)
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Section import CSV state
+  const sectionFileRef = useRef<HTMLInputElement>(null)
+  const [sectionCsvText, setSectionCsvText] = useState('')
+  const [sectionImporting, setSectionImporting] = useState(false)
+  const [sectionImportResult, setSectionImportResult] = useState<{
+    created: { studentCode: string; name: string; defaultPassword: string }[]
+    skipped: { studentCode: string; reason: string }[]
+  } | null>(null)
+
+  // Remove student state
+  const [removingId, setRemovingId] = useState<string | null>(null)
+
+  // Handle remove student
+  const handleRemove = async (st: { id: string; name: string; studentCode: string }) => {
+    const confirmed = window.confirm(
+      t('admin.confirmRemoveStudent', { name: st.name, code: st.studentCode || st.id }),
+    )
+    if (!confirmed) return
+
+    setRemovingId(st.id)
+    setActionMessage(null)
+    try {
+      const res = await api.removeStudentFromSection(section.sectionId, st.id)
+      if (res.ok) {
+        setActionMessage({ type: 'success', text: t('admin.removeStudentSuccess') })
+        await onRefresh()
+      } else {
+        setActionMessage({ type: 'error', text: res.message || 'Lỗi khi xóa sinh viên khỏi lớp.' })
+      }
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Lỗi kết nối máy chủ.' })
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  // Handle searching available students
+  useEffect(() => {
+    if (activeTab !== 'add') return
+    const q = addQuery.trim()
+    if (!q) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAvailableStudents([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingAvailable(true)
+      try {
+        const res = await api.searchAvailableStudents(section.sectionId, q)
+        if (res.ok) {
+          setAvailableStudents(res.availableStudents)
+        }
+      } catch {
+        setAvailableStudents([])
+      } finally {
+        setSearchingAvailable(false)
+      }
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [addQuery, activeTab, section.sectionId])
+
+  // Handle enroll single student
+  const handleEnrollSingle = async (st: { id: string; studentCode: string; name: string }) => {
+    setAddingId(st.id)
+    setActionMessage(null)
+    try {
+      const res = await api.enrollStudentsToSection(section.sectionId, [st.id])
+      if (res.ok) {
+        setActionMessage({
+          type: 'success',
+          text: t('admin.importStudentsSuccess', { count: res.enrolledCount ?? 1 }),
+        })
+        setAvailableStudents((prev) => prev.filter((item) => item.id !== st.id))
+        await onRefresh()
+      } else {
+        setActionMessage({ type: 'error', text: res.message || 'Lỗi khi ghi danh sinh viên.' })
+      }
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Lỗi kết nối máy chủ.' })
+    } finally {
+      setAddingId(null)
+    }
+  }
+
+  // Handle batch enroll
+  const handleBatchEnroll = async () => {
+    const codes = batchCodes
+      .split(/[\n,;]+/)
+      .map((c) => c.trim())
+      .filter(Boolean)
+    if (codes.length === 0) return
+
+    setBatchEnrolling(true)
+    setActionMessage(null)
+    try {
+      const res = await api.enrollStudentsToSection(section.sectionId, codes)
+      if (res.ok) {
+        setActionMessage({
+          type: 'success',
+          text: t('admin.importStudentsSuccess', { count: res.enrolledCount ?? codes.length }),
+        })
+        setBatchCodes('')
+        await onRefresh()
+      } else {
+        setActionMessage({ type: 'error', text: res.message || 'Lỗi khi ghi danh sinh viên hàng loạt.' })
+      }
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Lỗi kết nối máy chủ.' })
+    } finally {
+      setBatchEnrolling(false)
+    }
+  }
+
+  // Handle section-scoped CSV import
+  const handleSectionFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setSectionCsvText(await file.text())
+  }
+
+  const handleSectionImport = async () => {
+    if (!sectionCsvText.trim()) return
+    setSectionImporting(true)
+    setSectionImportResult(null)
+    setActionMessage(null)
+    try {
+      const res = await api.importStudents(sectionCsvText, section.sectionId)
+      if (res.ok) {
+        setSectionImportResult({ created: res.created, skipped: res.skipped })
+        setActionMessage({
+          type: 'success',
+          text: t('admin.importStudentsSuccess', { count: res.created.length }),
+        })
+        await onRefresh()
+      }
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err instanceof Error ? err.message : 'Lỗi import CSV vào lớp.' })
+    } finally {
+      setSectionImporting(false)
+    }
+  }
+
+  const downloadSectionTemplate = () => {
+    const template =
+      '\uFEFFstudentId,name,department\n20210001,Nguyen Van A,Computer Science\n20210002,Tran Thi B,Computer Science'
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `roster-${section.courseCode}-${section.room}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const filtered = students.filter(
     (s) => `${s.name} ${s.studentCode} ${s.email} ${s.department}`.toLowerCase().includes(search.toLowerCase()),
   )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl rounded-2xl border bg-card p-6 shadow-2xl flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-3xl rounded-2xl border bg-card p-6 shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-start justify-between border-b pb-4">
           <div>
             <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
@@ -1134,57 +1330,290 @@ function ClassRosterModal({
           </button>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t('admin.enrolledStudentsCount', { count: students.length })}
-          </div>
-          <div className="flex flex-1 max-w-xs items-center gap-2 rounded-lg border px-2.5 py-1">
-            <Search className="size-3.5 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('common.search')}
-              className="w-full bg-transparent text-xs outline-none"
-            />
-          </div>
+        {/* Tab switcher */}
+        <div className="mt-3 flex gap-2 border-b pb-3">
+          <button
+            type="button"
+            onClick={() => { setActiveTab('roster'); setActionMessage(null) }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer transition-all ${
+              activeTab === 'roster'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <Users className="size-3.5" />
+            {t('admin.tabCurrentRoster')} ({students.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('add'); setActionMessage(null) }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer transition-all ${
+              activeTab === 'add'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <UserPlus className="size-3.5" />
+            {t('admin.tabAddStudent')}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('import'); setActionMessage(null) }}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer transition-all ${
+              activeTab === 'import'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <Upload className="size-3.5" />
+            {t('admin.tabImportSectionCsv')}
+          </button>
         </div>
 
-        <div className="mt-4 flex-1 overflow-y-auto rounded-xl border">
-          {loading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">{t('admin.noUsersFound')}</div>
-          ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/60 sticky top-0 border-b">
-                <tr>
-                  <th className="p-3 font-semibold">{t('login.studentId')}</th>
-                  <th className="p-3 font-semibold">{t('auth.fullName')}</th>
-                  <th className="p-3 font-semibold">{t('login.email')}</th>
-                  <th className="p-3 font-semibold">{t('common.department')}</th>
-                  <th className="p-3 font-semibold text-right">{t('common.status')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filtered.map((st) => (
-                  <tr key={st.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-3 font-mono font-medium text-primary">{st.studentCode || '—'}</td>
-                    <td className="p-3 font-medium text-foreground">{st.name}</td>
-                    <td className="p-3 text-muted-foreground">{st.email}</td>
-                    <td className="p-3 text-muted-foreground">{st.department || '—'}</td>
-                    <td className="p-3 text-right">
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                        {t('common.active')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {actionMessage && (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-xs font-medium flex items-center justify-between ${
+              actionMessage.type === 'success'
+                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : 'border-destructive/20 bg-destructive/10 text-destructive'
+            }`}
+          >
+            <span>{actionMessage.text}</span>
+            <button
+              type="button"
+              onClick={() => setActionMessage(null)}
+              className="text-xs hover:underline cursor-pointer"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
 
-        <div className="mt-4 flex justify-end">
+        {/* Tab 1: Current Roster */}
+        {activeTab === 'roster' && (
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                {t('admin.enrolledStudentsCount', { count: students.length })}
+              </div>
+              <div className="flex flex-1 max-w-xs items-center gap-2 rounded-lg border px-2.5 py-1">
+                <Search className="size-3.5 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('common.search')}
+                  className="w-full bg-transparent text-xs outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex-1 overflow-y-auto rounded-xl border">
+              {loading ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">{t('common.loading')}</div>
+              ) : filtered.length === 0 ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  {students.length === 0 ? 'Lớp học phần này hiện chưa có sinh viên nào.' : t('admin.noUsersFound')}
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-muted/60 sticky top-0 border-b">
+                    <tr>
+                      <th className="p-3 font-semibold">{t('login.studentId')}</th>
+                      <th className="p-3 font-semibold">{t('auth.fullName')}</th>
+                      <th className="p-3 font-semibold">{t('login.email')}</th>
+                      <th className="p-3 font-semibold">{t('common.department')}</th>
+                      <th className="p-3 font-semibold text-center">{t('common.status')}</th>
+                      <th className="p-3 font-semibold text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filtered.map((st) => (
+                      <tr key={st.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-3 font-mono font-medium text-primary">{st.studentCode || '—'}</td>
+                        <td className="p-3 font-medium text-foreground">{st.name}</td>
+                        <td className="p-3 text-muted-foreground">{st.email}</td>
+                        <td className="p-3 text-muted-foreground">{st.department || '—'}</td>
+                        <td className="p-3 text-center">
+                          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            {t('common.active')}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={removingId === st.id}
+                            onClick={() => handleRemove(st)}
+                            className="h-7 px-2 text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="size-3.5" />
+                            <span className="hidden sm:inline">{t('admin.removeStudentFromClass')}</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Add Student */}
+        {activeTab === 'add' && (
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto space-y-4 pt-3">
+            <div className="rounded-xl border bg-card p-4 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Tìm kiếm và thêm từng sinh viên
+              </h3>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <input
+                  value={addQuery}
+                  onChange={(e) => setAddQuery(e.target.value)}
+                  placeholder={t('admin.searchStudentPlaceholder')}
+                  className="w-full rounded-lg border bg-background pl-9 pr-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {searchingAvailable ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">{t('common.loading')}</div>
+              ) : addQuery.trim() && availableStudents.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">{t('admin.noAvailableStudents')}</div>
+              ) : availableStudents.length > 0 ? (
+                <div className="max-h-48 overflow-y-auto rounded-lg border divide-y">
+                  {availableStudents.map((st) => (
+                    <div key={st.id} className="flex items-center justify-between p-2.5 hover:bg-muted/40 text-xs">
+                      <div>
+                        <div className="font-semibold text-foreground flex items-center gap-2">
+                          <span className="font-mono text-primary">{st.studentCode || '—'}</span>
+                          <span>{st.name}</span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {st.email} {st.department ? `· ${st.department}` : ''}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={addingId === st.id}
+                        onClick={() => handleEnrollSingle(st)}
+                        className="h-7 text-xs"
+                      >
+                        <UserPlus className="size-3.5" />
+                        {t('admin.addSelectedStudent')}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-xl border bg-card p-4 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Thêm danh sách mã sinh viên hàng loạt
+              </h3>
+              <p className="text-xs text-muted-foreground">{t('admin.pasteCodesNotice')}</p>
+              <textarea
+                value={batchCodes}
+                onChange={(e) => setBatchCodes(e.target.value)}
+                rows={3}
+                placeholder="20210001, 20210002, 20210003..."
+                className="w-full rounded-lg border bg-background p-2.5 font-mono text-xs outline-none focus:ring-2 focus:ring-primary"
+              />
+              <Button
+                type="button"
+                disabled={!batchCodes.trim() || batchEnrolling}
+                onClick={handleBatchEnroll}
+                className="text-xs"
+              >
+                <UserPlus className="size-3.5" />
+                {batchEnrolling ? t('common.loading') : t('admin.addBatchStudents')}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Section CSV Import */}
+        {activeTab === 'import' && (
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto space-y-3 pt-3">
+            <div className="rounded-xl border bg-card p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-xs font-semibold text-foreground">Import danh sách sinh viên riêng cho lớp</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Các sinh viên trong file CSV sẽ được tạo tài khoản (nếu chưa có) và ghi danh trực tiếp vào lớp này.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    ref={sectionFileRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={handleSectionFileChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => sectionFileRef.current?.click()}
+                    className="text-xs"
+                  >
+                    <Upload className="size-3.5" />
+                    {t('teacher.uploadCsv')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={downloadSectionTemplate}
+                    className="text-xs"
+                  >
+                    <Download className="size-3.5" />
+                    {t('teacher.downloadTemplate')}
+                  </Button>
+                </div>
+              </div>
+
+              <textarea
+                value={sectionCsvText}
+                onChange={(e) => setSectionCsvText(e.target.value)}
+                rows={5}
+                className="w-full rounded-lg border bg-background p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-primary"
+                placeholder="studentId,name,department&#10;20210001,Nguyen Van A,Computer Science&#10;20210002,Tran Thi B,Computer Science"
+              />
+
+              <Button
+                type="button"
+                disabled={!sectionCsvText.trim() || sectionImporting}
+                onClick={handleSectionImport}
+                className="text-xs"
+              >
+                {sectionImporting ? t('teacher.importing') : 'Nạp sinh viên vào lớp này'}
+              </Button>
+
+              {sectionImportResult && (
+                <div className="mt-3 space-y-3 border-t pt-3 text-xs">
+                  <p className="font-medium text-emerald-700 dark:text-emerald-300">
+                    {t('teacher.importCreated', { count: sectionImportResult.created.length })}
+                  </p>
+                  {sectionImportResult.skipped.length > 0 && (
+                    <div>
+                      <p className="font-medium text-amber-700 dark:text-amber-400">
+                        {t('teacher.importSkipped', { count: sectionImportResult.skipped.length })}
+                      </p>
+                      <ul className="mt-1 list-disc pl-4 text-muted-foreground space-y-0.5">
+                        {sectionImportResult.skipped.map((r, i) => (
+                          <li key={i}>{r.studentCode}: {r.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end border-t pt-3">
           <Button variant="outline" onClick={onClose}>
             {t('common.close')}
           </Button>
@@ -1454,6 +1883,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [rosterStudents, setRosterStudents] = useState<{ id: string; name: string; email: string; studentCode: string; department: string; status: string }[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterSearch, setRosterSearch] = useState('')
+  const [importTargetSectionId, setImportTargetSectionId] = useState<string>('')
 
   const openRoster = async (sec: ClassSession) => {
     setRosterSection(sec)
@@ -1470,6 +1900,20 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       setRosterStudents([])
     } finally {
       setRosterLoading(false)
+    }
+  }
+
+  const reloadRoster = async (sectionId?: string) => {
+    const sId = sectionId || rosterSection?.sectionId
+    if (!sId) return
+    try {
+      const res = await api.sectionStudents(sId)
+      if (res.ok) {
+        setRosterStudents(res.students)
+        await refresh()
+      }
+    } catch {
+      /* ignore */
     }
   }
 
@@ -1660,7 +2104,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     setImporting(true)
     setNotice('')
     try {
-      const result = await api.importStudents(csvText)
+      const result = await api.importStudents(csvText, importTargetSectionId || undefined)
       setImportResult(result)
       setNotice(t('teacher.importDone', { count: result.created.length }))
       await refresh()
@@ -2121,6 +2565,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             search={rosterSearch}
             setSearch={setRosterSearch}
             onClose={() => setRosterSection(null)}
+            onRefresh={() => reloadRoster(rosterSection.sectionId)}
             t={t}
           />
         )}
@@ -2156,6 +2601,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             setCsvText={setCsvText}
             importing={importing}
             importResult={importResult}
+            targetSectionId={importTargetSectionId}
+            setTargetSectionId={setImportTargetSectionId}
+            sections={sessions}
             onImport={runImport}
             onClose={() => setImportOpen(false)}
             t={t}

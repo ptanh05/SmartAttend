@@ -84,7 +84,7 @@ export const api = {
       body: JSON.stringify({ studentId }),
     })
   },
-  importStudents(csv: string) {
+  importStudents(csv: string, sectionId?: string) {
     return request<{
       ok: boolean
       created: { studentCode: string; name: string; defaultPassword: string }[]
@@ -92,7 +92,7 @@ export const api = {
       message?: string
     }>('/api/users/import', {
       method: 'POST',
-      body: JSON.stringify({ csv }),
+      body: JSON.stringify({ csv, sectionId }),
     })
   },
   logout() {
@@ -261,8 +261,32 @@ export const api = {
   },
   sectionStudents(sectionId: string) {
     return request<{ ok: boolean; students: { id: string; name: string; email: string; studentCode: string; department: string; status: string }[] }>(
-      `/api/courses/sections/${sectionId}`,
+      `/api/courses/sections/${sectionId}/students`,
     )
+  },
+  enrollStudentsToSection(sectionId: string, identifiers: string[]) {
+    return request<{ ok: boolean; enrolledCount?: number; message?: string }>(
+      `/api/courses/sections/${sectionId}/students`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ studentIds: identifiers }),
+      },
+    )
+  },
+  removeStudentFromSection(sectionId: string, studentId: string) {
+    return request<{ ok: boolean; message?: string }>(
+      `/api/courses/sections/${sectionId}/students`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ studentId }),
+      },
+    )
+  },
+  searchAvailableStudents(sectionId: string, search: string) {
+    return request<{
+      ok: boolean
+      availableStudents: { id: string; name: string; email: string; studentCode: string; department: string }[]
+    }>(`/api/courses/sections/${sectionId}/students?search=${encodeURIComponent(search)}`)
   },
   createSection(data: { courseId: string; room: string; startsAt: string; endsAt: string; dayOfWeek?: number; autoStart?: boolean }) {
     return request<{ ok: boolean; sectionId?: string; message?: string }>('/api/courses/sections', {

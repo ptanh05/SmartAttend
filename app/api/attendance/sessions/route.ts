@@ -6,7 +6,8 @@ export async function GET() {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
 
-  const sessions = await listClassSessions(auth.organizationId)
+  const studentId = auth.role === 'student' ? auth.userId : undefined
+  const sessions = await listClassSessions(auth.organizationId, studentId)
   const live = auth.role !== 'student' ? await getLiveSessionDetails(auth) : null
 
   return NextResponse.json({ ok: true, sessions, live })

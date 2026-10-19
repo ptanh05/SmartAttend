@@ -93,7 +93,16 @@ export type ImportStudentsResult = {
   skipped: { studentCode: string; reason: string }[]
 }
 
-export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]): Promise<ImportStudentsResult> {
+export type ImportStudentsOptions = {
+  sectionId?: string
+  autoEnrollSections?: boolean
+}
+
+export async function importStudents(
+  auth: AuthContext,
+  rows: ImportStudentRow[],
+  options?: ImportStudentsOptions,
+): Promise<ImportStudentsResult> {
   const created: ImportStudentsResult['created'] = []
   const skipped: ImportStudentsResult['skipped'] = []
   const seenCodes = new Set<string>()
@@ -116,7 +125,7 @@ export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]
 
     try {
       const existing = await db()
-        .select({ id: organizationMemberships.id })
+        .select({ id: organizationMemberships.id, userId: organizationMemberships.userId })
         .from(organizationMemberships)
         .where(
           and(
@@ -126,8 +135,22 @@ export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]
         )
 
       if (existing.length > 0) {
-        skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong tổ chức.' })
-        continue
+        if (options?.sectionId) {
+          await db()
+            .insert(classEnrollments)
+            .values({
+              sectionId: options.sectionId,
+              studentId: existing[0].userId,
+              organizationId: auth.organizationId,
+              status: 'active',
+            })
+            .onConflictDoNothing()
+          created.push({ studentCode, name, defaultPassword: '(Tài khoản đã tồn tại - đã ghi danh)' })
+          continue
+        } else {
+          skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong tổ chức.' })
+          continue
+        }
       }
 
       const email = studentEmail(auth.organizationId, studentCode)
@@ -169,22 +192,33 @@ export async function importStudents(auth: AuthContext, rows: ImportStudentRow[]
         status: 'active',
       })
 
-      // Auto-enroll newly imported student into all existing course sections of this organization
-      const existingSections = await db()
-        .select({ id: courseSections.id })
-        .from(courseSections)
-        .where(eq(courseSections.organizationId, auth.organizationId))
-
-      for (const sec of existingSections) {
+      if (options?.sectionId) {
         await db()
           .insert(classEnrollments)
           .values({
-            sectionId: sec.id,
+            sectionId: options.sectionId,
             studentId: userId,
             organizationId: auth.organizationId,
             status: 'active',
           })
           .onConflictDoNothing()
+      } else if (options?.autoEnrollSections !== false) {
+        const existingSections = await db()
+          .select({ id: courseSections.id })
+          .from(courseSections)
+          .where(eq(courseSections.organizationId, auth.organizationId))
+
+        for (const sec of existingSections) {
+          await db()
+            .insert(classEnrollments)
+            .values({
+              sectionId: sec.id,
+              studentId: userId,
+              organizationId: auth.organizationId,
+              status: 'active',
+            })
+            .onConflictDoNothing()
+        }
       }
 
       created.push({ studentCode, name, defaultPassword })

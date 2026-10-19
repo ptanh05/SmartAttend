@@ -23,7 +23,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: 'No student rows found in import.' }, { status: 400 })
     }
 
-    const result = await importStudents(auth, rows)
+    const sectionId = typeof body.sectionId === 'string' && body.sectionId.trim() ? body.sectionId.trim() : undefined
+    const result = await importStudents(auth, rows, { sectionId })
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
