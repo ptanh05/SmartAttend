@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { courseId, sessionId, date, reason, evidenceNote } = body
+  const { courseId, sessionId, date, reason, evidenceNote, attachmentUrl } = body
 
   if (!courseId || !reason || !date) {
     return NextResponse.json({ ok: false, message: 'Missing required fields' }, { status: 400 })
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     date,
     reason,
     evidenceNote,
+    attachmentUrl: typeof attachmentUrl === 'string' ? attachmentUrl : undefined,
   })
 
   return NextResponse.json({ ok: true, request: created })

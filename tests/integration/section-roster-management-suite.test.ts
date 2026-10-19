@@ -96,7 +96,6 @@ describe.skipIf(!hasDb)('ROSTER-01 to ROSTER-06: Section Roster Management & Mul
     await db().insert(organizations).values({
       id: orgId,
       name: 'Dai hoc Cong Nghe UTC',
-      slug: `utc-roster-${nanoid(6)}`,
       plan: 'Campus Plus',
     })
 
@@ -148,7 +147,7 @@ describe.skipIf(!hasDb)('ROSTER-01 to ROSTER-06: Section Roster Management & Mul
       dayOfWeek: 2,
     })
     expect(sec1Res.ok).toBe(true)
-    section1Id = sec1Res.sectionId
+    section1Id = sec1Res.sectionId!
 
     const sec2Res = await createCourseSection(teacherAuth, {
       courseId: course2Id,
@@ -158,7 +157,7 @@ describe.skipIf(!hasDb)('ROSTER-01 to ROSTER-06: Section Roster Management & Mul
       dayOfWeek: 3,
     })
     expect(sec2Res.ok).toBe(true)
-    section2Id = sec2Res.sectionId
+    section2Id = sec2Res.sectionId!
 
     // Both sections must start with 0 students
     const roster1 = await listSectionStudents(teacherAuth, section1Id)
@@ -217,7 +216,7 @@ describe.skipIf(!hasDb)('ROSTER-01 to ROSTER-06: Section Roster Management & Mul
 
   it('ROSTER-04: Attendance verification check-in strictly enforces enrollment per section', async () => {
     // Teacher opens attendance session for Section 2
-    const sessionId = await getOrCreateLiveSession(teacherAuth, section2Id)
+    const sessionId = (await getOrCreateLiveSession(teacherAuth, section2Id))!
     expect(sessionId).toBeTruthy()
     await transitionSessionState(teacherAuth, sessionId, 'live')
 

@@ -1,5 +1,5 @@
 export type Role = 'student' | 'teacher' | 'admin'
-export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused' | 'pending' | 'flagged'
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused' | 'pending' | 'flagged' | 'unmarked'
 export type User = { id: string; organizationId: string; name: string; email: string; role: Role; initials: string; department: string }
 export type Course = { id: string; organizationId: string; code: string; name: string; department: string; teacherId: string; enrolled: number; color: string }
 export type SessionStatus = 'draft' | 'active' | 'paused' | 'closed' | 'expired' | 'scheduled' | 'live'
@@ -34,11 +34,13 @@ export type LeaveRequest = {
   date: string
   reason: string
   evidenceNote?: string
+  attachmentUrl?: string
   status: LeaveStatus
   createdAt: string
   reviewedAt?: string
   reviewedBy?: string
 }
+export type AttendanceWarningStatus = 'good' | 'warning' | 'disqualified'
 export type DemoSession = { user: User; organization: { id: string; name: string; plan: string } }
 export type DashboardMetric = { label: string; value: string; detail: string; trend?: string }
 export const roles: Role[] = ['student', 'teacher', 'admin']

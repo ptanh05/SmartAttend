@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import {
+  AlertTriangle,
   Bell,
   Calendar,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   GraduationCap,
   Pin,
   ScanLine,
+  ShieldAlert,
 } from 'lucide-react'
 import { useI18n } from '@/components/i18n-provider'
 import type { AppUser, PageKey, ViewProps } from './smart-attend-ui'
@@ -43,6 +45,7 @@ export function formatUtcDate(locale: string = 'vi'): { greeting: string; dateSt
 export function UtcStudentDashboard({
   user,
   go,
+  data,
 }: {
   user: AppUser
   go: (p: PageKey) => void
@@ -51,6 +54,31 @@ export function UtcStudentDashboard({
   const { t, locale } = useI18n()
   const { greeting, dateString } = formatUtcDate(locale)
   const [newsModal, setNewsModal] = useState<{ title: string; date: string; content: string } | null>(null)
+
+  const courseWarnings = React.useMemo(() => {
+    if (!data?.courses || !data?.sessions || !data?.records) return []
+    const { courses, sessions, records } = data
+    return courses.map((course) => {
+      const courseSessionIds = new Set(sessions.filter((s) => s.courseId === course.id).map((s) => s.id))
+      const courseRecords = records.filter((r) => courseSessionIds.has(r.sessionId))
+      const unexcusedCount = courseRecords.filter((r) => r.status === 'absent').length
+      const excusedCount = courseRecords.filter((r) => r.status === 'excused').length
+      const totalChecked = courseRecords.length
+      const status: 'disqualified' | 'warning' | 'good' =
+        unexcusedCount >= 3 ? 'disqualified' : unexcusedCount === 2 ? 'warning' : 'good'
+      return {
+        course,
+        unexcusedCount,
+        excusedCount,
+        totalChecked,
+        status,
+      }
+    })
+  }, [data])
+
+  const atRiskCourses = courseWarnings.filter((c) => c.status !== 'good')
+  const disqualifiedCourses = courseWarnings.filter((c) => c.status === 'disqualified')
+  const warningCourses = courseWarnings.filter((c) => c.status === 'warning')
 
   const schoolNews =
     locale === 'vi'
@@ -188,6 +216,77 @@ export function UtcStudentDashboard({
           </div>
         </div>
       </div>
+
+      {/* ACADEMIC WARNING ALERTS */}
+      {disqualifiedCourses.length > 0 && (
+        <div className="space-y-2">
+          {disqualifiedCourses.map(({ course, unexcusedCount }) => (
+            <div
+              key={course.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 p-4 text-xs text-rose-900 shadow-sm dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200"
+            >
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="mt-0.5 size-5 shrink-0 text-rose-600 dark:text-rose-400" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                      {t('student.academicDisqualifiedTitle')}
+                    </span>
+                    <span className="rounded bg-rose-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                      {course.code}
+                    </span>
+                  </div>
+                  <p className="mt-1 font-medium">
+                    {t('student.academicDisqualifiedDesc', { count: unexcusedCount, course: course.name })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => go('history')}
+                className="shrink-0 rounded-lg bg-rose-600 px-3.5 py-2 font-bold text-white hover:bg-rose-700 transition-colors cursor-pointer text-center"
+              >
+                {t('student.viewAbsenceDetail')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {warningCourses.length > 0 && (
+        <div className="space-y-2">
+          {warningCourses.map(({ course, unexcusedCount }) => (
+            <div
+              key={course.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                      {t('student.academicWarningTitle')}
+                    </span>
+                    <span className="rounded bg-amber-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-900 dark:bg-amber-900 dark:text-amber-200">
+                      {course.code}
+                    </span>
+                  </div>
+                  <p className="mt-1 font-medium">
+                    {t('student.academicWarningDesc', { count: unexcusedCount, course: course.name })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => go('history')}
+                className="shrink-0 rounded-lg bg-amber-600 px-3.5 py-2 font-bold text-white hover:bg-amber-700 transition-colors cursor-pointer text-center"
+              >
+                {t('student.submitLeave')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 2. FOUR QUICK SHORTCUT ACTION CARDS */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -354,32 +453,98 @@ export function UtcStudentDashboard({
       {/* 4. ATTENDANCE STATUS & UPCOMING SESSIONS */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Cảnh báo & Tình trạng chuyên cần */}
-        <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 border-l-emerald-500">
+        <div
+          className={`overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] border-l-4 ${
+            disqualifiedCourses.length > 0
+              ? 'border-l-rose-500'
+              : warningCourses.length > 0
+              ? 'border-l-amber-500'
+              : 'border-l-emerald-500'
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 dark:border-slate-800/80">
             <div className="flex items-center gap-2">
-              <span className="h-4 w-1 rounded-full bg-emerald-500" />
-              <h2 className="text-sm font-extrabold uppercase tracking-wide text-emerald-950 dark:text-slate-100">
+              <span
+                className={`h-4 w-1 rounded-full ${
+                  disqualifiedCourses.length > 0
+                    ? 'bg-rose-500'
+                    : warningCourses.length > 0
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500'
+                }`}
+              />
+              <h2
+                className={`text-sm font-extrabold uppercase tracking-wide ${
+                  disqualifiedCourses.length > 0
+                    ? 'text-rose-950 dark:text-rose-300'
+                    : warningCourses.length > 0
+                    ? 'text-amber-950 dark:text-amber-300'
+                    : 'text-emerald-950 dark:text-slate-100'
+                }`}
+              >
                 {t('student.studentActivities')}
               </h2>
             </div>
             <button
               type="button"
               onClick={() => go('history')}
-              className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors dark:border-emerald-900/60 dark:bg-slate-900 dark:text-emerald-400 cursor-pointer"
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 cursor-pointer"
             >
               {t('student.viewAll')}
             </button>
           </div>
           <div className="p-5 space-y-3">
-            <div className="flex items-start gap-3 rounded-xl bg-emerald-50/80 p-3.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 border border-emerald-200/60 dark:border-emerald-900/40">
-              <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
-              <div>
-                <p className="font-bold">{t('student.attendanceStatusSafe')}</p>
-                <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-                  {t('student.attendanceStatusSafeDesc')}
-                </p>
+            {atRiskCourses.length > 0 ? (
+              <div className="space-y-2.5">
+                {atRiskCourses.map(({ course, unexcusedCount, status }) => (
+                  <div
+                    key={course.id}
+                    className={`flex items-start gap-3 rounded-xl p-3 text-xs border ${
+                      status === 'disqualified'
+                        ? 'bg-rose-50/80 text-rose-900 border-rose-200 dark:bg-rose-950/30 dark:text-rose-200 dark:border-rose-900/40'
+                        : 'bg-amber-50/80 text-amber-900 border-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:border-amber-900/40'
+                    }`}
+                  >
+                    {status === 'disqualified' ? (
+                      <ShieldAlert className="size-4.5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="size-4.5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold truncate">{course.name}</span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                            status === 'disqualified'
+                              ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200'
+                              : 'bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200'
+                          }`}
+                        >
+                          {status === 'disqualified'
+                            ? t('teacher.disqualified')
+                            : t('teacher.atRisk')}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] opacity-90">
+                        {status === 'disqualified'
+                          ? t('student.academicDisqualifiedDesc', { count: unexcusedCount, course: course.code })
+                          : t('student.academicWarningDesc', { count: unexcusedCount, course: course.code })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-xl bg-emerald-50/80 p-3.5 text-xs text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 border border-emerald-200/60 dark:border-emerald-900/40">
+                <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                <div>
+                  <p className="font-bold">{t('student.attendanceStatusSafe')}</p>
+                  <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+                    {t('student.attendanceStatusSafeDesc')}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between pt-1 text-xs text-slate-500 dark:text-slate-400">
               <span>{t('student.absenceRuleHint')}</span>
               <button

@@ -334,6 +334,7 @@ export const leaveRequests = pgTable(
     date: text('date').notNull(),
     reason: text('reason').notNull(),
     evidenceNote: text('evidence_note'),
+    attachmentUrl: text('attachment_url'),
     status: text('status').notNull().default('pending'),
     reviewedBy: text('reviewed_by').references(() => users.id),
     reviewedByName: text('reviewed_by_name'),

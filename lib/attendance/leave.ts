@@ -55,6 +55,7 @@ export async function getLeaveRequests(auth: AuthContext, studentId?: string): P
     date: req.date,
     reason: req.reason,
     evidenceNote: req.evidenceNote ?? undefined,
+    attachmentUrl: req.attachmentUrl ?? undefined,
     status: req.status as LeaveStatus,
     createdAt: req.createdAt.toISOString(),
     reviewedAt: req.reviewedAt?.toISOString(),
@@ -70,6 +71,7 @@ export async function addLeaveRequest(
     date: string
     reason: string
     evidenceNote?: string
+    attachmentUrl?: string
   },
 ): Promise<LeaveRequest> {
   const id = `lr_${nanoid(12)}`
@@ -84,6 +86,7 @@ export async function addLeaveRequest(
     date: data.date.trim(),
     reason: data.reason.trim(),
     evidenceNote: data.evidenceNote?.trim() || null,
+    attachmentUrl: data.attachmentUrl?.trim() || null,
     status: 'pending',
     createdAt: now,
   })
@@ -106,6 +109,7 @@ export async function addLeaveRequest(
     date: data.date,
     reason: data.reason,
     evidenceNote: data.evidenceNote,
+    attachmentUrl: data.attachmentUrl,
     status: 'pending',
     createdAt: now.toISOString(),
   }
@@ -246,6 +250,7 @@ export async function updateLeaveRequestStatus(
     date: row.req.date,
     reason: row.req.reason,
     evidenceNote: row.req.evidenceNote ?? undefined,
+    attachmentUrl: row.req.attachmentUrl ?? undefined,
     status,
     createdAt: row.req.createdAt.toISOString(),
     reviewedAt: now.toISOString(),

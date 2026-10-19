@@ -24,7 +24,7 @@ import {
   suspiciousAttempts,
   users,
 } from '@/lib/db/schema'
-import type { AttendanceStatus, ClassSession, Course, SessionStatus } from '@/lib/types/domain'
+import type { AttendanceStatus, AttendanceWarningStatus, ClassSession, Course, SessionStatus } from '@/lib/types/domain'
 
 function mapSessionStatus(status: string): SessionStatus {
   if (status === 'active') return 'live'
@@ -358,7 +358,7 @@ export async function transitionSessionState(auth: AuthContext, sessionId: strin
   return { ok: true as const, status: next, message: `Session moved to ${next}.` }
 }
 
-async function finalizeAbsentRecords(organizationId: string, sessionId: string) {
+export async function finalizeAbsentRecords(organizationId: string, sessionId: string) {
   const session = await getSessionScoped(organizationId, sessionId)
   if (!session) return
 
@@ -388,6 +388,43 @@ async function finalizeAbsentRecords(organizationId: string, sessionId: string) 
 
   if (absentRecords.length > 0) {
     await db().insert(attendanceRecords).values(absentRecords).onConflictDoNothing()
+
+    // Dispatch Academic Warning notifications if student hits warning threshold (2 absences) or disqualified (3+ absences)
+    for (const item of absentRecords) {
+      try {
+        const studentCourseRecords = await db()
+          .select({ status: attendanceRecords.status })
+          .from(attendanceRecords)
+          .innerJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+          .where(
+            and(
+              eq(attendanceRecords.organizationId, organizationId),
+              eq(attendanceSessions.courseId, session.courseId),
+              eq(attendanceRecords.studentId, item.studentId),
+            ),
+          )
+        const unexcusedCount = studentCourseRecords.filter((r) => r.status === 'absent').length
+        if (unexcusedCount === 2) {
+          await db().insert(notifications).values({
+            id: nanoid(),
+            organizationId,
+            userId: item.studentId,
+            title: 'Cảnh báo chuyên cần: Nguy cơ cấm thi',
+            body: 'Bạn đã vắng 2 buổi học. Theo quy chế đào tạo (nghỉ quá 20%), nếu vắng thêm bạn sẽ bị cấm thi kết thúc học phần.',
+          })
+        } else if (unexcusedCount >= 3) {
+          await db().insert(notifications).values({
+            id: nanoid(),
+            organizationId,
+            userId: item.studentId,
+            title: 'Thông báo: Bị cấm thi học phần',
+            body: `Bạn đã vắng ${unexcusedCount} buổi học (vượt quá 20% số tiết). Bạn không đủ điều kiện dự thi kết thúc học phần.`,
+          })
+        }
+      } catch {
+        /* ignore notification dispatch error */
+      }
+    }
   }
 }
 
@@ -714,7 +751,11 @@ export async function listReportRecords(auth: AuthContext, courseId?: string): P
   }))
 }
 
-export async function getLiveSessionDetails(auth: AuthContext) {
+export async function getLiveSessionDetails(auth: AuthContext, specificSessionId?: string) {
+  const whereClause = specificSessionId
+    ? and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.id, specificSessionId))
+    : and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))
+
   const rows = await db()
     .select({
       session: attendanceSessions,
@@ -724,7 +765,7 @@ export async function getLiveSessionDetails(auth: AuthContext) {
     .from(attendanceSessions)
     .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
     .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
-    .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active')))
+    .where(whereClause)
     .limit(1)
 
   const row = rows[0]
@@ -739,10 +780,14 @@ export async function getLiveSessionDetails(auth: AuthContext) {
   if (activeChallengeRow && !isExpired && challenge) {
     challengeExpiresAt = activeChallengeRow.expiresAt.toISOString()
   } else {
-    const rotated = await rotateChallengeForSession(auth, row.session.id)
-    challenge = rotated.ok ? rotated.challenge : '------'
-    if (rotated.ok && rotated.expiresAt) {
-      challengeExpiresAt = rotated.expiresAt
+    try {
+      const rotated = await rotateChallengeForSession(auth, row.session.id)
+      challenge = rotated.ok ? rotated.challenge : '------'
+      if (rotated.ok && rotated.expiresAt) {
+        challengeExpiresAt = rotated.expiresAt
+      }
+    } catch {
+      challenge = '------'
     }
   }
 
@@ -755,6 +800,68 @@ export async function getLiveSessionDetails(auth: AuthContext) {
     .innerJoin(users, eq(attendanceRecords.studentId, users.id))
     .where(eq(attendanceRecords.sessionId, row.session.id))
 
+  // Also query all enrolled students in this section for quick roll call
+  const enrolledStudents = await db()
+    .select({
+      student: users,
+      membership: organizationMemberships,
+    })
+    .from(classEnrollments)
+    .innerJoin(users, eq(classEnrollments.studentId, users.id))
+    .leftJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, classEnrollments.studentId),
+        eq(organizationMemberships.organizationId, auth.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(classEnrollments.sectionId, row.section.id),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+
+  const recordMap = new Map(recordRows.map((r) => [r.record.studentId, r]))
+  const mergedRecords = enrolledStudents.map(({ student, membership }) => {
+    const existing = recordMap.get(student.id)
+    if (existing) {
+      return {
+        id: existing.record.id,
+        studentName: student.name,
+        studentCode: membership?.studentCode ?? '',
+        studentId: student.id,
+        status: existing.record.status,
+        confidence: existing.record.verificationScore,
+        verifiedAt: existing.record.verifiedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? '—',
+        device: existing.record.device ?? '—',
+      }
+    }
+    return {
+      id: `unmarked_${student.id}`,
+      studentName: student.name,
+      studentCode: membership?.studentCode ?? '',
+      studentId: student.id,
+      status: 'unmarked',
+      confidence: 0,
+      verifiedAt: 'Chưa điểm danh',
+      device: 'Chưa có thiết bị',
+    }
+  })
+
+  const finalRecords = mergedRecords.length > 0
+    ? mergedRecords
+    : recordRows.map(({ record, student }) => ({
+        id: record.id,
+        studentName: student.name,
+        studentCode: '',
+        studentId: student.id,
+        status: record.status,
+        confidence: record.verificationScore,
+        verifiedAt: record.verifiedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? '—',
+        device: record.device ?? '—',
+      }))
+
   return {
     sessionId: row.session.id,
     courseCode: row.course.code,
@@ -765,15 +872,7 @@ export async function getLiveSessionDetails(auth: AuthContext) {
     dayOfWeek: row.section.dayOfWeek,
     challenge,
     challengeExpiresAt,
-    records: recordRows.map(({ record, student }) => ({
-      id: record.id,
-      studentName: student.name,
-      studentId: student.id,
-      status: record.status,
-      confidence: record.verificationScore,
-      verifiedAt: record.verifiedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? '—',
-      device: record.device ?? '—',
-    })),
+    records: finalRecords,
   }
 }
 
@@ -1472,6 +1571,219 @@ export async function overrideRecordStatus(auth: AuthContext, recordId: string, 
 
   await appendAudit(auth, `Overrode attendance record ${recordId} to ${status}${note ? ` (${note})` : ''}`, recordId, 'warning')
   return { ok: true as const }
+}
+
+export async function manualCheckInStudent(
+  auth: AuthContext,
+  sessionId: string,
+  studentId: string,
+  status: AttendanceStatus,
+  note = 'Điểm danh thủ công bởi GV (quên điện thoại)',
+) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+
+  const session = await getSessionScoped(auth.organizationId, sessionId)
+  if (!session) {
+    return { ok: false as const, message: 'Session not found.' }
+  }
+
+  if (auth.role === 'teacher') {
+    const courseRows = await db().select().from(courses).where(eq(courses.id, session.courseId))
+    const isAssigned = session.teacherId === auth.userId || (courseRows[0] && courseRows[0].teacherId === auth.userId)
+    if (!isAssigned) {
+      return { ok: false as const, message: 'Forbidden: You can only take attendance for courses you teach.' }
+    }
+  }
+
+  const enrollment = await db()
+    .select()
+    .from(classEnrollments)
+    .where(
+      and(
+        eq(classEnrollments.sectionId, session.sectionId),
+        eq(classEnrollments.studentId, studentId),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+  if (!enrollment[0]) {
+    return { ok: false as const, message: 'Student is not enrolled in this section.' }
+  }
+
+  const verifiedAt = new Date()
+  const score = status === 'present' ? 100 : status === 'late' ? 80 : status === 'excused' ? 100 : 0
+  const recordId = `rec_${nanoid(12)}`
+
+  await db()
+    .insert(attendanceRecords)
+    .values({
+      id: recordId,
+      organizationId: auth.organizationId,
+      sessionId,
+      studentId,
+      status,
+      verificationScore: score,
+      verifiedAt: status === 'absent' ? null : verifiedAt,
+      device: note,
+    })
+    .onConflictDoUpdate({
+      target: [attendanceRecords.sessionId, attendanceRecords.studentId],
+      set: {
+        status,
+        verificationScore: score,
+        verifiedAt: status === 'absent' ? null : verifiedAt,
+        device: note,
+      },
+    })
+
+  await appendAudit(auth, `Manual attendance for student ${studentId}: ${status} (${note})`, sessionId, 'info')
+  return { ok: true as const, status, message: 'Đã cập nhật điểm danh thành công.' }
+}
+
+export type CourseAttendanceStudentSummary = {
+  studentId: string
+  studentName: string
+  studentCode: string
+  studentEmail: string
+  department: string
+  presentCount: number
+  lateCount: number
+  excusedCount: number
+  unexcusedCount: number
+  totalConducted: number
+  attendanceRate: number
+  warningStatus: AttendanceWarningStatus
+  examEligibility: string
+}
+
+export async function getCourseAttendanceSummary(
+  auth: AuthContext,
+  courseId: string,
+): Promise<{
+  course: { id: string; code: string; name: string; department: string }
+  totalSessions: number
+  students: CourseAttendanceStudentSummary[]
+}> {
+  const courseRows = await db()
+    .select()
+    .from(courses)
+    .where(and(eq(courses.id, courseId), eq(courses.organizationId, auth.organizationId)))
+  const course = courseRows[0]
+  if (!course) {
+    throw new Error('Course not found.')
+  }
+
+  const conductedSessions = await db()
+    .select()
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.organizationId, auth.organizationId),
+        eq(attendanceSessions.courseId, courseId),
+      ),
+    )
+  const totalConducted = conductedSessions.length
+
+  const enrollments = await db()
+    .select({
+      student: users,
+      membership: organizationMemberships,
+    })
+    .from(classEnrollments)
+    .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+    .innerJoin(users, eq(classEnrollments.studentId, users.id))
+    .leftJoin(
+      organizationMemberships,
+      and(
+        eq(organizationMemberships.userId, classEnrollments.studentId),
+        eq(organizationMemberships.organizationId, auth.organizationId),
+      ),
+    )
+    .where(
+      and(
+        eq(courseSections.courseId, courseId),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+
+  const uniqueStudents = new Map<string, { student: typeof users.$inferSelect; membership: typeof organizationMemberships.$inferSelect | null }>()
+  for (const en of enrollments) {
+    if (!uniqueStudents.has(en.student.id)) {
+      uniqueStudents.set(en.student.id, en)
+    }
+  }
+
+  const sessionIds = conductedSessions.map((s) => s.id)
+  let allRecords: { studentId: string; status: string }[] = []
+  if (sessionIds.length > 0) {
+    const rawRecords = await db()
+      .select({
+        studentId: attendanceRecords.studentId,
+        status: attendanceRecords.status,
+        sessionId: attendanceRecords.sessionId,
+      })
+      .from(attendanceRecords)
+      .where(and(eq(attendanceRecords.organizationId, auth.organizationId)))
+    allRecords = rawRecords.filter((r) => sessionIds.includes(r.sessionId))
+  }
+
+  const studentSummaryList: CourseAttendanceStudentSummary[] = []
+  for (const { student, membership } of uniqueStudents.values()) {
+    const studentRecords = allRecords.filter((r) => r.studentId === student.id)
+    const presentCount = studentRecords.filter((r) => r.status === 'present').length
+    const lateCount = studentRecords.filter((r) => r.status === 'late').length
+    const excusedCount = studentRecords.filter((r) => r.status === 'excused').length
+    const unexcusedCount = studentRecords.filter((r) => r.status === 'absent').length
+
+    const attendedCount = presentCount + lateCount + excusedCount
+    const totalCount = Math.max(totalConducted, studentRecords.length)
+    const rate = totalCount > 0 ? Math.round((attendedCount / totalCount) * 1000) / 10 : 100
+
+    let warningStatus: AttendanceWarningStatus = 'good'
+    let examEligibility = 'ĐỦ ĐIỀU KIỆN'
+
+    if (unexcusedCount >= 3) {
+      warningStatus = 'disqualified'
+      examEligibility = 'CẤM THI'
+    } else if (unexcusedCount === 2) {
+      warningStatus = 'warning'
+      examEligibility = 'NGUY CƠ CẤM THI'
+    } else if (totalConducted >= 5) {
+      const absentPercent = (unexcusedCount / totalConducted) * 100
+      if (absentPercent > 20) {
+        warningStatus = 'disqualified'
+        examEligibility = 'CẤM THI'
+      } else if (absentPercent >= 15) {
+        warningStatus = 'warning'
+        examEligibility = 'NGUY CƠ CẤM THI'
+      }
+    }
+
+    studentSummaryList.push({
+      studentId: student.id,
+      studentName: student.name,
+      studentCode: membership?.studentCode ?? '',
+      studentEmail: student.email,
+      department: membership?.department ?? '',
+      presentCount,
+      lateCount,
+      excusedCount,
+      unexcusedCount,
+      totalConducted,
+      attendanceRate: rate,
+      warningStatus,
+      examEligibility,
+    })
+  }
+
+  studentSummaryList.sort((a, b) => a.studentCode.localeCompare(b.studentCode) || a.studentName.localeCompare(b.studentName))
+
+  return {
+    course: { id: course.id, code: course.code, name: course.name, department: course.department },
+    totalSessions: totalConducted,
+    students: studentSummaryList,
+  }
 }
 
 export { mapSessionStatus }

@@ -115,17 +115,45 @@ export const api = {
     const query = studentId ? `?studentId=${studentId}` : ''
     return request<{ ok: boolean; records: AttendanceRecord[] }>(`/api/attendance/records${query}`)
   },
-  overrideAttendance(recordId: string, status: AttendanceStatus) {
+  overrideAttendance(recordId: string, status: AttendanceStatus, opts?: { sessionId?: string; studentId?: string; note?: string }) {
     return request<{ ok: boolean; status?: AttendanceStatus; message?: string }>('/api/attendance/records', {
       method: 'PATCH',
-      body: JSON.stringify({ recordId, status }),
+      body: JSON.stringify({ recordId, status, sessionId: opts?.sessionId, studentId: opts?.studentId, note: opts?.note }),
     })
+  },
+  manualCheckIn(sessionId: string, studentId: string, status: AttendanceStatus, note?: string) {
+    return request<{ ok: boolean; status?: AttendanceStatus; message?: string }>('/api/attendance/records', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, studentId, status, note }),
+    })
+  },
+  courseAttendanceSummary(courseId: string) {
+    return request<{
+      ok: boolean
+      course: { id: string; code: string; name: string; department: string }
+      totalSessions: number
+      students: {
+        studentId: string
+        studentName: string
+        studentCode: string
+        studentEmail: string
+        department: string
+        presentCount: number
+        lateCount: number
+        excusedCount: number
+        unexcusedCount: number
+        totalConducted: number
+        attendanceRate: number
+        warningStatus: 'good' | 'warning' | 'disqualified'
+        examEligibility: string
+      }[]
+    }>(`/api/reports/attendance?courseId=${courseId}&format=json`)
   },
   leaveRequests(studentId?: string) {
     const query = studentId ? `?studentId=${studentId}` : ''
     return request<{ ok: boolean; requests: LeaveRequest[] }>(`/api/attendance/leave${query}`)
   },
-  submitLeaveRequest(data: { courseId: string; courseName?: string; sessionId?: string; date: string; reason: string; evidenceNote?: string }) {
+  submitLeaveRequest(data: { courseId: string; courseName?: string; sessionId?: string; date: string; reason: string; evidenceNote?: string; attachmentUrl?: string }) {
     return request<{ ok: boolean; request?: LeaveRequest; message?: string }>('/api/attendance/leave', {
       method: 'POST',
       body: JSON.stringify(data),

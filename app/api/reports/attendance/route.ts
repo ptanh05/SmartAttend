@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAuth } from '@/lib/auth/context'
-import { listReportRecords } from '@/lib/attendance/server'
+import { getCourseAttendanceSummary, listReportRecords } from '@/lib/attendance/server'
 import { attendanceRate, attendanceSummary, toCsv } from '@/lib/reports/csv'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic'
  * organization. Query params:
  *  - `courseId`  filter to a single course
  *  - `scope`     `summary` (default, per student) or `detail` (row per record)
+ *  - `format`    `json` (returns structured JSON for printable PDF view)
  */
 export async function GET(request: Request) {
   try {
@@ -23,6 +24,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const courseId = searchParams.get('courseId') ?? undefined
     const scope = searchParams.get('scope') === 'detail' ? 'detail' : 'summary'
+    const format = searchParams.get('format')
+
+    if (format === 'json') {
+      if (courseId) {
+        const summary = await getCourseAttendanceSummary(auth, courseId)
+        return NextResponse.json({ ok: true, ...summary })
+      }
+      const records = await listReportRecords(auth)
+      return NextResponse.json({ ok: true, records })
+    }
 
     const records = await listReportRecords(auth, courseId)
 
@@ -75,23 +86,30 @@ export async function GET(request: Request) {
       { header: 'Email', key: 'email' },
       { header: 'Present', key: 'present' },
       { header: 'Late', key: 'late' },
-      { header: 'Absent', key: 'absent' },
-      { header: 'Pending', key: 'pending' },
-      { header: 'Flagged', key: 'flagged' },
+      { header: 'Absent (Unexcused)', key: 'absent' },
+      { header: 'Excused', key: 'excused' },
       { header: 'Attendance rate (%)', key: 'rate' },
+      { header: 'Exam Eligibility', key: 'eligibility' },
     ]
 
     const rows = [...byStudent.values()].map((student) => {
       const summary = attendanceSummary(student.items)
+      const unexcused = summary.absent ?? 0
+      const total = student.items.length
+      const rate = attendanceRate(student.items)
+      const isDisqualified = unexcused >= 3 || (total >= 5 && unexcused / total > 0.2)
+      const isWarning = !isDisqualified && (unexcused === 2 || (total >= 5 && unexcused / total >= 0.15))
+      const eligibility = isDisqualified ? 'CẤM THI' : isWarning ? 'NGUY CƠ CẤM THI' : 'ĐỦ ĐIỀU KIỆN'
+
       return {
         name: student.name,
         email: student.email,
         present: summary.present ?? 0,
         late: summary.late ?? 0,
-        absent: summary.absent ?? 0,
-        pending: summary.pending ?? 0,
-        flagged: summary.flagged ?? 0,
-        rate: attendanceRate(student.items),
+        absent: unexcused,
+        excused: summary.excused ?? 0,
+        rate,
+        eligibility,
       }
     })
 
