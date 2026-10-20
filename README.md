@@ -15,8 +15,12 @@ The application is a **full-stack database-backed implementation** running on Ne
 - **Database-Backed Leave Requests:** Full lifecycle (submission, review, approve/reject, notification) persisted to PostgreSQL.
 - **Anti-Cheating & Device Trust:** Hardware trust scoring (0–100), device fingerprint registry, replay protection, and `suspicious_attempts` tracking.
 - **Real Authentication & Session Security:** `bcryptjs` password encryption, cryptographically secure 32-byte session tokens stored as SHA-256 hashes, `HttpOnly` / `SameSite=Lax` cookies, and brute-force sliding-window rate limiting.
-- **CSV Reports & Analytics:** RFC 4180 streaming CSV export for attendance and audit trails, with real-time institutional metrics.
-- **Bilingual i18n & Dark Mode:** Full English and Vietnamese support with runtime switcher and responsive mobile/tablet layout.
+- **Academic Attendance Warning (Cảnh báo cấm thi tự động):** University regulation compliance (absence > 20% or $\ge 3$ sessions $\rightarrow$ disqualified from exam; 2 absences $\rightarrow$ academic warning with reminder). Banner alert on student dashboard, exam eligibility badges on course cards, and auto-dispatched notifications.
+- **File Attachment in Leave Requests (Ảnh minh chứng):** Students upload medical certs or parental consent images with thumbnail previews; teachers inspect attachments in a dedicated full-screen preview modal (`ProofPreviewModal`) before approving.
+- **Quick Manual Roll Call (Điểm danh thủ công nhanh):** Teachers can view all enrolled students in the live section (including unmarked students) and 1-click mark them `present`, `late`, or `excused` if their phone died or was forgotten.
+- **Printable Attendance Sheet (Phiếu điểm danh PDF A4):** Standard official MOET/UTC university attendance sheet with per-student breakdown (present, late, excused, unexcused, absent rate, exam eligibility), dean & lecturer signature blocks, eligibility filters, and `@media print` A4 landscape styling.
+- **Ultrasonic Acoustic Token & WebAuthn Biometrics:** Dual-channel anti-proxy attendance verification combining acoustic ultrasound soundwaves (18.5kHz - 20kHz) and FIDO2 passkeys for 100% presence proof.
+- **CSV & Excel Reports with UTF-8 BOM:** RFC 4180 streaming CSV export for attendance and audit trails with UTF-8 BOM encoding, eliminating font mojibake in Microsoft Excel.
 
 ---
 
@@ -26,11 +30,21 @@ The application is a **full-stack database-backed implementation** running on Ne
 |---|---|
 | Framework | Next.js 16 (App Router) + React 19 |
 | Language | TypeScript (strict mode) |
-| Styling | Tailwind CSS 4 + Lucide Icons + shadcn/ui |
+| Styling | Tailwind CSS 4 + Lucide Icons + Print CSS |
 | ORM & Database | Drizzle ORM on Neon Serverless PostgreSQL |
 | Auth & Security | bcryptjs, SHA-256 hashed session tokens, HttpOnly cookies, timingSafeEqual |
-| Rate Limiting | In-memory sliding window rate limiter |
-| Testing | Vitest (11 suites, 86 unit & integration tests) |
+| Anti-Cheat Engine | Acoustic ultrasound generator/detector + WebAuthn FIDO2 passkeys |
+| Testing | Vitest (23 suites, 136 unit & integration tests) |
+
+---
+
+## 🔑 Demo Accounts
+
+| Role | Email | Password | Description |
+|---|---|---|---|
+| **Admin** | `admin@smartattend.edu.vn` | `12345678` | Ban Đào Tạo UTC, quản lý khoa, người dùng, báo cáo |
+| **Teacher** | `teacher@smartattend.edu.vn` | `12345678` | Giảng viên, mở ca học, điểm danh thủ công, duyệt đơn |
+| **Student** | `20260001@student.utc.edu.vn` | `student123` | Sinh viên UTC, nộp đơn đính kèm ảnh, xem cảnh báo |
 
 ---
 
@@ -69,7 +83,7 @@ pnpm dev        # http://localhost:3000
 | `pnpm dev` | Start development server |
 | `pnpm build` | Production build & static page generation |
 | `pnpm start` | Start production server |
-| `pnpm test` | Run complete Vitest suite (unit, integration & security tests) |
+| `pnpm test` | Run complete Vitest suite (23 suites, 136 tests) |
 | `pnpm typecheck` | Run TypeScript verification (`tsc --noEmit`) |
 | `pnpm lint` | Run ESLint check |
 | `pnpm db:push` | Push schema changes directly to Neon DB |
@@ -83,16 +97,13 @@ Run the test suite:
 ```bash
 pnpm test
 ```
-The test suite covers:
-- `lib/attendance/session-state.test.ts`: Session lifecycle transition rules.
-- `lib/attendance/challenge.test.ts`: Code generation, safe alphabet, SHA-256 verification.
-- `lib/attendance/device-policy.test.ts`: Trust scoring (0–100) and suspicious flagging.
-- `lib/attendance/leave.test.ts`: Database-backed leave request workflow.
-- `lib/rate-limit.test.ts`: Sliding window consumption, expirations, resets.
-- `lib/permissions/index.test.ts`: Role-based access control helpers.
-- `lib/reports/csv.test.ts`: RFC 4180 CSV cell escaping and rate calculation.
-- `tests/integration/attendance-flow.test.ts`: Live end-to-end attendance flow on Neon DB.
-- `tests/integration/security-regressions.test.ts`: Multi-tenant isolation, role boundary enforcement, expired challenge rejection, and late attendance timing.
+The test suite covers 23 suites and 136 tests:
+- `phase10-advanced-features.test.ts`: Medical file attachment, Quick manual roll call, Academic attendance warnings (20% rule), and printable PDF sheet calculation.
+- `attendance-engine.test.ts`: High-concurrency race condition prevention & hardware verification.
+- `webauthn-security.test.ts`: FIDO2 cryptographic assertion, public key verification, and acoustic proof validation.
+- `section-roster-management-suite.test.ts`: Section-level roster isolation, attendance scoping, and student management.
+- `reports-vietnamese-encoding-suite.test.ts`: UTF-8 BOM encoding and font preservation.
+- `security-regressions.test.ts` & `security-audit-cases.test.ts`: Multi-tenant isolation and IDOR prevention.
 
 ---
 
