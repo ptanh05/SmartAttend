@@ -241,6 +241,15 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const [biometricStatus, setBiometricStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
   const [stage2SubMethod, setStage2SubMethod] = useState<'instant' | 'qr' | 'manual'>('instant')
 
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+  }, [])
+
   // Leave Request State
   const [leaveModalOpen, setLeaveModalOpen] = useState(false)
   const [leaveCourseId, setLeaveCourseId] = useState('')
@@ -298,6 +307,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
   const liveSession = sessions.find((session) => session.status === 'live')
   const liveCourse = liveSession ? courses.find((course) => course.id === liveSession.courseId) : null
+  const myRecord = liveSession ? records.find((r) => r.sessionId === liveSession.id && (r.status === 'present' || r.status === 'late' || r.status === 'excused')) : null
   const rate = calcAttendanceRate(records)
   const presentCount = records.filter((row) => row.status === 'present' || row.status === 'late').length
   const verify = async (overrideCode?: string, method = 'manual_code') => {
@@ -490,19 +500,66 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
           action={<Button variant="ghost" onClick={() => { stopCamera(); go('overview') }}><ArrowLeft />{t('common.back')}</Button>}
         />
         <Card
-          title={liveCourse?.name ?? t('student.noLiveClass')}
+          title={myRecord ? (liveCourse?.name ?? 'Đã hoàn tất điểm danh') : (liveCourse?.name ?? t('student.noLiveClass'))}
           description={liveSession ? `${liveCourse?.code ?? ''} · ${liveSession.room} · ${t('common.liveNow')}` : t('student.waitingSession')}
         >
           <div className="flex flex-col gap-5">
-            {liveSession && (
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-center">
-                <p className="text-xs font-semibold uppercase tracking-wider text-primary">{t('common.todayClass')}</p>
-                <h3 className="mt-1 text-lg font-semibold">{liveCourse?.name} ({liveCourse?.code})</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">{liveSession.room} · {liveSession.startsAt} – {liveSession.endsAt}</p>
+            {!liveSession ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center">
+                <div className="size-14 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground mb-3">
+                  <Clock className="size-7" />
+                </div>
+                <h3 className="font-semibold text-base">{t('student.noLiveClass')}</h3>
+                <p className="text-xs text-muted-foreground max-w-sm mt-1 mb-5">
+                  {t('student.waitingSession')}
+                </p>
+                <Button variant="outline" onClick={() => go('overview')}>
+                  <ArrowLeft />{t('common.back')}
+                </Button>
               </div>
-            )}
-
-            {/* QUY TRÌNH ĐIỂM DANH 2 LỚP: SÓNG SIÊU ÂM (GATEKEEPER) -> HOÀN TẤT */}
+            ) : myRecord ? (
+              <div className="flex flex-col items-center justify-center p-6 text-center">
+                <div className="size-14 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-3">
+                  <CheckCircle2 className="size-8" />
+                </div>
+                <h3 className="font-bold text-lg text-emerald-800 dark:text-emerald-200">
+                  Bạn đã hoàn tất điểm danh ca học này!
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 mb-4">
+                  {liveCourse?.name} ({liveCourse?.code}) · Phòng {liveSession.room}
+                </p>
+                <div className="w-full max-w-md rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-xs space-y-2.5 text-left mb-5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Trạng thái ghi nhận:</span>
+                    <span className="font-semibold uppercase text-emerald-700 dark:text-emerald-300 rounded-md bg-emerald-500/10 px-2 py-0.5">
+                      {myRecord.status === 'present' ? 'Có mặt' : myRecord.status === 'late' ? 'Đi muộn' : 'Có phép'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Điểm tin cậy:</span>
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                      {myRecord.confidence}% {myRecord.confidence === 100 && ' — Sóng âm & Sinh trắc học'}
+                    </span>
+                  </div>
+                  {myRecord.verifiedAt && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Thời gian ghi nhận:</span>
+                      <span className="font-medium text-foreground">{myRecord.verifiedAt}</span>
+                    </div>
+                  )}
+                </div>
+                <Button onClick={() => go('overview')}>
+                  <Check /> Quay về trang tổng quan
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-primary">{t('common.todayClass')}</p>
+                  <h3 className="mt-1 text-lg font-semibold">{liveCourse?.name} ({liveCourse?.code})</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{liveSession.room} · {liveSession.startsAt} – {liveSession.endsAt}</p>
+                </div>
+{/* QUY TRÌNH ĐIỂM DANH 2 LỚP: SÓNG SIÊU ÂM (GATEKEEPER) -> HOÀN TẤT */}
 
             {/* BƯỚC 1: XÁC THỰC HIỆN DIỆN VẬT LÝ QUA SÓNG SIÊU ÂM (BẮT BUỘC) */}
             <div className={`rounded-2xl border p-5 transition-all ${
@@ -788,6 +845,10 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 </div>
               </div>
             </div>
+
+            
+              </>
+            )}
 
             {result && (
               <div

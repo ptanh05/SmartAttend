@@ -466,8 +466,31 @@ export async function verifyAttendance(
     .from(attendanceSessions)
     .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active')))
 
-  const live = liveSessions[0]
-  if (!live) return { ok: false, confidence: 0, message: 'There is no live session right now.' }
+  if (liveSessions.length === 0) return { ok: false, confidence: 0, message: 'There is no live session right now.' }
+
+  // If multiple sessions are active concurrently, resolve to the one the student is enrolled in or that matches acousticProof
+  const enrolledSectionIds = (
+    await db()
+      .select({ sectionId: classEnrollments.sectionId })
+      .from(classEnrollments)
+      .where(
+        and(
+          eq(classEnrollments.studentId, auth.userId),
+          eq(classEnrollments.status, 'active'),
+        ),
+      )
+  ).map((e) => e.sectionId)
+
+  let live = options?.acousticProof?.sessionId
+    ? liveSessions.find((s) => s.id === options.acousticProof!.sessionId)
+    : undefined
+
+  if (!live) {
+    live = liveSessions.find((s) => enrolledSectionIds.includes(s.sectionId))
+  }
+  if (!live) {
+    live = liveSessions[0]
+  }
 
   const enrolled = await db()
     .select()
@@ -535,7 +558,7 @@ export async function verifyAttendance(
     .from(attendanceRecords)
     .where(and(eq(attendanceRecords.sessionId, live.id), eq(attendanceRecords.studentId, auth.userId)))
 
-  if (existing[0] && (existing[0].status === 'present' || existing[0].status === 'excused')) {
+  if (existing[0] && (existing[0].status === 'present' || existing[0].status === 'late' || existing[0].status === 'excused')) {
     return {
       ok: true,
       confidence: existing[0].verificationScore,
