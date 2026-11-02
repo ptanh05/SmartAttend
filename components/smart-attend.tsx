@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
-  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X
+  ClipboardCheck, Clock, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
@@ -235,6 +235,11 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const [cameraError, setCameraError] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [ultrasonicStatus, setUltrasonicStatus] = useState<'idle' | 'listening' | 'detected' | 'not_found'>('idle')
+  const [ultrasonicProgress, setUltrasonicProgress] = useState(0)
+  const [stepNotice, setStepNotice] = useState('')
+  const [biometricStatus, setBiometricStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
+  const [stage2SubMethod, setStage2SubMethod] = useState<'instant' | 'qr' | 'manual'>('instant')
 
   // Leave Request State
   const [leaveModalOpen, setLeaveModalOpen] = useState(false)
@@ -295,11 +300,19 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const liveCourse = liveSession ? courses.find((course) => course.id === liveSession.courseId) : null
   const rate = calcAttendanceRate(records)
   const presentCount = records.filter((row) => row.status === 'present' || row.status === 'late').length
-  const verify = async (overrideCode?: string) => {
+  const verify = async (overrideCode?: string, method = 'manual_code') => {
     const codeToVerify = overrideCode || code
     if (!codeToVerify.trim()) return
     try {
-      const response = await api.verify(codeToVerify.trim())
+      if (ultrasonicStatus !== 'detected') {
+        setStepNotice(t('student.inRoomRequired'))
+        return
+      }
+      const response = await api.verify(codeToVerify.trim(), {
+        method,
+        ultrasonicVerified: true,
+        acousticProof: liveSession?.acousticProof,
+      })
       setResult(response)
       if (response.ok) {
         stopCamera()
@@ -342,7 +355,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
             if (barcodes.length > 0) {
               const raw = barcodes[0].rawValue.trim().toUpperCase()
               setCode(raw)
-              await verify(raw)
+              await verify(raw, 'qr_scan')
               return
             }
           } catch {
@@ -360,63 +373,17 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
     }
   }
 
-  const [joinTab, setJoinTab] = useState<'ultrasonic' | 'qr' | 'manual'>('ultrasonic')
-  const [biometricStatus, setBiometricStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
-  const [ultrasonicStatus, setUltrasonicStatus] = useState<'idle' | 'listening' | 'detected' | 'not_found'>('idle')
-  const [ultrasonicProgress, setUltrasonicProgress] = useState(0)
-  const [stepNotice, setStepNotice] = useState('')
-
-  const runDualVerification = async () => {
+  const detectSoundwave = async () => {
     if (!liveSession) {
       setStepNotice(t('student.noLiveClass'))
       return
     }
     setStepNotice('')
-    setBiometricStatus('verifying')
-    setUltrasonicStatus('idle')
+    setUltrasonicStatus('listening')
+    setUltrasonicProgress(0)
     setResult(null)
 
     try {
-      // Step 1: WebAuthn Challenge & Face ID verification
-      const challengeRes = await api.webauthnChallenge()
-      if (!challengeRes.ok) throw new Error(t('student.biometricInitError'))
-
-      let bioAuth = await authenticateWithBiometrics(
-        user.id || '',
-        user.email,
-        challengeRes.challenge,
-      )
-
-      // Seamless enrollment if device doesn't have an enrolled credential on this origin yet
-      if (!bioAuth.ok && !challengeRes.hasEnrolledPasskey) {
-        setStepNotice(t('student.registeringBiometric'))
-        const regRes = await registerDeviceBiometrics(
-          user.id || '',
-          user.name,
-          user.email,
-          challengeRes.challenge,
-        )
-        if (regRes.ok) {
-          bioAuth = await authenticateWithBiometrics(
-            user.id || '',
-            user.email,
-            challengeRes.challenge,
-          )
-        }
-      }
-
-      if (!bioAuth.ok || !bioAuth.assertion) {
-        setBiometricStatus('error')
-        setStepNotice(`${t('student.biometricPrefix')}${bioAuth.error || t('student.biometricError')}`)
-        return
-      }
-
-      setBiometricStatus('success')
-      setStepNotice(t('student.ultrasonicListening'))
-      setUltrasonicStatus('listening')
-      setUltrasonicProgress(0)
-
-      // Step 2: Listen for Classroom Ultrasonic Acoustic Beacon (18.75 kHz)
       const detection = await detectUltrasonicBeacon({
         targetFrequency: DEFAULT_ULTRASONIC_FREQ,
         durationMs: 2800,
@@ -425,20 +392,76 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
 
       if (!detection.detected) {
         setUltrasonicStatus('not_found')
-        setStepNotice(t('student.ultrasonicNotFound'))
-        return
+        setStepNotice(t('student.presenceBlockedDesc'))
+      } else {
+        setUltrasonicStatus('detected')
+        setStepNotice(t('student.presenceVerifiedDesc'))
+      }
+    } catch (err) {
+      setUltrasonicStatus('not_found')
+      setStepNotice(err instanceof Error ? err.message : t('student.ultrasonicNotFound'))
+    }
+  }
+
+  const runDualVerification = async () => {
+    if (!liveSession) {
+      setStepNotice(t('student.noLiveClass'))
+      return
+    }
+    if (ultrasonicStatus !== 'detected') {
+      setStepNotice(t('student.inRoomRequired'))
+      return
+    }
+    setStepNotice('')
+    setBiometricStatus('verifying')
+    setResult(null)
+
+    try {
+      // Step 1: WebAuthn Challenge & Face ID verification (if supported)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let bioAssertion: any = undefined
+      try {
+        const challengeRes = await api.webauthnChallenge()
+        if (challengeRes.ok) {
+          let bioAuth = await authenticateWithBiometrics(
+            user.id || '',
+            user.email,
+            challengeRes.challenge,
+          )
+
+          if (!bioAuth.ok && !challengeRes.hasEnrolledPasskey) {
+            setStepNotice(t('student.registeringBiometric'))
+            const regRes = await registerDeviceBiometrics(
+              user.id || '',
+              user.name,
+              user.email,
+              challengeRes.challenge,
+            )
+            if (regRes.ok) {
+              bioAuth = await authenticateWithBiometrics(
+                user.id || '',
+                user.email,
+                challengeRes.challenge,
+              )
+            }
+          }
+
+          if (bioAuth.ok && bioAuth.assertion) {
+            bioAssertion = bioAuth.assertion
+            setBiometricStatus('success')
+          }
+        }
+      } catch {
+        /* Biometric assertion optional fallback */
       }
 
-      setUltrasonicStatus('detected')
-      setStepNotice(t('student.ultrasonicDetected'))
-
-      // Step 3: Complete verification with 100% confidence
+      // Step 2: Complete in-room verification with acoustic proof
       const targetChallenge = liveSession.challenge && liveSession.challenge !== '------' ? liveSession.challenge : code || 'AUTOSYNC'
       const response = await api.verify(targetChallenge, {
         method: 'ultrasonic_faceid',
         ultrasonicVerified: true,
-        biometricVerified: true,
-        webauthnAssertion: bioAuth.assertion,
+        biometricVerified: Boolean(bioAssertion),
+        webauthnAssertion: bioAssertion,
         acousticProof: liveSession.acousticProof,
         device: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID + Ultrasonic)'
@@ -479,168 +502,292 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
               </div>
             )}
 
-            {/* Attendance Mode Selector Tabs */}
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/60 p-1 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => { stopCamera(); setJoinTab('ultrasonic') }}
-                className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 transition-all cursor-pointer ${
-                  joinTab === 'ultrasonic'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Sparkles className="size-3.5 text-indigo-500" />
-                <span className="hidden sm:inline">{t('student.ultrasonicMode')}</span>
-                <span className="sm:hidden">{t('student.ultrasonicShort')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setJoinTab('qr'); startCamera() }}
-                className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 transition-all cursor-pointer ${
-                  joinTab === 'qr'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <ScanLine className="size-3.5" />
-                <span>{t('student.qrMode')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { stopCamera(); setJoinTab('manual') }}
-                className={`flex items-center justify-center gap-1.5 rounded-lg py-2.5 transition-all cursor-pointer ${
-                  joinTab === 'manual'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Edit3 className="size-3.5" />
-                <span>{t('student.manualMode')}</span>
-              </button>
+            {/* QUY TRÌNH ĐIỂM DANH 2 LỚP: SÓNG SIÊU ÂM (GATEKEEPER) -> HOÀN TẤT */}
+
+            {/* BƯỚC 1: XÁC THỰC HIỆN DIỆN VẬT LÝ QUA SÓNG SIÊU ÂM (BẮT BUỘC) */}
+            <div className={`rounded-2xl border p-5 transition-all ${
+              ultrasonicStatus === 'detected'
+                ? 'border-emerald-500/30 bg-emerald-500/5'
+                : ultrasonicStatus === 'not_found'
+                  ? 'border-rose-500/30 bg-rose-500/5'
+                  : 'border-indigo-500/20 bg-indigo-500/5'
+            }`}>
+              <div className="flex items-start gap-3.5">
+                <div className={`mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${
+                  ultrasonicStatus === 'detected'
+                    ? 'bg-emerald-500 text-white'
+                    : ultrasonicStatus === 'not_found'
+                      ? 'bg-rose-500 text-white'
+                      : 'bg-indigo-600 text-white'
+                }`}>
+                  {ultrasonicStatus === 'detected' ? (
+                    <CheckCircle2 className="size-5" />
+                  ) : ultrasonicStatus === 'not_found' ? (
+                    <CircleAlert className="size-5" />
+                  ) : ultrasonicStatus === 'listening' ? (
+                    <Waves className="size-5 animate-pulse" />
+                  ) : (
+                    <Volume2 className="size-5" />
+                  )}
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                      ultrasonicStatus === 'detected'
+                        ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                        : ultrasonicStatus === 'not_found'
+                          ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
+                          : 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300'
+                    }`}>
+                      BƯỚC 1 (BẮT BUỘC)
+                    </span>
+                    <h4 className="font-bold text-sm text-foreground">
+                      {t('student.step1Title')}
+                    </h4>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    {t('student.step1Desc')}
+                  </p>
+
+                  {/* Visualizer during listening */}
+                  {ultrasonicStatus === 'listening' && (
+                    <div className="mt-3 space-y-2">
+                      <UltrasonicWaveVisualizer active={true} />
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                          <span>{t('student.analyzingAudio')}</span>
+                          <span>{ultrasonicProgress}%</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100 dark:bg-indigo-950">
+                          <div
+                            className="h-full bg-indigo-500 transition-all duration-200"
+                            style={{ width: `${ultrasonicProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status Banner when verified */}
+                  {ultrasonicStatus === 'detected' && (
+                    <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>{t('student.presenceVerifiedDesc')}</span>
+                    </div>
+                  )}
+
+                  {/* Status Banner when failed */}
+                  {ultrasonicStatus === 'not_found' && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-medium text-rose-700 dark:text-rose-300">
+                      <CircleAlert className="size-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                      <div className="space-y-1">
+                        <strong className="block font-semibold">{t('student.presenceBlockedBadge')}</strong>
+                        <span>{t('student.presenceBlockedDesc')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action button */}
+                  <div className="mt-3.5 flex items-center gap-2">
+                    {ultrasonicStatus !== 'detected' ? (
+                      <Button
+                        onClick={detectSoundwave}
+                        disabled={ultrasonicStatus === 'listening'}
+                        className={`w-full font-semibold h-11 ${
+                          ultrasonicStatus === 'not_found'
+                            ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md'
+                        }`}
+                      >
+                        {ultrasonicStatus === 'listening' ? (
+                          <>
+                            <Waves className="size-4 animate-pulse" />
+                            {t('student.capturingUltrasonic')}
+                          </>
+                        ) : ultrasonicStatus === 'not_found' ? (
+                          <>
+                            <RotateCcw className="size-4" />
+                            {t('student.redetectBeaconBtn')}
+                          </>
+                        ) : (
+                          <>
+                            <Waves className="size-4" />
+                            {t('student.detectBeaconBtn')}
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        onClick={detectSoundwave}
+                        className="text-xs text-muted-foreground hover:text-foreground h-8 px-2"
+                      >
+                        <RotateCcw className="size-3" />
+                        {t('student.redetectBeaconBtn')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Tab 1: Ultrasonic + Face ID (Recommended) */}
-            {joinTab === 'ultrasonic' && (
-              <div className="flex flex-col gap-4 rounded-2xl border border-indigo-500/20 bg-gradient-to-b from-indigo-500/5 to-transparent p-5 text-center">
-                <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500 shadow-inner">
-                  {ultrasonicStatus === 'listening' ? (
-                    <Waves className="size-7 animate-pulse text-indigo-500" />
+            {/* BƯỚC 2: HOÀN TẤT ĐIỂM DANH (CHỈ MỞ KHÓA KHI BƯỚC 1 ĐÃ THÀNH CÔNG) */}
+            <div className={`rounded-2xl border p-5 transition-all ${
+              ultrasonicStatus === 'detected'
+                ? 'border-border bg-card shadow-sm'
+                : 'border-dashed border-border/80 bg-muted/30 opacity-70'
+            }`}>
+              <div className="flex items-start gap-3.5">
+                <div className={`mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm ${
+                  ultrasonicStatus === 'detected'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-muted-foreground/30 text-muted-foreground'
+                }`}>
+                  {ultrasonicStatus === 'detected' ? (
+                    <Sparkles className="size-5" />
                   ) : (
-                    <Fingerprint className="size-7 text-indigo-500" />
+                    <Lock className="size-5" />
                   )}
                 </div>
 
-                <div>
-                  <h4 className="font-bold text-base text-foreground">
-                    {t('student.dualVerificationTitle')}
-                  </h4>
-                  <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
-                    {t('student.dualVerificationDesc')}
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-foreground/10 px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase">
+                      BƯỚC 2
+                    </span>
+                    <h4 className="font-bold text-sm text-foreground">
+                      {t('student.step2Title')}
+                    </h4>
+                    {ultrasonicStatus !== 'detected' && (
+                      <span className="rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
+                        <Lock className="size-3" />
+                        ĐANG KHÓA
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                    {ultrasonicStatus === 'detected'
+                      ? t('student.step2Desc')
+                      : t('student.step2LockedDesc')}
                   </p>
-                </div>
 
-                {/* Progress bar during ultrasonic scan */}
-                {ultrasonicStatus === 'listening' && (
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
-                      <span>{t('student.analyzingAudio')}</span>
-                      <span>{ultrasonicProgress}%</span>
+                  {/* Khi Bước 1 đã thành công: Hiển thị các tùy chọn điểm danh */}
+                  {ultrasonicStatus === 'detected' ? (
+                    <div className="mt-4 space-y-4">
+                      {/* Sub-tabs for completion method */}
+                      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/60 p-1 text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => { stopCamera(); setStage2SubMethod('instant') }}
+                          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all cursor-pointer ${
+                            stage2SubMethod === 'instant'
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <Sparkles className="size-3.5 text-emerald-500" />
+                          <span className="truncate">{t('student.unlockMethodBiometric')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setStage2SubMethod('qr'); startCamera() }}
+                          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all cursor-pointer ${
+                            stage2SubMethod === 'qr'
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <ScanLine className="size-3.5" />
+                          <span>{t('student.qrMode')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { stopCamera(); setStage2SubMethod('manual') }}
+                          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 transition-all cursor-pointer ${
+                            stage2SubMethod === 'manual'
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <Edit3 className="size-3.5" />
+                          <span>{t('student.manualMode')}</span>
+                        </button>
+                      </div>
+
+                      {/* Option A: Instant 1-Click / Face ID */}
+                      {stage2SubMethod === 'instant' && (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Vị trí phòng học đã được ký chứng thực. Bấm nút bên dưới để hoàn tất ghi nhận điểm danh.
+                          </p>
+                          <Button
+                            onClick={runDualVerification}
+                            disabled={biometricStatus === 'verifying'}
+                            className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md"
+                          >
+                            <Sparkles className="size-4" />
+                            {biometricStatus === 'verifying' ? t('student.activatingFaceId') : t('student.instantCheckInBtn')}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Option B: Scan in-room QR */}
+                      {stage2SubMethod === 'qr' && (
+                        <div className="flex flex-col items-center gap-3">
+                          {cameraActive ? (
+                            <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-2xl border-2 border-primary bg-black">
+                              <video ref={videoRef} autoPlay playsInline muted className="size-full object-cover" />
+                              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                <div className="size-48 rounded-xl border-2 border-dashed border-white/80" />
+                              </div>
+                            </div>
+                          ) : (
+                            <Button variant="outline" onClick={startCamera}>
+                              <Camera />{t('common.cameraScan')}
+                            </Button>
+                          )}
+                          {cameraActive && (
+                            <Button variant="outline" onClick={stopCamera}>
+                              <CameraOff />{t('common.cameraStop')}
+                            </Button>
+                          )}
+                          {cameraError && (
+                            <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                              {cameraError}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Option C: Manual 6-char Code (still carries acousticProof) */}
+                      {stage2SubMethod === 'manual' && (
+                        <div className="space-y-3">
+                          <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="challenge">
+                            {t('student.sessionChallenge')}
+                            <input
+                              id="challenge"
+                              value={code}
+                              onChange={(e) => setCode(e.target.value.toUpperCase())}
+                              placeholder={t('student.challengePlaceholder')}
+                              className="h-12 rounded-lg border bg-background px-4 text-center font-mono text-xl tracking-[0.35em] outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </label>
+                          <Button onClick={() => verify(undefined, 'manual_code')} className="w-full h-11">
+                            <ShieldCheck />{t('student.verifyRecord')}
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-100 dark:bg-indigo-950">
-                      <div
-                        className="h-full bg-indigo-500 transition-all duration-200"
-                        style={{ width: `${ultrasonicProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {stepNotice && (
-                  <div
-                    className={`rounded-xl p-3 text-xs font-medium ${
-                      ultrasonicStatus === 'detected' || biometricStatus === 'success'
-                        ? 'border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200'
-                        : ultrasonicStatus === 'not_found' || biometricStatus === 'error'
-                          ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200'
-                          : 'border border-indigo-200 bg-indigo-50/80 text-indigo-800 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-200'
-                    }`}
-                  >
-                    {stepNotice}
-                  </div>
-                )}
-
-                <Button
-                  onClick={runDualVerification}
-                  disabled={biometricStatus === 'verifying' || ultrasonicStatus === 'listening'}
-                  className="h-12 w-full bg-gradient-to-r from-indigo-600 to-blue-600 font-semibold hover:from-indigo-700 hover:to-blue-700 shadow-md"
-                >
-                  {biometricStatus === 'verifying' ? (
-                    <>
-                      <Fingerprint className="size-4 animate-spin" />
-                      {t('student.activatingFaceId')}
-                    </>
-                  ) : ultrasonicStatus === 'listening' ? (
-                    <>
-                      <Waves className="size-4 animate-pulse" />
-                      {t('student.capturingUltrasonic')}
-                    </>
                   ) : (
-                    <>
-                      <Sparkles className="size-4" />
-                      {t('student.verifyNowDual')}
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-
-            {/* Tab 2: Camera QR Scan */}
-            {joinTab === 'qr' && (
-              <div className="flex flex-col items-center gap-3">
-                {cameraActive ? (
-                  <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-2xl border-2 border-primary bg-black">
-                    <video ref={videoRef} autoPlay playsInline muted className="size-full object-cover" />
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                      <div className="size-48 rounded-xl border-2 border-dashed border-white/80" />
+                    <div className="mt-3 rounded-xl border border-muted bg-muted/40 p-3.5 text-xs text-muted-foreground flex items-center gap-2">
+                      <Lock className="size-4 shrink-0 text-amber-500" />
+                      <span>{t('student.step2LockedDesc')}</span>
                     </div>
-                  </div>
-                ) : (
-                  <Button variant="outline" onClick={startCamera}>
-                    <Camera />{t('common.cameraScan')}
-                  </Button>
-                )}
-                {cameraActive && (
-                  <Button variant="outline" onClick={stopCamera}>
-                    <CameraOff />{t('common.cameraStop')}
-                  </Button>
-                )}
-                {cameraError && (
-                  <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    {cameraError}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            )}
-
-            {/* Tab 3: Manual 6-char Code Input */}
-            {joinTab === 'manual' && (
-              <div className="space-y-4">
-                <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="challenge">
-                  {t('student.sessionChallenge')}
-                  <input
-                    id="challenge"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder={t('student.challengePlaceholder')}
-                    className="h-12 rounded-lg border bg-background px-4 text-center font-mono text-xl tracking-[0.35em] outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <Button onClick={() => verify()} className="w-full h-11">
-                  <ShieldCheck />{t('student.verifyRecord')}
-                </Button>
-              </div>
-            )}
+            </div>
 
             {result && (
               <div
