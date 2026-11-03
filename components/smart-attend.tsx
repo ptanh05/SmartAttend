@@ -2424,6 +2424,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [projectorMode, setProjectorMode] = useState(false)
   const [ultrasonicActive, setUltrasonicActive] = useState(false)
   const beaconRef = useRef<BeaconController | null>(null)
+  const liveActive = Boolean(live)
 
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all')
   const [rosterSection, setRosterSection] = useState<ClassSession | null>(null)
@@ -2482,27 +2483,63 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
+  const manuallyStoppedRef = useRef(false)
+
+  const startBeacon = useCallback(() => {
+    if (beaconRef.current?.isRunning()) {
+      setUltrasonicActive(true)
+      return
+    }
+    try {
+      const beacon = startUltrasonicBeacon(DEFAULT_ULTRASONIC_FREQ)
+      beaconRef.current = beacon
+      setUltrasonicActive(true)
+    } catch {
+      /* ignore autoplay suspension until user interaction */
+    }
+  }, [])
+
+  const stopBeacon = useCallback(() => {
+    if (beaconRef.current) {
+      beaconRef.current.stop()
+      beaconRef.current = null
+    }
+    setUltrasonicActive(false)
+  }, [])
+
   const toggleUltrasonic = () => {
     if (ultrasonicActive) {
-      beaconRef.current?.stop()
-      beaconRef.current = null
-      setUltrasonicActive(false)
+      manuallyStoppedRef.current = true
+      stopBeacon()
     } else {
-      try {
-        const beacon = startUltrasonicBeacon(DEFAULT_ULTRASONIC_FREQ)
-        beaconRef.current = beacon
-        setUltrasonicActive(true)
-      } catch (err) {
-        setNotice(err instanceof Error ? err.message : 'Error starting ultrasonic beacon')
-      }
+      manuallyStoppedRef.current = false
+      startBeacon()
     }
   }
 
+  // Auto-start ultrasonic acoustic beacon when live attendance session is active and viewing sessions page
   useEffect(() => {
-    return () => {
-      beaconRef.current?.stop()
+    if (liveActive && page === 'sessions') {
+      if (!manuallyStoppedRef.current) {
+        startBeacon()
+      }
+
+      const handleUserGesture = () => {
+        if (liveActive && page === 'sessions' && !manuallyStoppedRef.current) {
+          startBeacon()
+        }
+      }
+      window.addEventListener('click', handleUserGesture, { once: true })
+      window.addEventListener('touchstart', handleUserGesture, { once: true })
+      return () => {
+        window.removeEventListener('click', handleUserGesture)
+        window.removeEventListener('touchstart', handleUserGesture)
+      }
+    } else {
+      stopBeacon()
+      manuallyStoppedRef.current = false
     }
-  }, [])
+  }, [liveActive, page, startBeacon, stopBeacon])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2594,7 +2631,6 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   }
 
   const isAdmin = role === 'admin'
-  const liveActive = Boolean(live)
   const students = users.filter((item) => item.role === 'student')
 
   const todayDay = new Date().getDay()
@@ -2611,6 +2647,8 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       const result = await api.sessionAction(created.sessionId, 'start')
       if (!result.ok) { setNotice(result.message ?? t('teacher.updateSessionFailed')); return }
       setNotice(t('teacher.sessionUpdated'))
+      manuallyStoppedRef.current = false
+      startBeacon()
       await refresh()
       go('sessions')
     } catch (err) {
@@ -2629,9 +2667,16 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         sessionId = created.sessionId
       }
       if (!sessionId) { setNotice(t('teacher.noSection')); return }
+      const isStarting = !liveActive
       const result = await api.sessionAction(sessionId, liveActive ? 'close' : 'start')
       if (!result.ok) { setNotice(result.message ?? t('teacher.updateSessionFailed')); return }
       setNotice(result.message ?? t('teacher.sessionUpdated'))
+      if (isStarting) {
+        manuallyStoppedRef.current = false
+        startBeacon()
+      } else {
+        stopBeacon()
+      }
       await refresh()
     } catch (err) {
       setNotice(err instanceof Error ? err.message : t('teacher.updateSessionFailed'))
