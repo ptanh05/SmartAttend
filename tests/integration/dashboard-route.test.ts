@@ -127,3 +127,4 @@ describe('Consolidated Dashboard API (/api/dashboard)', () => {
     expect(Array.isArray(data.auditEvents)).toBe(true)
   })
 })
+
