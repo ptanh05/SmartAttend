@@ -19,6 +19,7 @@ import {
   courses,
   departments,
   devices,
+  leaveRequests,
   notifications,
   organizationMemberships,
   suspiciousAttempts,
@@ -374,20 +375,48 @@ export async function finalizeAbsentRecords(organizationId: string, sessionId: s
 
   const existingIds = new Set(existing.map((row) => row.studentId))
 
-  const absentRecords = enrolled
-    .filter((row) => !existingIds.has(row.studentId))
-    .map((row) => ({
+  const approvedLeaves = await db()
+    .select()
+    .from(leaveRequests)
+    .where(
+      and(
+        eq(leaveRequests.organizationId, organizationId),
+        eq(leaveRequests.courseId, session.courseId),
+        eq(leaveRequests.status, 'approved'),
+      ),
+    )
+
+  const sessionDateStr = session.startedAt
+    ? session.startedAt.toISOString().split('T')[0]
+    : session.createdAt.toISOString().split('T')[0]
+
+  const excusedStudentIds = new Set(
+    approvedLeaves
+      .filter((lr) => lr.sessionId === sessionId || lr.date.includes(sessionDateStr) || sessionDateStr.includes(lr.date))
+      .map((lr) => lr.studentId),
+  )
+
+  const missingStudents = enrolled.filter((row) => !existingIds.has(row.studentId))
+
+  const newRecords = missingStudents.map((row) => {
+    const isExcused = excusedStudentIds.has(row.studentId)
+    return {
       id: nanoid(),
       organizationId,
       sessionId,
       studentId: row.studentId,
-      status: 'absent' as const,
-      verificationScore: 0,
-      device: null,
-    }))
+      status: isExcused ? ('excused' as const) : ('absent' as const),
+      verificationScore: isExcused ? 100 : 0,
+      device: isExcused ? 'Đơn nghỉ phép duyệt' : null,
+      flaggedReason: isExcused ? 'Đã được duyệt đơn nghỉ phép' : null,
+      verifiedAt: isExcused ? new Date() : null,
+    }
+  })
 
-  if (absentRecords.length > 0) {
-    await db().insert(attendanceRecords).values(absentRecords).onConflictDoNothing()
+  const absentRecords = newRecords.filter((r) => r.status === 'absent')
+
+  if (newRecords.length > 0) {
+    await db().insert(attendanceRecords).values(newRecords).onConflictDoNothing()
 
     // Dispatch Academic Warning notifications if student hits warning threshold (2 absences) or disqualified (3+ absences)
     for (const item of absentRecords) {
@@ -546,9 +575,10 @@ export async function verifyAttendance(
     .select()
     .from(devices)
     .where(and(eq(devices.organizationId, auth.organizationId), eq(devices.studentId, auth.userId)))
+  const currentDevice = deviceRows.find((d) => d.label === deviceLabel)
   const deviceDecision = evaluateDevicePolicy({
-    hasTrustedDevice: deviceRows.some((device) => device.trusted),
-    hasSeenDevice: deviceRows.length > 0,
+    hasTrustedDevice: Boolean(currentDevice?.trusted),
+    hasSeenDevice: Boolean(currentDevice),
     requireTrustedDevice: policy.requireTrustedDevice,
   })
 
@@ -1766,14 +1796,20 @@ export async function getCourseAttendanceSummary(
     let warningStatus: AttendanceWarningStatus = 'good'
     let examEligibility = 'ĐỦ ĐIỀU KIỆN'
 
-    if (unexcusedCount >= 3) {
-      warningStatus = 'disqualified'
-      examEligibility = 'CẤM THI'
-    } else if (unexcusedCount === 2) {
-      warningStatus = 'warning'
-      examEligibility = 'NGUY CƠ CẤM THI'
-    } else if (totalConducted >= 5) {
-      const absentPercent = (unexcusedCount / totalConducted) * 100
+    const absentPercent = totalCount > 0 ? (unexcusedCount / totalCount) * 100 : 0
+
+    // Quy chế đào tạo tín chỉ UTC:
+    // - Đối với học phần tiêu chuẩn (<= 15 buổi hoặc đang diễn ra trong kỳ): vắng 2 buổi là NGUY CƠ CẤM THI, >= 3 buổi là CẤM THI
+    // - Đối với học phần dài (> 15 buổi): vắng > 20% là CẤM THI, từ 15% - 20% là NGUY CƠ CẤM THI
+    if (totalCount <= 15) {
+      if (unexcusedCount >= 3) {
+        warningStatus = 'disqualified'
+        examEligibility = 'CẤM THI'
+      } else if (unexcusedCount === 2) {
+        warningStatus = 'warning'
+        examEligibility = 'NGUY CƠ CẤM THI'
+      }
+    } else {
       if (absentPercent > 20) {
         warningStatus = 'disqualified'
         examEligibility = 'CẤM THI'

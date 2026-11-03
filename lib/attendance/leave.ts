@@ -167,9 +167,9 @@ export async function updateLeaveRequestStatus(
   if (status === 'approved') {
     let targetSessionId = row.req.sessionId
 
-    // If no specific sessionId was attached, find the active or most recent session for this course
+    // If no specific sessionId was attached, find the session matching the requested date
     if (!targetSessionId) {
-      const matchedSessions = await db()
+      const courseSessions = await db()
         .select()
         .from(attendanceSessions)
         .where(
@@ -179,9 +179,20 @@ export async function updateLeaveRequestStatus(
           ),
         )
         .orderBy(desc(attendanceSessions.createdAt))
-        .limit(1)
 
-      targetSessionId = matchedSessions[0]?.id
+      const reqDateStr = row.req.date.trim()
+      const matchingDateSession = courseSessions.find((s) => {
+        const createdDate = s.createdAt.toISOString().split('T')[0]
+        const startedDate = s.startedAt ? s.startedAt.toISOString().split('T')[0] : null
+        return (
+          createdDate === reqDateStr ||
+          startedDate === reqDateStr ||
+          reqDateStr.includes(createdDate) ||
+          (startedDate ? reqDateStr.includes(startedDate) : false)
+        )
+      })
+
+      targetSessionId = matchingDateSession?.id ?? courseSessions[0]?.id
     }
 
     if (targetSessionId) {

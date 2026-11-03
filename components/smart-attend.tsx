@@ -253,7 +253,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   // Leave Request State
   const [leaveModalOpen, setLeaveModalOpen] = useState(false)
   const [leaveCourseId, setLeaveCourseId] = useState('')
-  const [leaveDate, setLeaveDate] = useState(new Date().toLocaleDateString('vi-VN'))
+  const [leaveDate, setLeaveDate] = useState(() => new Date().toISOString().split('T')[0])
   const [leaveReason, setLeaveReason] = useState('')
   const [leaveEvidence, setLeaveEvidence] = useState('')
   const [leaveAttachmentUrl, setLeaveAttachmentUrl] = useState<string | undefined>(undefined)
@@ -303,6 +303,38 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
     } finally {
       setSubmittingLeave(false)
     }
+  }
+
+  const exportStudentHistoryCsv = () => {
+    if (records.length === 0) {
+      alert(t('common.noData') || 'Chưa có dữ liệu điểm danh để xuất.')
+      return
+    }
+    const headers = ['Mã buổi học', 'Môn học', 'Phòng', 'Thời gian', 'Trạng thái', 'Độ tin cậy', 'Thiết bị']
+    const rows = records.map((r) => {
+      const sess = sessions.find((s) => s.id === r.sessionId)
+      const crs = courses.find((c) => c.id === sess?.courseId)
+      return [
+        r.sessionId,
+        crs ? `"${crs.code} - ${crs.name}"` : `"${sess?.courseName || 'Học phần'}"`,
+        `"${sess?.room || '—'}"`,
+        r.verifiedAt ? new Date(r.verifiedAt).toLocaleString('vi-VN') : '—',
+        t(`status.${r.status}`) || r.status,
+        `${r.confidence}%`,
+        `"${(r.device || 'Thiết bị').replace(/"/g, '""')}"`,
+      ].join(',')
+    })
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Lich_su_diem_danh_${user.studentCode || user.name || 'sinh_vien'}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   const liveSession = sessions.find((session) => session.status === 'live')
@@ -916,7 +948,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
               >
                 <FileCheck />{t('student.submitLeave')}
               </Button>
-              <Button variant="outline">
+              <Button variant="outline" onClick={exportStudentHistoryCsv}>
                 <Download />{t('common.exportCsv')}
               </Button>
             </div>
@@ -1043,12 +1075,11 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">{t('student.selectSession')} *</label>
                   <input
-                    type="text"
+                    type="date"
                     value={leaveDate}
                     onChange={(e) => setLeaveDate(e.target.value)}
-                    placeholder="24/08/2026"
                     required
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
                   />
                 </div>
 
@@ -2683,14 +2714,20 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
+  const isRotatingRef = useRef(false)
   const rotateChallenge = useCallback(async () => {
-    if (!live?.sessionId) return
+    if (!live?.sessionId || isRotatingRef.current) return
+    isRotatingRef.current = true
     try {
       const result = await api.sessionAction(live.sessionId, 'rotate')
       if (!result.ok) { setNotice(result.message ?? t('teacher.rotateFailed')); return }
       await refresh()
     } catch (err) {
       setNotice(err instanceof Error ? err.message : t('teacher.rotateFailed'))
+    } finally {
+      setTimeout(() => {
+        isRotatingRef.current = false
+      }, 1500)
     }
   }, [live, refresh, t])
 
@@ -2768,7 +2805,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <span className="rounded-xl bg-primary/10 px-6 py-2.5 font-mono text-3xl font-bold tracking-[0.25em] text-primary">
                       {live.challenge}
                     </span>
-                    <CountdownTimer expiresAt={live.challengeExpiresAt} totalSeconds={data.policy?.challengeTtlSeconds ?? 30} onExpire={rotateChallenge} />
+                    <CountdownTimer expiresAt={live.challengeExpiresAt} totalSeconds={data.policy?.challengeTtlSeconds ?? 30} onExpire={!projectorMode ? rotateChallenge : undefined} />
                   </div>
 
                   <div className="w-full max-w-xs">
