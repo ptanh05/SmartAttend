@@ -2519,13 +2519,17 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const manuallyStoppedRef = useRef(false)
 
   const startBeacon = useCallback(() => {
-    if (beaconRef.current?.isRunning()) {
+    if (beaconRef.current) {
+      if (beaconRef.current.state?.() === 'suspended') {
+        beaconRef.current.resume?.().catch(() => {})
+      }
       setUltrasonicActive(true)
       return
     }
     try {
       const beacon = startUltrasonicBeacon(DEFAULT_ULTRASONIC_FREQ)
       beaconRef.current = beacon
+      beacon.resume?.().catch(() => {})
       setUltrasonicActive(true)
     } catch {
       /* ignore autoplay suspension until user interaction */
@@ -2559,7 +2563,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
       const handleUserGesture = () => {
         if (liveActive && page === 'sessions' && !manuallyStoppedRef.current) {
-          startBeacon()
+          if (beaconRef.current?.state?.() === 'suspended') {
+            beaconRef.current.resume?.().catch(() => {})
+          } else {
+            startBeacon()
+          }
         }
       }
       window.addEventListener('click', handleUserGesture, { once: true })

@@ -1,7 +1,7 @@
 import { config } from 'dotenv'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   attendanceRecords,
@@ -229,8 +229,7 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(courses).where(eq(courses.organizationId, orgId))
       await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
-      await db().delete(users).where(eq(users.id, studentId))
-      await db().delete(users).where(eq(users.id, teacherId))
+      await db().delete(users).where(inArray(users.id, [studentId, teacherId]))
       await db().delete(organizations).where(eq(organizations.id, orgId))
     }
   })
@@ -241,6 +240,7 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
     const studentId = `usr_s_idor_${nanoid(8)}`
     const courseId = `crs_idor_${nanoid(8)}`
     const sectionId = `sec_idor_${nanoid(8)}`
+    const legitStudentId = `usr_legit_${nanoid(8)}`
 
     const studentAuth = makeAuthContext({
       userId: studentId,
@@ -278,6 +278,9 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
         startsAt: '09:00',
         endsAt: '11:00',
       })
+      await db().insert(users).values({ id: legitStudentId, email: `legit_${orgId}@utc.edu.vn`, passwordHash: 'hash', name: 'Legit Student', initials: 'LS' })
+      await db().insert(organizationMemberships).values({ id: nanoid(), organizationId: orgId, userId: legitStudentId, role: 'student', studentCode: '20267777' })
+      await db().insert(classEnrollments).values({ organizationId: orgId, sectionId, studentId: legitStudentId, status: 'active' })
 
       // Student is NOT enrolled in courseId. Attempting to submit leave request must reject!
       await expect(
@@ -293,8 +296,7 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(courses).where(eq(courses.organizationId, orgId))
       await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
-      await db().delete(users).where(eq(users.id, studentId))
-      await db().delete(users).where(eq(users.id, teacherId))
+      await db().delete(users).where(inArray(users.id, [studentId, teacherId, legitStudentId]))
       await db().delete(organizations).where(eq(organizations.id, orgId))
     }
   })

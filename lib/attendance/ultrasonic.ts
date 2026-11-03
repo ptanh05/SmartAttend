@@ -31,6 +31,8 @@ export type BeaconController = {
   stop: () => void
   frequency: number
   isRunning: () => boolean
+  resume?: () => Promise<void>
+  state?: () => AudioContextState | 'closed'
 }
 
 /**
@@ -71,6 +73,12 @@ export function startUltrasonicBeacon(targetFrequency = DEFAULT_ULTRASONIC_FREQ)
   return {
     frequency: targetFrequency,
     isRunning: () => active,
+    resume: async () => {
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+    },
+    state: () => audioContext.state,
     stop: () => {
       if (!active) return
       active = false

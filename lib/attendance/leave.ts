@@ -76,22 +76,36 @@ export async function addLeaveRequest(
     attachmentUrl?: string
   },
 ): Promise<LeaveRequest> {
+  // Verify course exists in this organization
+  const courseRows = await db()
+    .select()
+    .from(courses)
+    .where(and(eq(courses.id, data.courseId), eq(courses.organizationId, auth.organizationId)))
+
+  if (courseRows.length === 0) {
+    throw new Error('Học phần không tồn tại hoặc không thuộc tổ chức của bạn.')
+  }
+
   if (auth.role === 'student') {
-    const enrollments = await db()
+    // Check if this course has active enrolled students
+    const activeSectionEnrollments = await db()
       .select({ studentId: classEnrollments.studentId })
       .from(classEnrollments)
       .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
       .where(
         and(
           eq(courseSections.courseId, data.courseId),
-          eq(classEnrollments.studentId, auth.userId),
           eq(classEnrollments.organizationId, auth.organizationId),
           eq(classEnrollments.status, 'active'),
         ),
       )
 
-    if (enrollments.length === 0) {
-      throw new Error('Bạn không có tên trong danh sách lớp học phần của môn này.')
+    // If roster is populated for this course, enforce enrollment
+    if (activeSectionEnrollments.length > 0) {
+      const isEnrolled = activeSectionEnrollments.some((e) => e.studentId === auth.userId)
+      if (!isEnrolled) {
+        throw new Error('Bạn không có tên trong danh sách lớp học phần của môn này.')
+      }
     }
   }
 
@@ -112,12 +126,7 @@ export async function addLeaveRequest(
     createdAt: now,
   })
 
-  // Fetch course name
-  const courseRows = await db()
-    .select()
-    .from(courses)
-    .where(and(eq(courses.id, data.courseId), eq(courses.organizationId, auth.organizationId)))
-  const courseName = courseRows[0] ? `${courseRows[0].code} · ${courseRows[0].name}` : 'Course'
+  const courseName = `${courseRows[0].code} · ${courseRows[0].name}`
 
   return {
     id,
