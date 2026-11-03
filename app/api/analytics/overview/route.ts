@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
   }
 
-  const metrics = await getOrganizationMetrics(auth)
   const suspicious = await listSuspicious(auth)
+  const metrics = await getOrganizationMetrics(auth, suspicious.length)
   return NextResponse.json({ ok: true, metrics, suspicious })
 }

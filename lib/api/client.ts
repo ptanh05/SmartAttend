@@ -355,6 +355,10 @@ export const api = {
     link.click()
     link.remove()
   },
+  /** Fetches aggregated dashboard payload in a single roundtrip */
+  dashboard() {
+    return request<DashboardData & { ok: boolean }>('/api/dashboard')
+  },
 }
 
 export type LiveSession = {
@@ -395,6 +399,29 @@ export type DashboardData = {
 }
 
 export async function loadDashboard(role?: Role): Promise<DashboardData> {
+  try {
+    const res = await api.dashboard()
+    if (res && res.ok && Array.isArray(res.sessions)) {
+      return {
+        courses: res.courses ?? [],
+        sessions: res.sessions ?? [],
+        records: res.records ?? [],
+        notifications: res.notifications ?? [],
+        metrics: res.metrics ?? { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
+        suspicious: res.suspicious ?? [],
+        auditEvents: res.auditEvents ?? [],
+        live: res.live ?? null,
+        devices: res.devices ?? [],
+        departments: res.departments ?? [],
+        users: res.users ?? [],
+        leaveRequests: res.leaveRequests ?? [],
+        policy: res.policy,
+      }
+    }
+  } catch {
+    /* fallback to separate multi-endpoint loading if /api/dashboard fails */
+  }
+
   const isAdmin = role === 'admin'
   const isStaff = role === 'teacher' || isAdmin
   const isStudent = role === 'student'
@@ -407,12 +434,17 @@ export async function loadDashboard(role?: Role): Promise<DashboardData> {
       api.sessions().catch(() => ({ sessions: [] as ClassSession[], live: null })),
       api.records().catch(() => ({ records: [] as AttendanceRecord[] })),
       api.notifications().catch(() => ({ notifications: [] })),
-      api.analytics().catch(() => ({
-        metrics: { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
-        suspicious: [],
-      })),
+      isStaff
+        ? api.analytics().catch(() => ({
+            metrics: { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
+            suspicious: [],
+          }))
+        : Promise.resolve({
+            metrics: { students: 0, teachers: 0, activeSessions: 0, attendanceRate: '0%', flagged: 0 },
+            suspicious: [],
+          }),
       isAdmin ? api.auditLogs().catch(() => emptyAudit) : Promise.resolve(emptyAudit),
-      api.users().catch(() => ({ users: [] })),
+      isStaff ? api.users().catch(() => ({ users: [] })) : Promise.resolve({ users: [] }),
       isStudent ? api.devices().catch(() => ({ devices: [] })) : Promise.resolve({ devices: [] }),
       isAdmin ? api.departments().catch(() => emptyDepartments) : Promise.resolve(emptyDepartments),
       api.leaveRequests().catch(() => ({ requests: [] as LeaveRequest[] })),

@@ -1342,26 +1342,26 @@ export async function resolveSuspiciousAttempt(
   return { ok: true as const }
 }
 
-export async function getOrganizationMetrics(auth: AuthContext) {
-  const studentRows = await db()
-    .select()
-    .from(organizationMemberships)
-    .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student')))
-
-  const teacherRows = await db()
-    .select()
-    .from(organizationMemberships)
-    .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'teacher')))
-
-  const liveRows = await db()
-    .select()
-    .from(attendanceSessions)
-    .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active')))
-
-  const recordRows = await db()
-    .select()
-    .from(attendanceRecords)
-    .where(eq(attendanceRecords.organizationId, auth.organizationId))
+export async function getOrganizationMetrics(auth: AuthContext, cachedSuspiciousCount?: number) {
+  const [studentRows, teacherRows, liveRows, recordRows, suspiciousCount] = await Promise.all([
+    db()
+      .select({ id: organizationMemberships.id })
+      .from(organizationMemberships)
+      .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'student'))),
+    db()
+      .select({ id: organizationMemberships.id })
+      .from(organizationMemberships)
+      .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, 'teacher'))),
+    db()
+      .select({ id: attendanceSessions.id })
+      .from(attendanceSessions)
+      .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))),
+    db()
+      .select({ status: attendanceRecords.status })
+      .from(attendanceRecords)
+      .where(eq(attendanceRecords.organizationId, auth.organizationId)),
+    cachedSuspiciousCount !== undefined ? Promise.resolve(cachedSuspiciousCount) : listSuspicious(auth).then((r) => r.length),
+  ])
 
   const attended = recordRows.filter((row) => row.status === 'present' || row.status === 'late').length
   const rate = recordRows.length ? Math.round((attended / recordRows.length) * 1000) / 10 : 0
@@ -1371,7 +1371,7 @@ export async function getOrganizationMetrics(auth: AuthContext) {
     teachers: teacherRows.length,
     activeSessions: liveRows.length,
     attendanceRate: `${rate}%`,
-    flagged: (await listSuspicious(auth)).length,
+    flagged: typeof suspiciousCount === 'number' ? suspiciousCount : 0,
   }
 }
 

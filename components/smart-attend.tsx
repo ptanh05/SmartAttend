@@ -3896,15 +3896,29 @@ export default function SmartAttendApp() {
 
   useEffect(() => {
     if (!role || !hydrated) return
-    const interval = setInterval(async () => {
+
+    const poll = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return
       try {
         const next = await loadDashboard(role)
         setData(next)
       } catch {
         /* ignore polling errors */
       }
-    }, data.live ? 3000 : 10000)
-    return () => clearInterval(interval)
+    }
+
+    const intervalMs = data.live ? 5000 : 15000
+    const interval = setInterval(poll, intervalMs)
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) void poll()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [role, hydrated, data.live])
 
   const go = (next: PageKey) => {
