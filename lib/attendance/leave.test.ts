@@ -7,6 +7,7 @@ import {
   attendanceRecords,
   attendanceSessions,
   auditLogs,
+  classEnrollments,
   courseSections,
   courses,
   leaveRequests,
@@ -91,6 +92,12 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
         startsAt: '08:00',
         endsAt: '10:00',
       })
+      await db().insert(classEnrollments).values({
+        organizationId: orgId,
+        sectionId,
+        studentId,
+        status: 'active',
+      })
       await db().insert(attendanceSessions).values({
         id: sessionId,
         organizationId: orgId,
@@ -153,6 +160,7 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
     } finally {
       await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId))
       await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId))
+      await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId))
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(notifications).where(eq(notifications.organizationId, orgId))
       await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))

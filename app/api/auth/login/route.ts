@@ -34,7 +34,26 @@ export async function POST(request: Request) {
 
     const match = memberships.find((row) => !row.disabledAt && row.membershipStatus === 'active')
 
-    if (!match || !(await verifyPassword(password, match.passwordHash))) {
+    if (!match) {
+      const disabledAccount = memberships.find((row) => row.disabledAt || row.membershipStatus !== 'active')
+      if (disabledAccount && (await verifyPassword(password, disabledAccount.passwordHash))) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: 'account_disabled',
+            message: 'Tài khoản của bạn đã bị khóa hoặc tạm ngưng hoạt động. Vui lòng liên hệ Quản trị viên UTC để được hỗ trợ.',
+          },
+          { status: 403 },
+        )
+      }
+
+      return NextResponse.json(
+        { ok: false, code: 'invalid_credentials', message: 'Incorrect login ID or password.' },
+        { status: 401 },
+      )
+    }
+
+    if (!(await verifyPassword(password, match.passwordHash))) {
       return NextResponse.json(
         { ok: false, code: 'invalid_credentials', message: 'Incorrect login ID or password.' },
         { status: 401 },

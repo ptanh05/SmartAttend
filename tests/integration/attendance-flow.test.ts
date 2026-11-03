@@ -326,7 +326,7 @@ describe.skipIf(!hasDb)('attendance flow (integration, real DB)', () => {
         expect(updatedSec?.endsAt).toBe('16:30')
         expect(updatedSec?.autoStart).toBe(false)
 
-        // 5. Delete schedule
+        // 5. Delete schedule with cascade verification
         const deleted = await deleteCourseSection(teacherAuth, newSection.sectionId!)
         expect(deleted.ok).toBe(true)
 
@@ -338,6 +338,109 @@ describe.skipIf(!hasDb)('attendance flow (integration, real DB)', () => {
         await db().delete(courses).where(eq(courses.organizationId, orgId))
         await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
         await db().delete(users).where(eq(users.id, teacherId))
+        await db().delete(organizations).where(eq(organizations.id, orgId))
+      }
+    },
+    30_000,
+  )
+
+  it(
+    'MULTI-SESSION: Correctly routes check-in to matching course session when student has multiple concurrent live sessions',
+    async () => {
+      const orgId = `org_multi_${nanoid(6)}`
+      const teacherId = `tch_m_${nanoid(6)}`
+      const studentId = `stu_m_${nanoid(6)}`
+      const studentCode = `2026${Math.floor(1000 + Math.random() * 9000)}`
+
+      const teacherAuth: AuthContext = {
+        userId: teacherId,
+        membershipId: 'm_tch',
+        organizationId: orgId,
+        role: 'teacher',
+        email: `teacher_${nanoid(6)}@utc.edu.vn`,
+        name: 'Giảng viên Multi',
+        initials: 'GV',
+        department: 'CNTT',
+        studentCode: null,
+        mustChangePassword: false,
+        organizationName: 'UTC Org',
+        organizationPlan: 'Campus Plus',
+      }
+
+      const studentAuth: AuthContext = {
+        userId: studentId,
+        membershipId: 'm_stu',
+        organizationId: orgId,
+        role: 'student',
+        email: `student_${nanoid(6)}@utc.edu.vn`,
+        name: 'Sinh viên Multi',
+        initials: 'SV',
+        department: 'CNTT',
+        studentCode,
+        mustChangePassword: false,
+        organizationName: 'UTC Org',
+        organizationPlan: 'Campus Plus',
+      }
+
+      try {
+        await db().insert(organizations).values({ id: orgId, name: 'UTC Multi Org', plan: 'Campus Plus' })
+        await db().insert(users).values([
+          { id: teacherId, email: teacherAuth.email, passwordHash: 'hash', name: teacherAuth.name, initials: 'GV' },
+          { id: studentId, email: studentAuth.email, passwordHash: 'hash', name: studentAuth.name, initials: 'SV' },
+        ])
+        await db().insert(organizationMemberships).values([
+          { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher' },
+          { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', studentCode },
+        ])
+
+        // Course A and Section A
+        const courseA = `crs_a_${nanoid(6)}`
+        const secA = `sec_a_${nanoid(6)}`
+        await db().insert(courses).values({ id: courseA, organizationId: orgId, code: 'IT101', name: 'Course A', department: 'CNTT', teacherId, enrolled: 1 })
+        await db().insert(courseSections).values({ id: secA, organizationId: orgId, courseId: courseA, room: 'P.101', dayOfWeek: 1, startsAt: '07:00', endsAt: '09:00' })
+        await db().insert(classEnrollments).values({ organizationId: orgId, sectionId: secA, studentId, status: 'active' })
+
+        // Course B and Section B
+        const courseB = `crs_b_${nanoid(6)}`
+        const secB = `sec_b_${nanoid(6)}`
+        await db().insert(courses).values({ id: courseB, organizationId: orgId, code: 'IT102', name: 'Course B', department: 'CNTT', teacherId, enrolled: 1 })
+        await db().insert(courseSections).values({ id: secB, organizationId: orgId, courseId: courseB, room: 'P.102', dayOfWeek: 1, startsAt: '07:00', endsAt: '09:00' })
+        await db().insert(classEnrollments).values({ organizationId: orgId, sectionId: secB, studentId, status: 'active' })
+
+        // Start both sessions live
+        const sessAId = await getOrCreateLiveSession(teacherAuth, secA)
+        await transitionSessionState(teacherAuth, sessAId!, 'active')
+
+        const sessBId = await getOrCreateLiveSession(teacherAuth, secB)
+        await transitionSessionState(teacherAuth, sessBId!, 'active')
+        const challengeB = await rotateChallengeForSession(teacherAuth, sessBId!)
+
+        // Verify with code for Session B without explicit sessionId: engine must auto-resolve to Session B!
+        const result = await verifyAttendance(studentAuth, challengeB.challenge!)
+        expect(result.ok).toBe(true)
+        expect(result.record?.sessionId).toBe(sessBId)
+
+        // Cascade delete Section A
+        const delRes = await deleteCourseSection(teacherAuth, secA)
+        expect(delRes.ok).toBe(true)
+
+        // Verify Session A was cleaned up
+        const sessionsRemaining = await db().select().from(attendanceSessions).where(eq(attendanceSessions.id, sessAId!))
+        expect(sessionsRemaining.length).toBe(0)
+      } finally {
+        await db().delete(attendanceVerifications).where(eq(attendanceVerifications.organizationId, orgId))
+        await db().delete(notifications).where(eq(notifications.organizationId, orgId))
+        await db().delete(suspiciousAttempts).where(eq(suspiciousAttempts.organizationId, orgId))
+        await db().delete(devices).where(eq(devices.organizationId, orgId))
+        await db().delete(auditLogs).where(eq(auditLogs.organizationId, orgId))
+        await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId))
+        await db().delete(attendanceChallenges).where(eq(attendanceChallenges.organizationId, orgId))
+        await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId))
+        await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId))
+        await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
+        await db().delete(courses).where(eq(courses.organizationId, orgId))
+        await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
+        await db().delete(users).where(inArray(users.id, [teacherId, studentId]))
         await db().delete(organizations).where(eq(organizations.id, orgId))
       }
     },

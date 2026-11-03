@@ -144,4 +144,111 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
       await db().delete(organizations).where(eq(organizations.id, orgB))
     }
   })
+
+  it('SEC-TAKEOVER: Blocks unauthenticated self-service password reset for Staff/Admin accounts', async () => {
+    const orgId = `org_sec_${nanoid(6)}`
+    const teacherId = `tch_sec_${nanoid(6)}`
+    const teacherEmail = `teacher_${nanoid(6)}@utc.edu.vn`
+    const originalPassword = 'InitialTeacherSecret123!'
+
+    try {
+      await db().insert(organizations).values({
+        id: orgId,
+        name: 'UTC Org',
+        plan: 'Campus Plus',
+      })
+
+      await db().insert(users).values({
+        id: teacherId,
+        email: teacherEmail,
+        passwordHash: await hashPassword(originalPassword),
+        name: 'Giảng viên An Ninh Mạng',
+        initials: 'GV',
+        mustChangePassword: false,
+      })
+
+      await db().insert(organizationMemberships).values({
+        id: nanoid(),
+        organizationId: orgId,
+        userId: teacherId,
+        role: 'teacher',
+        status: 'active',
+      })
+
+      // Attacker attempts to take over teacher account via self-service API
+      const takeoverResult = await selfServiceResetPassword({
+        identifier: teacherEmail,
+        portal: 'staff',
+        newPassword: 'HackedPassword123!',
+      })
+
+      // Must be rejected
+      expect(takeoverResult.ok).toBe(false)
+      expect(takeoverResult.message).toContain('không thể tự khôi phục công khai')
+
+      // Password in DB must remain unchanged
+      const teacherRow = await db()
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, teacherId))
+
+      const valid = await verifyPassword(originalPassword, teacherRow[0].passwordHash)
+      expect(valid).toBe(true)
+    } finally {
+      await db().delete(organizationMemberships).where(eq(organizationMemberships.userId, teacherId))
+      await db().delete(users).where(eq(users.id, teacherId))
+      await db().delete(organizations).where(eq(organizations.id, orgId))
+    }
+  })
+
+  it('CASE-INSENSITIVE: Resolves student code case-insensitively during login and self-reset', async () => {
+    const orgId = `org_ci_${nanoid(6)}`
+    const studentId = `stu_ci_${nanoid(6)}`
+    const studentCodeUpper = `2026IT${Math.floor(100 + Math.random() * 900)}`
+    const studentCodeLower = studentCodeUpper.toLowerCase()
+
+    const { resolveMembershipForStudentLogin } = await import('@/lib/auth/session')
+
+    try {
+      await db().insert(organizations).values({
+        id: orgId,
+        name: 'UTC Org',
+        plan: 'Campus Plus',
+      })
+
+      await db().insert(users).values({
+        id: studentId,
+        email: `${studentCodeLower}@student.utc.edu.vn`,
+        passwordHash: await hashPassword('StudentPass123!'),
+        name: 'Sinh viên Case Insensitive',
+        initials: 'SV',
+        mustChangePassword: false,
+      })
+
+      await db().insert(organizationMemberships).values({
+        id: nanoid(),
+        organizationId: orgId,
+        userId: studentId,
+        role: 'student',
+        studentCode: studentCodeUpper,
+        status: 'active',
+      })
+
+      // Query using lowercase code
+      const resolved = await resolveMembershipForStudentLogin(studentCodeLower)
+      expect(resolved.length).toBeGreaterThan(0)
+      expect(resolved[0].userId).toBe(studentId)
+
+      // Self-service reset with lowercase code
+      const resetRes = await selfServiceResetPassword({
+        identifier: studentCodeLower,
+        portal: 'student',
+      })
+      expect(resetRes.ok).toBe(true)
+    } finally {
+      await db().delete(organizationMemberships).where(eq(organizationMemberships.userId, studentId))
+      await db().delete(users).where(eq(users.id, studentId))
+      await db().delete(organizations).where(eq(organizations.id, orgId))
+    }
+  })
 })

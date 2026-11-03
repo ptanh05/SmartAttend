@@ -179,6 +179,7 @@ export const api = {
         challenge: string
         origin?: string
       }
+      sessionId?: string
       acousticProof?: {
         sessionId: string
         sequence: number
@@ -192,6 +193,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({
         code,
+        sessionId: options?.sessionId,
         method: options?.method ?? 'manual_code',
         ultrasonicVerified: options?.ultrasonicVerified,
         biometricVerified: options?.biometricVerified,

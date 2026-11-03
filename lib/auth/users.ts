@@ -475,27 +475,12 @@ export async function selfServiceResetPassword(input: {
     }
   }
 
-  let newPass = input.newPassword?.trim()
-  if (!newPass) {
-    newPass = `Utc@${Math.floor(100000 + Math.random() * 900000)}`
-  } else if (newPass.length < 8) {
-    return { ok: false as const, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' }
-  }
-
-  const passwordHash = await hashPassword(newPass)
-  await db()
-    .update(users)
-    .set({ passwordHash, mustChangePassword: true })
-    .where(eq(users.id, match.userId))
-
-  // Invalidate all active sessions on staff password recovery
-  await db().delete(authSessions).where(eq(authSessions.userId, match.userId))
-
+  // Security Hardening: Chặn unauthenticated account takeover cho Staff/Admin qua self-service.
+  // Cán bộ / Giảng viên phải đăng nhập qua Microsoft 365 SSO hoặc liên hệ Quản trị viên hệ thống để cấp lại mật khẩu.
   return {
-    ok: true as const,
-    role: match.role as Role,
-    temporaryPassword: newPass,
-    message: `Đã khôi phục mật khẩu thành công! Mật khẩu tạm thời: ${newPass}. Vui lòng đăng nhập và đổi mật khẩu.`,
+    ok: false as const,
+    message:
+      'Vì lý do an toàn bảo mật, tài khoản Cán bộ / Giảng viên không thể tự khôi phục công khai. Vui lòng liên hệ Quản trị viên Trường Đại học GTVT (admin@utc.edu.vn) hoặc Trung tâm CNTT để được hỗ trợ cấp lại mật khẩu.',
   }
 }
 

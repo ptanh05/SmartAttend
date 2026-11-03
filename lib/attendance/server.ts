@@ -473,6 +473,7 @@ export type VerificationResult = {
 }
 
 export type VerificationOptions = {
+  sessionId?: string
   method?: 'ultrasonic_faceid' | 'qr_scan' | 'manual_code' | string
   ultrasonicVerified?: boolean
   biometricVerified?: boolean
@@ -490,6 +491,10 @@ export async function verifyAttendance(
     return { ok: false, confidence: 0, message: 'Only students can verify attendance.' }
   }
 
+  if (!input || typeof input !== 'string' || !input.trim()) {
+    return { ok: false, confidence: 0, message: 'Invalid challenge code.' }
+  }
+
   const liveSessions = await db()
     .select()
     .from(attendanceSessions)
@@ -497,7 +502,7 @@ export async function verifyAttendance(
 
   if (liveSessions.length === 0) return { ok: false, confidence: 0, message: 'There is no live session right now.' }
 
-  // If multiple sessions are active concurrently, resolve to the one the student is enrolled in or that matches acousticProof
+  // If multiple sessions are active concurrently, resolve to the one specified by sessionId, acousticProof, or matching challenge
   const enrolledSectionIds = (
     await db()
       .select({ sectionId: classEnrollments.sectionId })
@@ -510,13 +515,28 @@ export async function verifyAttendance(
       )
   ).map((e) => e.sectionId)
 
-  let live = options?.acousticProof?.sessionId
-    ? liveSessions.find((s) => s.id === options.acousticProof!.sessionId)
-    : undefined
+  let live = options?.sessionId
+    ? liveSessions.find((s) => s.id === options.sessionId)
+    : options?.acousticProof?.sessionId
+      ? liveSessions.find((s) => s.id === options.acousticProof!.sessionId)
+      : undefined
 
   if (!live) {
-    live = liveSessions.find((s) => enrolledSectionIds.includes(s.sectionId))
+    const candidateSessions = liveSessions.filter((s) => enrolledSectionIds.includes(s.sectionId))
+    if (candidateSessions.length > 1) {
+      for (const cand of candidateSessions) {
+        const ch = await getActiveChallenge(cand.id)
+        if (ch && ch.expiresAt >= new Date() && verifyChallengeValue(input, ch.valueHash)) {
+          live = cand
+          break
+        }
+      }
+    }
+    if (!live) {
+      live = candidateSessions[0]
+    }
   }
+
   if (!live) {
     live = liveSessions[0]
   }
@@ -1580,6 +1600,29 @@ export async function deleteCourseSection(auth: AuthContext, sectionId: string) 
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
   }
+
+  // Cascade cleanup all attendance sessions, challenges and records belonging to this section
+  const sessions = await db()
+    .select({ id: attendanceSessions.id })
+    .from(attendanceSessions)
+    .where(and(eq(attendanceSessions.sectionId, sectionId), eq(attendanceSessions.organizationId, auth.organizationId)))
+
+  if (sessions.length > 0) {
+    const sessionIds = sessions.map((s) => s.id)
+    const records = await db()
+      .select({ id: attendanceRecords.id })
+      .from(attendanceRecords)
+      .where(inArray(attendanceRecords.sessionId, sessionIds))
+
+    if (records.length > 0) {
+      const recordIds = records.map((r) => r.id)
+      await db().delete(attendanceVerifications).where(inArray(attendanceVerifications.attendanceRecordId, recordIds))
+    }
+    await db().delete(attendanceRecords).where(inArray(attendanceRecords.sessionId, sessionIds))
+    await db().delete(attendanceChallenges).where(inArray(attendanceChallenges.sessionId, sessionIds))
+    await db().delete(attendanceSessions).where(inArray(attendanceSessions.id, sessionIds))
+  }
+
   await db().delete(classEnrollments).where(and(eq(classEnrollments.sectionId, sectionId), eq(classEnrollments.organizationId, auth.organizationId)))
   await db().delete(courseSections).where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
   await appendAudit(auth, `Deleted section`, sectionId, 'warning')

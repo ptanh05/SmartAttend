@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'crypto'
-import { and, eq, gt } from 'drizzle-orm'
+import { and, eq, gt, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
 import { authSessions, organizationMemberships, organizations, users } from '@/lib/db/schema'
@@ -105,7 +105,7 @@ export async function resolveMembershipForLogin(email: string) {
     })
     .from(users)
     .innerJoin(organizationMemberships, eq(users.id, organizationMemberships.userId))
-    .where(eq(users.email, email.trim().toLowerCase()))
+    .where(sql`lower(${users.email}) = lower(${email.trim()})`)
 
   return rows
 }
@@ -125,7 +125,10 @@ export async function resolveMembershipForStudentLogin(studentCode: string) {
     .from(organizationMemberships)
     .innerJoin(users, eq(organizationMemberships.userId, users.id))
     .where(
-      and(eq(organizationMemberships.studentCode, normalized), eq(organizationMemberships.role, 'student')),
+      and(
+        sql`lower(${organizationMemberships.studentCode}) = lower(${normalized})`,
+        eq(organizationMemberships.role, 'student'),
+      ),
     )
 
   return rows

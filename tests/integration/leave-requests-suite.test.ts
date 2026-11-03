@@ -7,6 +7,7 @@ import {
   attendanceRecords,
   attendanceSessions,
   auditLogs,
+  classEnrollments,
   courseSections,
   courses,
   leaveRequests,
@@ -94,6 +95,12 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
         dayOfWeek: 2,
         startsAt: '07:30',
         endsAt: '11:30',
+      })
+      await db().insert(classEnrollments).values({
+        organizationId: orgId,
+        sectionId,
+        studentId,
+        status: 'active',
       })
       await db().insert(attendanceSessions).values({
         id: sessionId,
@@ -218,6 +225,71 @@ describe.skipIf(!hasDb)('LEAVE-01, LEAVE-02, LEAVE-03 — End-to-End Leave Reque
       await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))
       await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId))
       await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId))
+      await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId))
+      await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
+      await db().delete(courses).where(eq(courses.organizationId, orgId))
+      await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))
+      await db().delete(users).where(eq(users.id, studentId))
+      await db().delete(users).where(eq(users.id, teacherId))
+      await db().delete(organizations).where(eq(organizations.id, orgId))
+    }
+  })
+
+  it('LEAVE-IDOR: Rejects leave request when student is not enrolled in the course section', async () => {
+    const orgId = `org_leave_idor_${nanoid(8)}`
+    const teacherId = `usr_t_idor_${nanoid(8)}`
+    const studentId = `usr_s_idor_${nanoid(8)}`
+    const courseId = `crs_idor_${nanoid(8)}`
+    const sectionId = `sec_idor_${nanoid(8)}`
+
+    const studentAuth = makeAuthContext({
+      userId: studentId,
+      organizationId: orgId,
+      role: 'student',
+      name: 'Nguyen Van Sinh Vien Stranger',
+      studentCode: '20268888',
+    })
+
+    try {
+      await db().insert(organizations).values({ id: orgId, name: 'UTC IDOR Test Org' })
+      await db().insert(users).values([
+        { id: teacherId, email: `teacher_${orgId}@utc.edu.vn`, passwordHash: 'hash', name: 'Giang Vien IDOR', initials: 'GV' },
+        { id: studentId, email: `student_${orgId}@utc.edu.vn`, passwordHash: 'hash', name: 'Sinh Vien Stranger', initials: 'SV' },
+      ])
+      await db().insert(organizationMemberships).values([
+        { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', studentCode: '20268888' },
+      ])
+      await db().insert(courses).values({
+        id: courseId,
+        organizationId: orgId,
+        code: 'IT999',
+        name: 'Advanced Security Architecture',
+        department: 'CNTT',
+        teacherId,
+        enrolled: 0,
+      })
+      await db().insert(courseSections).values({
+        id: sectionId,
+        organizationId: orgId,
+        courseId,
+        room: 'P.101',
+        dayOfWeek: 3,
+        startsAt: '09:00',
+        endsAt: '11:00',
+      })
+
+      // Student is NOT enrolled in courseId. Attempting to submit leave request must reject!
+      await expect(
+        addLeaveRequest(studentAuth, {
+          courseId,
+          date: '20/11/2026',
+          reason: 'Báo ốm giả mạo môn không học',
+        }),
+      ).rejects.toThrow('Bạn không có tên trong danh sách lớp học phần của môn này.')
+    } finally {
+      await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))
+      await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId))
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(courses).where(eq(courses.organizationId, orgId))
       await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))

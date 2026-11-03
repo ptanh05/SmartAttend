@@ -5,6 +5,8 @@ import {
   attendanceRecords,
   attendanceSessions,
   auditLogs,
+  classEnrollments,
+  courseSections,
   courses,
   leaveRequests,
   notifications,
@@ -74,6 +76,25 @@ export async function addLeaveRequest(
     attachmentUrl?: string
   },
 ): Promise<LeaveRequest> {
+  if (auth.role === 'student') {
+    const enrollments = await db()
+      .select({ studentId: classEnrollments.studentId })
+      .from(classEnrollments)
+      .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+      .where(
+        and(
+          eq(courseSections.courseId, data.courseId),
+          eq(classEnrollments.studentId, auth.userId),
+          eq(classEnrollments.organizationId, auth.organizationId),
+          eq(classEnrollments.status, 'active'),
+        ),
+      )
+
+    if (enrollments.length === 0) {
+      throw new Error('Bạn không có tên trong danh sách lớp học phần của môn này.')
+    }
+  }
+
   const id = `lr_${nanoid(12)}`
   const now = new Date()
 

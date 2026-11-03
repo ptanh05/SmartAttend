@@ -351,6 +351,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
         return
       }
       const response = await api.verify(codeToVerify.trim(), {
+        sessionId: liveSession?.id,
         method,
         ultrasonicVerified: true,
         acousticProof: liveSession?.acousticProof,
@@ -500,6 +501,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
       // Step 2: Complete in-room verification with acoustic proof
       const targetChallenge = liveSession.challenge && liveSession.challenge !== '------' ? liveSession.challenge : code || 'AUTOSYNC'
       const response = await api.verify(targetChallenge, {
+        sessionId: liveSession.id,
         method: 'ultrasonic_faceid',
         ultrasonicVerified: true,
         biometricVerified: Boolean(bioAssertion),

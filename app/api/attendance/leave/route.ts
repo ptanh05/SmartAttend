@@ -23,16 +23,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: 'Missing required fields' }, { status: 400 })
   }
 
-  const created = await addLeaveRequest(auth, {
-    courseId,
-    sessionId,
-    date,
-    reason,
-    evidenceNote,
-    attachmentUrl: typeof attachmentUrl === 'string' ? attachmentUrl : undefined,
-  })
+  try {
+    const created = await addLeaveRequest(auth, {
+      courseId,
+      sessionId,
+      date,
+      reason,
+      evidenceNote,
+      attachmentUrl: typeof attachmentUrl === 'string' ? attachmentUrl : undefined,
+    })
 
-  return NextResponse.json({ ok: true, request: created })
+    return NextResponse.json({ ok: true, request: created })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Không thể gửi đơn xin nghỉ lúc này.'
+    return NextResponse.json({ ok: false, message }, { status: 400 })
+  }
 }
 
 export async function PATCH(request: Request) {

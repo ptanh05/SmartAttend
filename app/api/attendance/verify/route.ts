@@ -21,7 +21,10 @@ export async function POST(request: Request) {
     const webauthnAssertion = body.webauthnAssertion && typeof body.webauthnAssertion === 'object' ? body.webauthnAssertion : undefined
     const acousticProof = body.acousticProof && typeof body.acousticProof === 'object' ? body.acousticProof : undefined
 
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined
+
     const result = await verifyAttendance(auth, code, device, {
+      sessionId,
       method,
       ultrasonicVerified: Boolean(body.ultrasonicVerified),
       biometricVerified: Boolean(body.biometricVerified),
