@@ -24,6 +24,8 @@ export type AuthContext = {
   mustChangePassword: boolean
   organizationName: string
   organizationPlan: string
+  /** Email domain of the institution, e.g. `utc.edu.vn`. */
+  organizationEmailDomain?: string | null
 }
 
 export async function createAuthSession(userId: string, membershipId: string) {
@@ -63,6 +65,7 @@ export async function getAuthContext(token: string | undefined | null): Promise<
       mustChangePassword: users.mustChangePassword,
       organizationName: organizations.name,
       organizationPlan: organizations.plan,
+      organizationEmailDomain: organizations.emailDomain,
       disabledAt: users.disabledAt,
       membershipStatus: organizationMemberships.status,
       expiresAt: authSessions.expiresAt,
@@ -89,6 +92,7 @@ export async function getAuthContext(token: string | undefined | null): Promise<
     mustChangePassword: row.mustChangePassword,
     organizationName: row.organizationName,
     organizationPlan: row.organizationPlan,
+    organizationEmailDomain: row.organizationEmailDomain,
   }
 }
 

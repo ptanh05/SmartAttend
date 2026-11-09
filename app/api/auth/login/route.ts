@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
+import { authCookieManager, sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
 import { verifyPassword } from '@/lib/auth/password'
+import { isLegacyStaffPortal, parsePortal, portalForRole } from '@/lib/auth/portals'
 import { createAuthSession, resolveMembershipForLogin, resolveMembershipForStudentLogin } from '@/lib/auth/session'
 import { clientIp, loginLimiter } from '@/lib/rate-limit'
 import type { Role } from '@/lib/types/domain'
@@ -12,10 +13,18 @@ export async function POST(request: Request) {
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     const loginId = identifier || email
     const password = typeof body.password === 'string' ? body.password : ''
-    const portal = body.portal === 'staff' ? 'staff' : 'student'
+    const portal = parsePortal(body.portal)
 
     if (!loginId || !password) {
       return NextResponse.json({ ok: false, message: 'Login ID and password are required.' }, { status: 400 })
+    }
+
+    // `staff` is the legacy combined portal (teacher + admin). It is still
+    // accepted so existing integrations keep working; the UI now offers three
+    // explicit portals.
+    const legacyStaff = isLegacyStaffPortal(body.portal)
+    if (!portal && !legacyStaff) {
+      return NextResponse.json({ ok: false, message: 'Unknown login portal.' }, { status: 400 })
     }
 
     const rateKey = `${clientIp(request)}:${loginId.toLowerCase()}`
@@ -61,15 +70,23 @@ export async function POST(request: Request) {
     }
 
     const role = match.role as Role
-    if (portal === 'student' && role !== 'student') {
+    const expectedPortal = portalForRole(role)
+
+    // The portal must match the account's actual role. The legacy `staff`
+    // portal accepts both teacher and admin.
+    if (portal && portal !== expectedPortal) {
       return NextResponse.json(
-        { ok: false, message: 'Use the staff portal for this account.' },
-        { status: 403 },
-      )
-    }
-    if (portal === 'staff' && role === 'student') {
-      return NextResponse.json(
-        { ok: false, message: 'Use the student portal for this account.' },
+        {
+          ok: false,
+          code: 'wrong_portal',
+          expectedPortal,
+          message:
+            role === 'student'
+              ? 'Use the student portal for this account.'
+              : role === 'teacher'
+                ? 'Use the lecturer portal for this account.'
+                : 'Use the admin portal for this account.',
+        },
         { status: 403 },
       )
     }
@@ -82,9 +99,10 @@ export async function POST(request: Request) {
     const response = NextResponse.json({
       ok: true,
       role,
+      portal: expectedPortal,
       mustChangePassword: match.mustChangePassword,
     })
-    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
+    authCookieManager.saveSession(response, token, maxAge)
     return response
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

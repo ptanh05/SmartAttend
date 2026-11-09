@@ -1,4 +1,11 @@
 export type Role = 'student' | 'teacher' | 'admin'
+/**
+ * Login portal identifier. Each portal maps 1:1 to a role, so a user signing
+ * into the wrong portal is rejected server-side instead of being silently
+ * redirected to a different workspace.
+ */
+export type Portal = 'student' | 'teacher' | 'admin'
+export const portals: Portal[] = ['student', 'teacher', 'admin']
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused' | 'pending' | 'flagged' | 'unmarked'
 export type User = { id: string; organizationId: string; name: string; email: string; role: Role; initials: string; department: string }
 export type Course = { id: string; organizationId: string; code: string; name: string; department: string; teacherId: string; enrolled: number; color: string }

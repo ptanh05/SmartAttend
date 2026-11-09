@@ -25,18 +25,23 @@ import { UtcLogo } from './utc-logo'
 import { useI18n } from '@/components/i18n-provider'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { api } from '@/lib/api/client'
-import type { Role } from '@/lib/types/domain'
+import type { Portal, Role } from '@/lib/types/domain'
+
+/** Display order of the three login portals. */
+const PORTAL_ORDER: Portal[] = ['student', 'teacher', 'admin']
 
 export function UtcLoginLanding({
   onLogin,
   onRegister,
+  initialPortal = 'student',
 }: {
   onLogin: (role: Role, mustChangePassword?: boolean) => void
   onRegister: () => void
+  initialPortal?: Portal
   organizationName?: string
 }) {
   const { t } = useI18n()
-  const [portal, setPortal] = useState<'student' | 'staff'>('student')
+  const [portal, setPortal] = useState<Portal>(initialPortal)
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -46,7 +51,7 @@ export function UtcLoginLanding({
   const [dialogModal, setDialogModal] = useState<{ title: string; detail: string; icon?: React.ReactNode } | null>(null)
   const [forgotModalOpen, setForgotModalOpen] = useState(false)
   const [forgotIdentifier, setForgotIdentifier] = useState('')
-  const [forgotPortal, setForgotPortal] = useState<'student' | 'staff'>('student')
+  const [forgotPortal, setForgotPortal] = useState<Portal>('student')
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotResult, setForgotResult] = useState<{
     ok: boolean
@@ -102,7 +107,7 @@ export function UtcLoginLanding({
     }
   }
 
-  const handlePortalChange = (nextPortal: 'student' | 'staff') => {
+  const handlePortalChange = (nextPortal: Portal) => {
     setPortal(nextPortal)
     setError('')
     setIdentifier('')
@@ -256,31 +261,23 @@ export function UtcLoginLanding({
               {/* Form Title */}
               <div className="mt-3 text-center">
                 <h2 className="text-xl font-black uppercase tracking-wider text-slate-900">
-                  {portal === 'student' ? t('login.signInStudent') : t('login.signInStaff')}
+                  {t(`landing.portalTitle.${portal}`)}
                 </h2>
                 <div className="mt-2 inline-flex rounded-full bg-slate-100 p-0.5 text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => handlePortalChange('student')}
-                    className={`rounded-full px-3 py-1 transition-all ${
-                      portal === 'student'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {t('landing.tabStudent')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePortalChange('staff')}
-                    className={`rounded-full px-3 py-1 transition-all ${
-                      portal === 'staff'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {t('landing.tabStaff')}
-                  </button>
+                  {PORTAL_ORDER.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handlePortalChange(item)}
+                      className={`rounded-full px-3 py-1 transition-all ${
+                        portal === item
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {t(`landing.tab${item.charAt(0).toUpperCase()}${item.slice(1)}`)}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -296,7 +293,7 @@ export function UtcLoginLanding({
                       type={portal === 'student' ? 'text' : 'email'}
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder={portal === 'student' ? t('landing.studentPlaceholder') : t('landing.staffPlaceholder')}
+                      placeholder={t(`landing.${portal}Placeholder`)}
                       required
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
                     />
@@ -371,7 +368,7 @@ export function UtcLoginLanding({
                   disabled={loading}
                   className="h-11 w-full rounded-xl bg-gradient-to-r from-[#173a74] via-[#1d4ed8] to-[#1e40af] text-sm font-bold uppercase tracking-wider text-white shadow-md shadow-blue-900/20 transition-all hover:brightness-110 hover:shadow-lg active:scale-[0.99] disabled:opacity-50 cursor-pointer"
                 >
-                  {loading ? t('landing.authenticating') : (portal === 'student' ? t('login.signInStudent') : t('login.signInStaff'))}
+                  {loading ? t('landing.authenticating') : t(`landing.portalTitle.${portal}`)}
                 </button>
               </form>
 
@@ -401,15 +398,15 @@ export function UtcLoginLanding({
               </a>
             </div>
 
-            {/* Teacher Registration Link */}
-            {portal === 'staff' && (
+            {/* Administrator Registration Link */}
+            {portal === 'admin' && (
               <div className="mt-4 text-center">
                 <button
                   type="button"
                   onClick={onRegister}
                   className="text-xs font-semibold text-blue-600 hover:underline"
                 >
-                  {t('auth.registerTeacher')} →
+                  {t('auth.registerAdmin')} →
                 </button>
               </div>
             )}
@@ -577,43 +574,30 @@ export function UtcLoginLanding({
                   {t('landing.forgotPasswordModalTitle')}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  {forgotPortal === 'student'
-                    ? t('landing.forgotPasswordModalSubStudent')
-                    : t('landing.forgotPasswordModalSubStaff')}
+                  {t(`landing.forgotPasswordModalSub${forgotPortal.charAt(0).toUpperCase()}${forgotPortal.slice(1)}`)}
                 </p>
               </div>
             </div>
 
             {/* Portal Switch Tabs in Modal */}
             <div className="mt-4 flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setForgotPortal('student')
-                  setForgotResult(null)
-                }}
-                className={`flex-1 rounded-lg py-1.5 transition-all cursor-pointer ${
-                  forgotPortal === 'student'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {t('landing.tabStudent')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setForgotPortal('staff')
-                  setForgotResult(null)
-                }}
-                className={`flex-1 rounded-lg py-1.5 transition-all cursor-pointer ${
-                  forgotPortal === 'staff'
-                    ? 'bg-white text-blue-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {t('landing.tabStaff')}
-              </button>
+              {PORTAL_ORDER.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    setForgotPortal(item)
+                    setForgotResult(null)
+                  }}
+                  className={`flex-1 rounded-lg py-1.5 transition-all cursor-pointer ${
+                    forgotPortal === item
+                      ? 'bg-white text-blue-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {t(`landing.tab${item.charAt(0).toUpperCase()}${item.slice(1)}`)}
+                </button>
+              ))}
             </div>
 
             {forgotResult && forgotResult.ok ? (
@@ -676,7 +660,7 @@ export function UtcLoginLanding({
                       placeholder={
                         forgotPortal === 'student'
                           ? t('landing.forgotStudentPlaceholder')
-                          : t('landing.forgotStaffPlaceholder')
+                          : t(`landing.forgot${forgotPortal.charAt(0).toUpperCase()}${forgotPortal.slice(1)}Placeholder`)
                       }
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-600/20"
                       required
@@ -686,7 +670,7 @@ export function UtcLoginLanding({
                   <p className="mt-1.5 text-[11px] text-slate-500">
                     {forgotPortal === 'student'
                       ? t('landing.forgotStudentNote')
-                      : t('landing.forgotStaffNote')}
+                      : t(`landing.forgot${forgotPortal.charAt(0).toUpperCase()}${forgotPortal.slice(1)}Note`)}
                   </p>
                 </div>
 
@@ -696,13 +680,13 @@ export function UtcLoginLanding({
                     onClick={() =>
                       setDialogModal({
                         title:
-                          forgotPortal === 'staff'
-                            ? t('landing.forgotPasswordStaffTitle')
-                            : t('landing.forgotPasswordTitle'),
+                          forgotPortal === 'student'
+                            ? t('landing.forgotPasswordTitle')
+                            : t(`landing.forgotPassword${forgotPortal.charAt(0).toUpperCase()}${forgotPortal.slice(1)}Title`),
                         detail:
-                          forgotPortal === 'staff'
-                            ? t('landing.forgotPasswordStaffDetail')
-                            : t('landing.forgotPasswordDetail'),
+                          forgotPortal === 'student'
+                            ? t('landing.forgotPasswordDetail')
+                            : t(`landing.forgotPassword${forgotPortal.charAt(0).toUpperCase()}${forgotPortal.slice(1)}Detail`),
                         icon: <KeyRound className="size-6 text-blue-600" />,
                       })
                     }

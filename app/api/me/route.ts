@@ -22,6 +22,7 @@ export async function GET() {
       id: auth.organizationId,
       name: auth.organizationName,
       plan: auth.organizationPlan,
+      emailDomain: auth.organizationEmailDomain,
     },
   })
 }

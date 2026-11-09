@@ -13,6 +13,11 @@ export const organizations = pgTable('organizations', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   plan: text('plan').notNull().default('Campus Plus'),
+  /**
+   * Email domain of the institution, e.g. `utc.edu.vn`. Lecturer accounts are
+   * imported with an address ending in `@<emailDomain>`.
+   */
+  emailDomain: text('email_domain'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 

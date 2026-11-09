@@ -3,9 +3,15 @@ import { AuthError, requireAuth } from '@/lib/auth/context'
 import { importStudents, parseStudentCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
 
+/**
+ * Imports a student roster.
+ *
+ * Only administrators may import students — lecturers receive their students
+ * from the organization's roster, they do not create accounts themselves.
+ */
 export async function POST(request: Request) {
   try {
-    const auth = await requireAuth(['teacher', 'admin'])
+    const auth = await requireAuth(['admin'])
     const rateKey = `${clientIp(request)}:${auth.userId}`
     const rate = await importLimiter.consume(rateKey)
     if (!rate.ok) {

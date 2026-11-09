@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isLegacyStaffPortal, parsePortal } from '@/lib/auth/portals'
 import { selfServiceResetPassword } from '@/lib/auth/users'
 import { clientIp, resetPasswordLimiter } from '@/lib/rate-limit'
 
@@ -6,12 +7,20 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : ''
-    const portal = body.portal === 'staff' ? 'staff' : 'student'
+    const portal = parsePortal(body.portal)
+    const legacyStaff = isLegacyStaffPortal(body.portal)
     const newPassword = typeof body.newPassword === 'string' ? body.newPassword : undefined
 
     if (!identifier) {
       return NextResponse.json(
         { ok: false, message: 'Vui lòng nhập Mã sinh viên hoặc Email đăng ký.' },
+        { status: 400 },
+      )
+    }
+
+    if (!portal && !legacyStaff) {
+      return NextResponse.json(
+        { ok: false, message: 'Cổng đăng nhập không hợp lệ.' },
         { status: 400 },
       )
     }
@@ -28,7 +37,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await selfServiceResetPassword({ identifier, portal, newPassword })
+    const result = await selfServiceResetPassword({
+      identifier,
+      portal: portal ?? 'teacher',
+      legacyStaff,
+      newPassword,
+    })
     if (!result.ok) {
       return NextResponse.json(result, { status: 400 })
     }

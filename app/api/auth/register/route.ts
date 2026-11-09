@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
-import { sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
+import { authCookieManager } from '@/lib/auth/cookies'
 import { verifyTeacherRegistrationApiKey } from '@/lib/auth/registration-key'
-import { registerTeacher } from '@/lib/auth/users'
+import { registerAdministrator } from '@/lib/auth/users'
 import { createAuthSession } from '@/lib/auth/session'
 import { clientIp, registerLimiter } from '@/lib/rate-limit'
 
+/**
+ * Registers the first administrator of an organization.
+ *
+ * Lecturers and students are no longer self-service: they are created by an
+ * administrator through the roster import (see `/api/users/import`).
+ */
 export async function POST(request: Request) {
   try {
     const rate = await registerLimiter.consume(clientIp(request))
@@ -20,6 +26,7 @@ export async function POST(request: Request) {
     const email = typeof body.email === 'string' ? body.email : ''
     const password = typeof body.password === 'string' ? body.password : ''
     const organizationName = typeof body.organizationName === 'string' ? body.organizationName : ''
+    const emailDomain = typeof body.emailDomain === 'string' ? body.emailDomain : ''
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey : ''
 
     const keyCheck = verifyTeacherRegistrationApiKey(apiKey)
@@ -27,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: keyCheck.message }, { status: 403 })
     }
 
-    const result = await registerTeacher({ name, email, password, organizationName })
+    const result = await registerAdministrator({ name, email, password, organizationName, emailDomain })
     if (!result.ok) {
       return NextResponse.json({ ok: false, message: result.message }, { status: 400 })
     }
@@ -35,8 +42,8 @@ export async function POST(request: Request) {
     const { token, expiresAt } = await createAuthSession(result.userId, result.membershipId)
     const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
 
-    const response = NextResponse.json({ ok: true, role: 'teacher' })
-    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
+    const response = NextResponse.json({ ok: true, role: 'admin' })
+    authCookieManager.saveSession(response, token, maxAge)
     return response
   } catch (error) {
     console.error('Registration failed', error)

@@ -57,7 +57,7 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
       if (!result.ok) return
 
       expect(result.studentCode).toBe(studentCode)
-      expect(result.temporaryPassword).toBe(`Sv@${studentCode}`)
+      expect(result.temporaryPassword).toBe(defaultStudentPassword(studentCode))
 
       // 2. Verify in DB that password hash is now matching defaultStudentPassword
       const updatedUser = await db()
@@ -178,7 +178,7 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
       // Attacker attempts to take over teacher account via self-service API
       const takeoverResult = await selfServiceResetPassword({
         identifier: teacherEmail,
-        portal: 'staff',
+        portal: 'teacher',
         newPassword: 'HackedPassword123!',
       })
 

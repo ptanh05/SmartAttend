@@ -2,11 +2,20 @@ import { NextResponse } from 'next/server'
 import { generateState, generateCodeVerifier } from 'arctic'
 import { cookies } from 'next/headers'
 import { getMicrosoftAuth } from '@/lib/auth/oauth'
+import { isLegacyStaffPortal, parsePortal } from '@/lib/auth/portals'
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
-    const portal = url.searchParams.get('portal') === 'staff' ? 'staff' : 'student'
+    const portal = parsePortal(url.searchParams.get('portal'))
+    const legacyStaff = isLegacyStaffPortal(url.searchParams.get('portal'))
+
+    if (!portal && !legacyStaff) {
+      return NextResponse.json(
+        { ok: false, message: 'Unknown login portal.' },
+        { status: 400 },
+      )
+    }
 
     const msAuth = getMicrosoftAuth()
     const state = generateState()
@@ -28,7 +37,7 @@ export async function GET(request: Request) {
       maxAge: 60 * 10,
       sameSite: 'lax',
     })
-    cookieStore.set('microsoft_oauth_portal', portal, {
+    cookieStore.set('microsoft_oauth_portal', portal ?? 'teacher', {
       path: '/',
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,

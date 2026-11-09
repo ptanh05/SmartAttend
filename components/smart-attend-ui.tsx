@@ -59,7 +59,7 @@ export type ViewProps = {
   go: (p: PageKey) => void
   data: DashboardData
   user: AppUser
-  organization: { name: string; plan: string }
+  organization: { name: string; plan: string; emailDomain?: string | null }
   refresh: () => Promise<void>
   onPasswordChanged?: () => Promise<void>
 }

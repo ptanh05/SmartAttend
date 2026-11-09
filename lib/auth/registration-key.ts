@@ -1,9 +1,14 @@
 import { timingSafeEqual } from 'crypto'
 
+/**
+ * Verifies the registration API key required to create an administrator
+ * account. The environment variable keeps its historical name for backward
+ * compatibility with existing deployments.
+ */
 export function verifyTeacherRegistrationApiKey(provided: string) {
   const expected = process.env.TEACHER_REGISTRATION_API_KEY?.trim()
   if (!expected) {
-    return { ok: false as const, message: 'Teacher registration is not configured on this server.' }
+    return { ok: false as const, message: 'Administrator registration is not configured on this server.' }
   }
 
   const normalized = provided.trim()

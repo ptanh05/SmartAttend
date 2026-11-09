@@ -19,9 +19,9 @@ import {
   Status,
 } from '@/components/smart-attend-ui'
 import { api } from '@/lib/api/client'
-import type { Role } from '@/lib/types/domain'
+import type { Portal, Role } from '@/lib/types/domain'
 
-export function PublicLanding({ onSelect }: { onSelect: (portal: 'student' | 'staff') => void }) {
+export function PublicLanding({ onSelect }: { onSelect: (portal: Portal) => void }) {
   const { t } = useI18n()
   return (
     <main className="min-h-screen bg-background">
@@ -30,7 +30,8 @@ export function PublicLanding({ onSelect }: { onSelect: (portal: 'student' | 'st
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
           <Button variant="ghost" onClick={() => onSelect('student')}>{t('landing.studentPortal')}</Button>
-          <Button variant="outline" onClick={() => onSelect('staff')}>{t('landing.staffPortal')}</Button>
+          <Button variant="outline" onClick={() => onSelect('teacher')}>{t('landing.teacherPortal')}</Button>
+          <Button variant="outline" onClick={() => onSelect('admin')}>{t('landing.adminPortal')}</Button>
         </div>
       </header>
       <section className="mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-28">
@@ -40,7 +41,8 @@ export function PublicLanding({ onSelect }: { onSelect: (portal: 'student' | 'st
           <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">{t('landing.heroDetail')}</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button onClick={() => onSelect('student')}><GraduationCap />{t('landing.studentPortal')}</Button>
-            <Button variant="outline" onClick={() => onSelect('staff')}><Users />{t('landing.staffPortal')}</Button>
+            <Button variant="outline" onClick={() => onSelect('teacher')}><Users />{t('landing.teacherPortal')}</Button>
+            <Button variant="outline" onClick={() => onSelect('admin')}><ShieldCheck />{t('landing.adminPortal')}</Button>
           </div>
           <div className="mt-8 flex flex-wrap gap-5 text-sm text-muted-foreground">
             <span><ShieldCheck className="mr-2 inline size-4 text-primary" />{t('landing.sessionVerified')}</span>
@@ -171,7 +173,7 @@ export function LoginScreen({
   onHome,
   organizationName,
 }: {
-  portal: 'student' | 'staff'
+  portal: Portal
   onLogin: (role: Role, mustChangePassword?: boolean) => void
   onSwitch: () => void
   onRegister: () => void
@@ -208,7 +210,7 @@ export function LoginScreen({
         <Logo onClick={onHome} />
         <div className="max-w-md">
           <p className="mb-5 text-sm font-medium uppercase tracking-[0.18em] text-primary-foreground/70">
-            {portal === 'student' ? t('login.studentPortal') : t('login.staffPortal')}
+            {t(`landing.${portal}Portal`)}
           </p>
           <h1 className="text-5xl font-semibold leading-tight tracking-tight">{t('login.heroTitle')}</h1>
           <p className="mt-6 text-lg leading-8 text-primary-foreground/75">{t('login.heroDetail', { organization: organizationName })}</p>
@@ -222,11 +224,11 @@ export function LoginScreen({
             <LanguageSwitcher compact />
           </div>
           <p className="text-sm font-medium text-primary">
-            SmartAttend {portal === 'student' ? t('roles.student') : t('roles.teacher')}
+            SmartAttend {t(`roles.${portal}`)}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('login.welcomeBack')}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {portal === 'student' ? t('login.studentDetail') : t('login.staffDetail')}
+            {t(`login.${portal}Detail`)}
           </p>
           <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
             <label className="flex flex-col gap-2 text-sm font-medium">
@@ -259,16 +261,16 @@ export function LoginScreen({
               </div>
             )}
             <Button type="submit" className="h-12">
-              {loading ? t('login.signingIn') : portal === 'student' ? t('login.signInStudent') : t('login.signInStaff')}
+              {loading ? t('login.signingIn') : t(`landing.portalTitle.${portal}`)}
             </Button>
           </form>
           <div className="mt-6 flex flex-col gap-3 text-center text-sm">
             <button onClick={onSwitch} className="text-primary hover:underline">
-              {portal === 'student' ? t('login.switchToStaff') : t('login.switchToStudent')}
+              {t(`login.switchTo${portal.charAt(0).toUpperCase()}${portal.slice(1)}`)}
             </button>
-            {portal === 'staff' && (
+            {portal === 'admin' && (
               <button onClick={onRegister} className="text-muted-foreground hover:text-foreground">
-                {t('auth.registerTeacher')}
+                {t('auth.registerAdmin')}
               </button>
             )}
           </div>
@@ -284,6 +286,7 @@ export function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered:
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [organizationName, setOrganizationName] = useState('')
+  const [emailDomain, setEmailDomain] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -293,7 +296,14 @@ export function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered:
     setLoading(true)
     setError('')
     try {
-      const result = await api.registerTeacher({ name, email, password, organizationName, apiKey })
+      const result = await api.registerAdministrator({
+        name,
+        email,
+        password,
+        organizationName,
+        emailDomain,
+        apiKey,
+      })
       if (!result.ok || !result.role) {
         setError(result.message ?? t('auth.registerFailed'))
         return
@@ -313,9 +323,9 @@ export function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered:
           <Logo onClick={onHome} />
           <LanguageSwitcher compact />
         </div>
-        <p className="text-sm font-medium text-primary">{t('auth.registerTeacher')}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('auth.createTeacherAccount')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('auth.registerTeacherDetail')}</p>
+        <p className="text-sm font-medium text-primary">{t('auth.registerAdmin')}</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('auth.createAdminAccount')}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t('auth.registerAdminDetail')}</p>
         <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.fullName')}
@@ -328,6 +338,17 @@ export function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered:
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.organizationName')}
             <input className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            {t('auth.emailDomain')}
+            <input
+              className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
+              value={emailDomain}
+              onChange={(e) => setEmailDomain(e.target.value)}
+              placeholder="utc.edu.vn"
+              autoComplete="off"
+            />
+            <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.registrationApiKey')}

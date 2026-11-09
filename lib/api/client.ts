@@ -1,4 +1,13 @@
-import type { AttendanceRecord, AttendanceStatus, AuditEvent, ClassSession, Course, LeaveRequest, Role } from '@/lib/types/domain'
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  AuditEvent,
+  ClassSession,
+  Course,
+  LeaveRequest,
+  Portal,
+  Role,
+} from '@/lib/types/domain'
 
 type AuditLogsResponse = { ok: boolean; events?: AuditEvent[] }
 type DepartmentsResponse = { ok: boolean; departments?: string[] }
@@ -16,7 +25,7 @@ type MeResponse = {
     mustChangePassword: boolean
     organizationId: string
   }
-  organization?: { id: string; name: string; plan: string }
+  organization?: { id: string; name: string; plan: string; emailDomain: string | null }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -36,19 +45,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login(identifier: string, password: string, portal: 'student' | 'staff') {
-    return request<{ ok: boolean; role?: Role; mustChangePassword?: boolean; message?: string }>('/api/auth/login', {
+  login(identifier: string, password: string, portal: Portal) {
+    return request<{
+      ok: boolean
+      role?: Role
+      portal?: Portal
+      expectedPortal?: Portal
+      mustChangePassword?: boolean
+      message?: string
+    }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, password, portal }),
     })
   },
-  microsoftLogin(email: string, portal: 'student' | 'staff') {
+  microsoftLogin(email: string, portal: Portal) {
     return request<{ ok: boolean; role?: Role; mustChangePassword?: boolean; message?: string }>('/api/auth/microsoft-login', {
       method: 'POST',
       body: JSON.stringify({ email, portal }),
     })
   },
-  registerTeacher(input: { name: string; email: string; password: string; organizationName: string; apiKey: string }) {
+  registerAdministrator(input: {
+    name: string
+    email: string
+    password: string
+    organizationName: string
+    emailDomain?: string
+    apiKey: string
+  }) {
     return request<{ ok: boolean; role?: Role; message?: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -60,7 +83,7 @@ export const api = {
       body: JSON.stringify({ currentPassword, newPassword }),
     })
   },
-  forgotPassword(identifier: string, portal: 'student' | 'staff', newPassword?: string) {
+  forgotPassword(identifier: string, portal: Portal, newPassword?: string) {
     return request<{
       ok: boolean
       role?: Role
@@ -94,6 +117,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ csv, sectionId }),
     })
+  },
+  importTeachers(csv: string) {
+    return request<{
+      ok: boolean
+      created: { email: string; name: string; defaultPassword: string }[]
+      skipped: { email: string; reason: string }[]
+      message?: string
+    }>('/api/users/import-teachers', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    })
+  },
+  updateOrganizationDomain(emailDomain: string) {
+    return request<{ ok: boolean; emailDomain?: string | null; message?: string }>(
+      '/api/organization/email-domain',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ emailDomain }),
+      },
+    )
   },
   logout() {
     return request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
@@ -373,6 +416,9 @@ export type LiveSession = {
   dayOfWeek?: number
   challenge: string
   challengeExpiresAt?: string
+  startedAt?: string
+  durationSeconds?: number
+  remainingSeconds?: number
   records: {
     id: string
     studentName: string

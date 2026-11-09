@@ -7,6 +7,8 @@ import { auditLogs, externalAccounts, organizationMemberships, users } from '@/l
 import { and, eq } from 'drizzle-orm'
 import { createAuthSession } from '@/lib/auth/session'
 import { nanoid } from 'nanoid'
+import { parsePortal, portalForRole, PORTAL_HOME, PORTAL_LOGIN } from '@/lib/auth/portals'
+import type { Role } from '@/lib/types/domain'
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
@@ -15,9 +17,9 @@ export async function GET(request: Request) {
   const error = url.searchParams.get('error')
 
   const cookieStore = await cookies()
-  const portal = cookieStore.get('microsoft_oauth_portal')?.value === 'staff' ? 'staff' : 'student'
+  const portal = parsePortal(cookieStore.get('microsoft_oauth_portal')?.value) ?? 'student'
   const loginUrl = (msg: string) =>
-    new URL(`/${portal}/login?error=${encodeURIComponent(msg)}`, url.origin)
+    new URL(`${PORTAL_LOGIN[portal]}?error=${encodeURIComponent(msg)}`, url.origin)
 
   if (error) {
     return NextResponse.redirect(loginUrl(`Đăng nhập Microsoft thất bại: ${error}`))
@@ -139,15 +141,20 @@ export async function GET(request: Request) {
       )
     }
 
-    // Validate portal compatibility
-    if (portal === 'student' && match.role !== 'student') {
+    // Validate portal compatibility: the portal must match the account's role.
+    const expectedPortal = portalForRole(match.role as Role)
+    if (portal !== expectedPortal) {
       return NextResponse.redirect(
-        new URL(`/staff/login?error=${encodeURIComponent('Tài khoản cán bộ/giảng viên, vui lòng đăng nhập tại Cổng Cán bộ.')}`, url.origin),
-      )
-    }
-    if (portal === 'staff' && match.role === 'student') {
-      return NextResponse.redirect(
-        new URL(`/student/login?error=${encodeURIComponent('Tài khoản sinh viên, vui lòng đăng nhập tại Cổng Sinh viên.')}`, url.origin),
+        new URL(
+          `${PORTAL_LOGIN[expectedPortal]}?error=${encodeURIComponent(
+            expectedPortal === 'student'
+              ? 'Tài khoản sinh viên, vui lòng đăng nhập tại Cổng Sinh viên.'
+              : expectedPortal === 'teacher'
+                ? 'Tài khoản giảng viên, vui lòng đăng nhập tại Cổng Giảng viên.'
+                : 'Tài khoản quản trị, vui lòng đăng nhập tại Cổng Quản trị.',
+          )}`,
+          url.origin,
+        ),
       )
     }
 
@@ -164,18 +171,13 @@ export async function GET(request: Request) {
       severity: 'info',
     })
 
-    const targetDashboard =
-      match.role === 'student'
-        ? '/student'
-        : match.role === 'teacher'
-          ? '/teacher/dashboard'
-          : '/admin/dashboard'
+    const targetDashboard = PORTAL_HOME[portalForRole(match.role as Role)]
 
     const response = NextResponse.redirect(new URL(targetDashboard, url.origin))
 
-    const { sessionCookieOptions, SESSION_COOKIE } = await import('@/lib/auth/cookies')
+    const { authCookieManager } = await import('@/lib/auth/cookies')
     const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
-    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
+    authCookieManager.saveSession(response, token, maxAge)
     response.cookies.delete('microsoft_oauth_state')
     response.cookies.delete('microsoft_oauth_code_verifier')
     response.cookies.delete('microsoft_oauth_portal')

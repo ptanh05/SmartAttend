@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
   ClipboardCheck, Clock, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
-  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X
+  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X, Zap
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
@@ -13,13 +13,14 @@ import {
   SectionHeader, Status, statusText, UltrasonicWaveVisualizer, ViewProps,
 } from './smart-attend-ui'
 import { api, loadDashboard, type DashboardData } from '@/lib/api/client'
-import { canAccessRole } from '@/lib/auth/routing'
+import { canAccessRole, portalForPath } from '@/lib/auth/routing'
+import { PORTAL_HOME, PORTAL_LOGIN, portalForRole } from '@/lib/auth/portals'
 import { useI18n } from '@/components/i18n-provider'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { UtcLogo } from './utc-logo'
 import { UtcLoginLanding } from './utc-login-landing'
 import { UtcStudentDashboard } from './utc-student-dashboard'
-import type { AttendanceStatus, ClassSession, Course, Role } from '@/lib/types/domain'
+import type { AttendanceStatus, ClassSession, Course, Portal, Role } from '@/lib/types/domain'
 import { startUltrasonicBeacon, detectUltrasonicBeacon, DEFAULT_ULTRASONIC_FREQ, type BeaconController } from '@/lib/attendance/ultrasonic'
 import { authenticateWithBiometrics, registerDeviceBiometrics } from '@/lib/auth/webauthn-client'
 
@@ -122,6 +123,7 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [organizationName, setOrganizationName] = useState('')
+  const [emailDomain, setEmailDomain] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -131,7 +133,14 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
     setLoading(true)
     setError('')
     try {
-      const result = await api.registerTeacher({ name, email, password, organizationName, apiKey })
+      const result = await api.registerAdministrator({
+        name,
+        email,
+        password,
+        organizationName,
+        emailDomain,
+        apiKey,
+      })
       if (!result.ok || !result.role) {
         setError(result.message ?? t('auth.registerFailed'))
         return
@@ -151,9 +160,9 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
           <Logo onClick={onHome} />
           <LanguageSwitcher compact />
         </div>
-        <p className="text-sm font-medium text-primary">{t('auth.registerTeacher')}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('auth.createTeacherAccount')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('auth.registerTeacherDetail')}</p>
+        <p className="text-sm font-medium text-primary">{t('auth.registerAdmin')}</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('auth.createAdminAccount')}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t('auth.registerAdminDetail')}</p>
         <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.fullName')}
@@ -166,6 +175,17 @@ function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role:
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.organizationName')}
             <input className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            {t('auth.emailDomain')}
+            <input
+              className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
+              value={emailDomain}
+              onChange={(e) => setEmailDomain(e.target.value)}
+              placeholder="utc.edu.vn"
+              autoComplete="off"
+            />
+            <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium">
             {t('auth.registrationApiKey')}
@@ -1477,6 +1497,122 @@ function StudentImportPanel({
   )
 }
 
+function TeacherImportPanel({
+  csvText,
+  setCsvText,
+  importing,
+  importResult,
+  emailDomain,
+  onImport,
+  onClose,
+  t,
+}: {
+  csvText: string
+  setCsvText: (value: string) => void
+  importing: boolean
+  importResult: {
+    created: { email: string; name: string; defaultPassword: string }[]
+    skipped: { email: string; reason: string }[]
+  } | null
+  emailDomain: string | null
+  onImport: () => void
+  onClose: () => void
+  t: (key: string, params?: Record<string, string | number>) => string
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setCsvText(await file.text())
+  }
+
+  const downloadTemplate = () => {
+    const template = '\uFEFFemail,name,department\ngv001@utc.edu.vn,Nguyen Van A,Computer Science\ngv002@utc.edu.vn,Tran Thi B,Computer Science'
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'lecturers-template.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <Card title={t('admin.importLecturers')} description={t('admin.importLecturersDetail')}>
+      <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersFormat')}</p>
+      <p className="mb-3 rounded-lg bg-muted/50 p-3 font-mono text-xs">
+        email,name,department{'\n'}gv001@utc.edu.vn,Nguyen Van A,Computer Science
+      </p>
+      <p className="mb-3 text-sm text-muted-foreground">
+        {t('admin.importLecturersDomain', { domain: emailDomain ?? 'utc.edu.vn' })}
+      </p>
+      <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersPassword')}</p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+        <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
+          <Upload />{t('teacher.uploadCsv')}
+        </Button>
+        <Button type="button" variant="outline" onClick={downloadTemplate}>
+          <Download />{t('teacher.downloadTemplate')}
+        </Button>
+      </div>
+      <textarea
+        value={csvText}
+        onChange={(e) => setCsvText(e.target.value)}
+        rows={8}
+        className="w-full rounded-lg border bg-background p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-primary"
+        placeholder="email,name,department"
+      />
+      <div className="mt-4 flex gap-2">
+        <Button type="button" onClick={onImport} disabled={!csvText.trim() || importing}>
+          {importing ? t('teacher.importing') : t('admin.importLecturersSubmit')}
+        </Button>
+        <Button type="button" variant="outline" onClick={onClose}>{t('common.back')}</Button>
+      </div>
+      {importResult && (
+        <div className="mt-5 space-y-4 border-t pt-5 text-sm">
+          <div>
+            <p className="font-medium">{t('teacher.importCreated', { count: importResult.created.length })}</p>
+            {importResult.created.length > 0 && (
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="p-2">{t('admin.emailColumn')}</th>
+                      <th className="p-2">{t('auth.fullName')}</th>
+                      <th className="p-2">{t('teacher.defaultPassword')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importResult.created.map((row) => (
+                      <tr key={row.email} className="border-t">
+                        <td className="p-2">{row.email}</td>
+                        <td className="p-2">{row.name}</td>
+                        <td className="p-2 font-mono">{row.defaultPassword}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          {importResult.skipped.length > 0 && (
+            <div>
+              <p className="font-medium text-amber-700">{t('teacher.importSkipped', { count: importResult.skipped.length })}</p>
+              <ul className="mt-2 list-disc pl-5 text-muted-foreground">
+                {importResult.skipped.map((row) => (
+                  <li key={`${row.email}-${row.reason}`}>{row.email}: {row.reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function ClassRosterModal({
   section,
   students,
@@ -2449,6 +2585,16 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     skipped: { studentCode: string; reason: string }[]
   } | null>(null)
 
+  const [teacherImportOpen, setTeacherImportOpen] = useState(false)
+  const [teacherCsvText, setTeacherCsvText] = useState('')
+  const [teacherImporting, setTeacherImporting] = useState(false)
+  const [teacherImportResult, setTeacherImportResult] = useState<{
+    created: { email: string; name: string; defaultPassword: string }[]
+    skipped: { email: string; reason: string }[]
+  } | null>(null)
+
+  const [emailDomain, setEmailDomain] = useState<string>(organization.emailDomain ?? '')
+
   const [courseModalOpen, setCourseModalOpen] = useState(false)
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
   const [showStaffChangePassword, setShowStaffChangePassword] = useState(false)
@@ -2458,6 +2604,45 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [ultrasonicActive, setUltrasonicActive] = useState(false)
   const beaconRef = useRef<BeaconController | null>(null)
   const liveActive = Boolean(live)
+
+  const [sessionRemaining, setSessionRemaining] = useState<number>(() => {
+    if (live?.remainingSeconds !== undefined) return live.remainingSeconds
+    if (live?.startedAt) {
+      const elapsed = Math.floor((Date.now() - new Date(live.startedAt).getTime()) / 1000)
+      return Math.max(0, 180 - elapsed)
+    }
+    return 180
+  })
+
+  useEffect(() => {
+    if (!liveActive || !live) {
+      setSessionRemaining(180)
+      return
+    }
+    const initialRemaining = live.remainingSeconds ?? (
+      live.startedAt ? Math.max(0, 180 - Math.floor((Date.now() - new Date(live.startedAt).getTime()) / 1000)) : 180
+    )
+    setSessionRemaining(initialRemaining)
+
+    const timer = setInterval(() => {
+      setSessionRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          void refresh()
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [liveActive, live?.sessionId, live?.startedAt, live?.remainingSeconds, refresh])
+
+  const formatTimer = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
 
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'student' | 'teacher' | 'admin'>('all')
   const [rosterSection, setRosterSection] = useState<ClassSession | null>(null)
@@ -2772,6 +2957,21 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
+  const runTeacherImport = async () => {
+    setTeacherImporting(true)
+    setNotice('')
+    try {
+      const result = await api.importTeachers(teacherCsvText)
+      setTeacherImportResult(result)
+      setNotice(t('admin.importLecturersDone', { count: result.created.length }))
+      await refresh()
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : t('admin.importLecturersFailed'))
+    } finally {
+      setTeacherImporting(false)
+    }
+  }
+
   const adminEyebrow = t('admin.administration')
   const staffEyebrow = isAdmin ? adminEyebrow : t('teacher.workspace')
 
@@ -2792,7 +2992,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 </Button>
               )}
               <Button variant={liveActive ? 'danger' : 'primary'} onClick={toggleSession}>
-                {liveActive ? <><X />{t('teacher.endSession')}</> : <><Play />{t('teacher.startSession')}</>}
+                {liveActive ? <><X />{t('teacher.endSessionEarly')}</> : <><Zap />{t('teacher.startManualSession')}</>}
               </Button>
             </div>
           }
@@ -2805,7 +3005,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                   <p><strong>{t('common.course')}</strong><span className="block text-muted-foreground">{live.courseCode} · {live.courseName}</span></p>
                   <p><strong>{t('common.class')}</strong><span className="block text-muted-foreground">{live.room}</span></p>
                   <p><strong>{t('common.time')}</strong><span className="block text-muted-foreground">{formatDayOfWeek(t, live.dayOfWeek)} · {live.startsAt} – {live.endsAt}</span></p>
-                  <Status>{t('common.liveNow')}</Status>
+                  <Status tone="success">{t('common.liveNow')}</Status>
+
+                  {/* 3-minute Attendance Window Countdown */}
+                  <div className="mt-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between text-xs font-semibold text-primary mb-1">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="size-3.5 animate-spin text-primary" />
+                        {t('teacher.sessionWindowRemaining')}
+                      </span>
+                      <span className="font-mono text-sm font-bold text-primary">{formatTimer(sessionRemaining)} / 03:00</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-primary/20">
+                      <div
+                        className="h-full bg-primary transition-all duration-1000 ease-linear rounded-full"
+                        style={{ width: `${Math.min(100, Math.max(0, (sessionRemaining / 180) * 100))}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      {t('teacher.sessionWindowDesc')}
+                    </p>
+                  </div>
                 </div>
               </Card>
               <Card title={t('teacher.sessionChallenge')} description={t('teacher.rotatingCode')}>
@@ -2968,6 +3188,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-blue-500/20 px-3.5 py-1.5 text-xs font-semibold text-blue-300 border border-blue-400/30 flex items-center gap-2">
+                      <Clock className="size-4 animate-spin text-blue-300" />
+                      {t('teacher.sessionWindowRemaining')}: {formatTimer(sessionRemaining)}
+                    </div>
                     <div className="rounded-xl bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 border border-emerald-400/30 flex items-center gap-2">
                       <span className="size-2 rounded-full bg-emerald-400 animate-ping" />
                       {t('common.liveNow')} · {live.records.length} đã điểm danh
@@ -3039,22 +3263,49 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             <Card title={t('common.todayClass')} description={t('common.scheduleDetail')}>
               {todaySections.length > 0 ? (
                 <div className="divide-y">
-                  {todaySections.map((sec) => (
-                    <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-foreground">{sec.courseCode} · {sec.courseName}</span>
-                          {sec.autoStart && <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{t('common.autoOpen')}</span>}
+                  {todaySections.map((sec) => {
+                    const [startH, startM] = (sec.startsAt || '').split(':').map(Number)
+                    const autoCloseMinutes = (!isNaN(startH) && !isNaN(startM)) ? (startH * 60 + startM + 3) : 0
+                    const endWindowStr = autoCloseMinutes > 0 ? `${String(Math.floor(autoCloseMinutes / 60)).padStart(2, '0')}:${String(autoCloseMinutes % 60).padStart(2, '0')}` : ''
+
+                    return (
+                      <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
+                        <div className="flex-1 min-w-[280px]">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-foreground">{sec.courseCode} · {sec.courseName}</span>
+                            {sec.autoStart && (
+                              <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                {t('common.autoOpen')}
+                              </span>
+                            )}
+                            {endWindowStr && (
+                              <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                                {t('teacher.scheduledAutoWindow', { start: sec.startsAt, end: endWindowStr })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            <Calendar className="mr-1 inline size-3.5" />{formatDayOfWeek(t, sec.dayOfWeek)} · <Clock className="mr-1 inline size-3.5" />{sec.startsAt} – {sec.endsAt} · {sec.room} · {t('teacher.enrolledCount', { count: sec.enrolledCount ?? 0 })}
+                          </p>
+                          <p className="mt-1 text-[11px] text-muted-foreground/80 italic">
+                            * {t('teacher.tenMinNoticeDesc')}
+                          </p>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          <Calendar className="mr-1 inline size-3.5" />{formatDayOfWeek(t, sec.dayOfWeek)} · <Clock className="mr-1 inline size-3.5" />{sec.startsAt} – {sec.endsAt} · {sec.room} · {t('teacher.enrolledCount', { count: sec.enrolledCount ?? 0 })}
-                        </p>
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            variant="primary"
+                            onClick={() => startSpecificSession(sec.sectionId)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm"
+                          >
+                            <Zap className="size-4" />{t('teacher.startManualSession')}
+                          </Button>
+                          <span className="text-[10px] text-muted-foreground text-right max-w-xs">
+                            {t('teacher.manualTriggerHint')}
+                          </span>
+                        </div>
                       </div>
-                      <Button onClick={() => startSpecificSession(sec.sectionId)}>
-                        <Play className="size-4" />{t('common.startScheduledSession')}
-                      </Button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="py-6 text-center text-sm text-muted-foreground">
@@ -3297,8 +3548,35 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           eyebrow={staffEyebrow}
           title={isAdmin ? t('admin.usersTitle') : t('teacher.studentsTitle')}
           detail={isAdmin ? t('admin.usersDetail') : t('teacher.rosterDetail')}
-          action={<Button onClick={() => setImportOpen(!importOpen)}><FileText />{t('teacher.importStudents')}</Button>}
+          action={
+            isAdmin ? (
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => setTeacherImportOpen(!teacherImportOpen)}>
+                  <Users />{t('admin.importLecturers')}
+                </Button>
+                <Button onClick={() => setImportOpen(!importOpen)}>
+                  <FileText />{t('teacher.importStudents')}
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={() => setImportOpen(!importOpen)}>
+                <FileText />{t('teacher.importStudents')}
+              </Button>
+            )
+          }
         />
+        {isAdmin && teacherImportOpen && (
+          <TeacherImportPanel
+            csvText={teacherCsvText}
+            setCsvText={setTeacherCsvText}
+            importing={teacherImporting}
+            importResult={teacherImportResult}
+            emailDomain={organization.emailDomain ?? null}
+            onImport={runTeacherImport}
+            onClose={() => setTeacherImportOpen(false)}
+            t={t}
+          />
+        )}
         {importOpen && (
           <StudentImportPanel
             csvText={csvText}
@@ -3519,6 +3797,17 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               Gói giải pháp
               <input className="h-11 rounded-lg border bg-muted/40 px-3 text-sm" defaultValue="SmartAttend Anti-Proxy Ultrasonic + Biometrics" disabled />
             </label>
+            {isAdmin && (
+              <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+                {t('auth.emailDomain')}
+                <input
+                  className="h-11 rounded-lg border bg-muted/40 px-3 text-sm"
+                  defaultValue={organization.emailDomain ?? 'utc.edu.vn'}
+                  disabled
+                />
+                <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
+              </label>
+            )}
           </div>
         </Card>
 
@@ -3886,6 +4175,7 @@ export default function SmartAttendApp() {
   const [page, setPage] = useState<PageKey>('overview')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [initialPortal, setInitialPortal] = useState<Portal>('student')
 
   useEffect(() => {
     try {
@@ -3912,7 +4202,7 @@ export default function SmartAttendApp() {
   const [hydrated, setHydrated] = useState(false)
   const [data, setData] = useState<DashboardData>(emptyDashboard)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
-  const [organization, setOrganization] = useState<{ name: string; plan: string }>({ name: 'SmartAttend', plan: 'Campus Plus' })
+  const [organization, setOrganization] = useState<{ name: string; plan: string; emailDomain?: string | null }>({ name: 'SmartAttend', plan: 'Campus Plus', emailDomain: null })
   const [mustChangePassword, setMustChangePassword] = useState(false)
 
   const hydrateUser = (user: NonNullable<Awaited<ReturnType<typeof api.me>>['user']>, nextRole: Role) => {
@@ -3939,7 +4229,7 @@ export default function SmartAttendApp() {
 
   const openRegister = () => {
     setAuthScreen('register')
-    router.push('/staff/register')
+    router.push('/admin/register')
   }
 
   const goHome = async () => {
@@ -3960,6 +4250,11 @@ export default function SmartAttendApp() {
       const path = window.location.pathname
       setAuthScreen(initialAuthScreen(path))
 
+      // Preselect the portal matching the URL the user opened, e.g. opening
+      // /admin/login shows the Admin tab instead of the default Student one.
+      const pathPortal = portalForPath(path)
+      if (pathPortal) setInitialPortal(pathPortal)
+
       try {
         const me = await api.me()
         if (me.ok && me.user && me.organization) {
@@ -3968,7 +4263,7 @@ export default function SmartAttendApp() {
             setRole(nextRole)
             setPage(pageFromPath(path, nextRole))
             hydrateUser(me.user, nextRole)
-            setOrganization({ name: me.organization.name, plan: me.organization.plan })
+            setOrganization({ name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
             const next = await loadDashboard(nextRole)
             setData(next)
           } else {
@@ -4017,7 +4312,8 @@ export default function SmartAttendApp() {
     setPage(next)
     setMobileOpen(false)
     if (!role) return
-    window.history.replaceState({}, '', role === 'student' ? `/student/${next === 'overview' ? 'dashboard' : next}` : role === 'teacher' ? `/teacher/${next === 'overview' ? 'dashboard' : next}` : `/admin/${next === 'overview' ? 'dashboard' : next}`)
+    const slug = next === 'overview' ? 'dashboard' : next
+    window.history.replaceState({}, '', `/${portalForRole(role)}/${slug}`)
   }
 
   const login = async (next: Role, forcePasswordChange = false) => {
@@ -4026,12 +4322,12 @@ export default function SmartAttendApp() {
     const me = await api.me()
     if (me.ok && me.user && me.organization) {
       hydrateUser(me.user, next)
-      setOrganization({ name: me.organization.name, plan: me.organization.plan })
+      setOrganization({ name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
       setMustChangePassword(forcePasswordChange || me.user.mustChangePassword)
     }
     await refresh()
     setAuthScreen('login')
-    router.push(`/${next === 'student' ? 'student' : next === 'teacher' ? 'teacher' : 'admin'}/dashboard`)
+    router.push(PORTAL_HOME[portalForRole(next)])
   }
 
   const logout = async () => {
@@ -4041,7 +4337,7 @@ export default function SmartAttendApp() {
     setMustChangePassword(false)
     setData(emptyDashboard)
     setAuthScreen('login')
-    router.push('/student/login')
+    router.push(PORTAL_LOGIN.student)
   }
 
   if (!hydrated) return <div className="min-h-screen bg-[#071935]" aria-hidden="true" />
@@ -4052,7 +4348,7 @@ export default function SmartAttendApp() {
           onRegistered={(next) => login(next)}
           onBack={() => {
             setAuthScreen('login')
-            router.push('/staff/login')
+            router.push(PORTAL_LOGIN.admin)
           }}
           onHome={goHome}
         />
@@ -4062,6 +4358,7 @@ export default function SmartAttendApp() {
       <UtcLoginLanding
         onLogin={login}
         onRegister={openRegister}
+        initialPortal={initialPortal}
         organizationName={organization.name}
       />
     )
