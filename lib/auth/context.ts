@@ -1,11 +1,11 @@
 import { cookies } from 'next/headers'
-import { SESSION_COOKIE } from '@/lib/auth/cookies'
+import { authCookieManager, SESSION_COOKIE } from '@/lib/auth/cookies'
 import { getAuthContext, type AuthContext } from '@/lib/auth/session'
 import type { Role } from '@/lib/types/domain'
 
 export async function getCurrentAuth(): Promise<AuthContext | null> {
   const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value
+  const token = authCookieManager.getSessionToken(cookieStore) ?? cookieStore.get(SESSION_COOKIE)?.value
   return getAuthContext(token)
 }
 

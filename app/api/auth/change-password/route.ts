@@ -26,12 +26,12 @@ export async function POST(request: Request) {
 
     // Issue freshly rotated session token for this client while all prior sessions are revoked
     const { createAuthSession } = await import('@/lib/auth/session')
-    const { sessionCookieOptions, SESSION_COOKIE } = await import('@/lib/auth/cookies')
+    const { authCookieManager } = await import('@/lib/auth/cookies')
     const { token, expiresAt } = await createAuthSession(auth.userId, auth.membershipId)
     const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
 
     const response = NextResponse.json({ ok: true })
-    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(maxAge))
+    authCookieManager.saveSession(response, token, maxAge)
     return response
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
