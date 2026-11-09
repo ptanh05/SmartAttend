@@ -35,11 +35,25 @@ describe('RateLimiter', () => {
 })
 
 describe('clientIp', () => {
-  it('prefers the first x-forwarded-for entry', () => {
+  it('ignores attacker-supplied x-forwarded-for prefixes and trusts the rightmost proxy-appended entry', () => {
     const request = new Request('http://localhost/api/auth/login', {
       headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' },
     })
-    expect(clientIp(request)).toBe('1.2.3.4')
+    process.env.TRUSTED_PROXY_HOPS = '1'
+    try {
+      // With a single trusted proxy hop the rightmost entry is the one appended
+      // by our own proxy; the left-most entry is fully client-controlled.
+      expect(clientIp(request)).toBe('5.6.7.8')
+    } finally {
+      delete process.env.TRUSTED_PROXY_HOPS
+    }
+  })
+
+  it('prefers platform-stamped forwarding headers that cannot be forged', () => {
+    const request = new Request('http://localhost/api/auth/login', {
+      headers: { 'x-vercel-forwarded-for': '203.0.113.7', 'x-forwarded-for': '1.2.3.4' },
+    })
+    expect(clientIp(request)).toBe('203.0.113.7')
   })
 
   it('falls back to x-real-ip then unknown', () => {

@@ -374,7 +374,6 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
         sessionId: liveSession?.id,
         method,
         ultrasonicVerified: true,
-        acousticProof: liveSession?.acousticProof,
       })
       setResult(response)
       if (response.ok) {
@@ -519,14 +518,18 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
       }
 
       // Step 2: Complete in-room verification with acoustic proof
-      const targetChallenge = liveSession.challenge && liveSession.challenge !== '------' ? liveSession.challenge : code || 'AUTOSYNC'
+      const targetChallenge = liveSession.challenge && liveSession.challenge !== '------' ? liveSession.challenge : (code || '').trim()
+      if (!targetChallenge) {
+        setStepNotice('Vui lòng quét mã QR trên màn hình giảng viên hoặc nhập mã 6 ký tự trước khi xác thực khuôn mặt / Face ID.')
+        setBiometricStatus('idle')
+        return
+      }
       const response = await api.verify(targetChallenge, {
         sessionId: liveSession.id,
         method: 'ultrasonic_faceid',
         ultrasonicVerified: true,
         biometricVerified: Boolean(bioAssertion),
         webauthnAssertion: bioAssertion,
-        acousticProof: liveSession.acousticProof,
         device: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID + Ultrasonic)'
           : navigator.userAgent.includes('Android')
@@ -2616,13 +2619,13 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   useEffect(() => {
     if (!liveActive || !live) {
-      setSessionRemaining(180)
+      queueMicrotask(() => setSessionRemaining(180))
       return
     }
     const initialRemaining = live.remainingSeconds ?? (
       live.startedAt ? Math.max(0, 180 - Math.floor((Date.now() - new Date(live.startedAt).getTime()) / 1000)) : 180
     )
-    setSessionRemaining(initialRemaining)
+    queueMicrotask(() => setSessionRemaining(initialRemaining))
 
     const timer = setInterval(() => {
       setSessionRemaining((prev) => {
@@ -2762,7 +2765,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         window.removeEventListener('touchstart', handleUserGesture)
       }
     } else {
-      stopBeacon()
+      queueMicrotask(() => {
+        stopBeacon()
+      })
       manuallyStoppedRef.current = false
     }
   }, [liveActive, page, startBeacon, stopBeacon])

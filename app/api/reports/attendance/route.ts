@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import { getCourseAttendanceSummary, listReportRecords } from '@/lib/attendance/server'
 import { attendanceRate, attendanceSummary, toCsv } from '@/lib/reports/csv'
 
@@ -20,6 +20,9 @@ export async function GET(request: Request) {
     if (!['teacher', 'staff', 'admin'].includes(auth.role)) {
       return NextResponse.json({ ok: false, message: 'Access denied.' }, { status: 403 })
     }
+
+    const pending = await passwordChangePendingResponse(auth)
+    if (pending) return pending
 
     const { searchParams } = new URL(request.url)
     const courseId = searchParams.get('courseId') ?? undefined
@@ -125,6 +128,9 @@ export async function GET(request: Request) {
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Forbidden')) {
+      return NextResponse.json({ ok: false, message: error.message }, { status: 403 })
+    }
     console.error('Report export failed', error)
     return NextResponse.json({ ok: false, message: 'Unable to generate the report.' }, { status: 500 })
   }

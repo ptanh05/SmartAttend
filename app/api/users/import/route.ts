@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { importStudents, parseStudentCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
-import { validateRequestBody, importStudentsSchema } from '@/lib/validation'
+import { validateRequestBody, importStudentsSchema, MAX_IMPORT_STUDENT_ROWS } from '@/lib/validation'
 
 /**
  * Imports a student roster.
@@ -32,6 +32,13 @@ export async function POST(request: Request) {
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, message: 'No student rows found in import.' }, { status: 400 })
+    }
+
+    if (rows.length > MAX_IMPORT_STUDENT_ROWS) {
+      return NextResponse.json(
+        { ok: false, message: `Số lượng bản ghi (${rows.length}) vượt quá giới hạn tối đa ${MAX_IMPORT_STUDENT_ROWS} sinh viên mỗi lần nhập.` },
+        { status: 400 },
+      )
     }
 
     const result = await importStudents(auth, rows, { sectionId: sectionId || undefined })

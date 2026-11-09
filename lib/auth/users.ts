@@ -11,7 +11,7 @@ import {
   organizations,
   users,
 } from '@/lib/db/schema'
-import { resolveMembershipForLogin, resolveMembershipForStudentLogin, type AuthContext } from '@/lib/auth/session'
+import { resolveMembershipForLogin, type AuthContext } from '@/lib/auth/session'
 import type { Portal } from '@/lib/types/domain'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 import {
@@ -616,41 +616,11 @@ export async function selfServiceResetPassword(input: {
   }
 
   if (input.portal === 'student') {
-    const isEmail = identifier.includes('@')
-    const memberships = isEmail
-      ? await resolveMembershipForLogin(identifier)
-      : await resolveMembershipForStudentLogin(identifier)
-
-    const match = memberships.find((m) => m.role === 'student' && !m.disabledAt && m.membershipStatus === 'active')
-    if (!match) {
-      return { ok: false as const, message: 'Không tìm thấy thông tin sinh viên tương ứng với mã/email đã nhập.' }
-    }
-
-    const studentInfo = await db()
-      .select({ studentCode: organizationMemberships.studentCode, name: users.name })
-      .from(organizationMemberships)
-      .innerJoin(users, eq(organizationMemberships.userId, users.id))
-      .where(eq(organizationMemberships.id, match.membershipId))
-
-    const studentCode = studentInfo[0]?.studentCode || identifier
-    const defaultPassword = defaultStudentPassword(studentCode)
-    const passwordHash = await hashPassword(defaultPassword)
-
-    await db()
-      .update(users)
-      .set({ passwordHash, mustChangePassword: true })
-      .where(eq(users.id, match.userId))
-
-    // Invalidate all active sessions on password recovery to kick out unauthorized sessions
-    await db().delete(authSessions).where(eq(authSessions.userId, match.userId))
-
+    // SEC-02: Chặn hoàn toàn unauthenticated account takeover đối với sinh viên qua MSSV công khai.
     return {
-      ok: true as const,
-      role: 'student' as const,
-      studentCode,
-      name: studentInfo[0]?.name ?? '',
-      temporaryPassword: defaultPassword,
-      message: `Mật khẩu đã được khôi phục về mặc định: ${defaultPassword}. Vui lòng đăng nhập và đổi mật khẩu mới.`,
+      ok: false as const,
+      message:
+        'Vì lý do an toàn bảo mật, tính năng tự đặt lại mật khẩu bằng Mã sinh viên công khai đã tạm khóa để ngăn chặn chiếm quyền tài khoản. Vui lòng liên hệ Giảng viên phụ trách hoặc Quản trị viên nhà trường để được hỗ trợ cấp lại mật khẩu.',
     }
   }
 
@@ -694,6 +664,10 @@ export async function selfServiceResetPassword(input: {
 }
 
 export async function adminResetStudentPassword(auth: AuthContext, studentId: string) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+
   const rows = await db()
     .select({
       membershipId: organizationMemberships.id,
@@ -714,6 +688,31 @@ export async function adminResetStudentPassword(auth: AuthContext, studentId: st
   const student = rows[0]
   if (!student || !student.studentCode) {
     return { ok: false as const, message: 'Không tìm thấy sinh viên trong tổ chức của bạn.' }
+  }
+
+  // SEC-14: Teachers may only reset the password of students enrolled in one of
+  // the classes they teach. Administrators may reset any student of the org.
+  if (auth.role === 'teacher') {
+    const allowed = await db()
+      .select({ studentId: classEnrollments.studentId })
+      .from(classEnrollments)
+      .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+      .innerJoin(courses, eq(courseSections.courseId, courses.id))
+      .where(
+        and(
+          eq(classEnrollments.organizationId, auth.organizationId),
+          eq(classEnrollments.studentId, student.userId),
+          eq(courses.teacherId, auth.userId),
+        ),
+      )
+      .limit(1)
+
+    if (!allowed[0]) {
+      return {
+        ok: false as const,
+        message: 'Bạn chỉ có thể đặt lại mật khẩu cho sinh viên thuộc các lớp mình phụ trách.',
+      }
+    }
   }
 
   const defaultPassword = defaultStudentPassword(student.studentCode)

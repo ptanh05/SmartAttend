@@ -14,7 +14,7 @@ import {
   listUsers,
 } from '@/lib/attendance/server'
 import { getLeaveRequests } from '@/lib/attendance/leave'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import type { Course } from '@/lib/types/domain'
 
 export async function GET() {
@@ -25,6 +25,9 @@ export async function GET() {
 
   try {
     if (auth.role === 'student') {
+      const pending = await passwordChangePendingResponse(auth)
+      if (pending) return pending
+
       const [sessions, records, notifications, devices, leaveRequests] = await Promise.all([
         listClassSessions(auth.organizationId, auth.userId),
         listRecords(auth, auth.userId),
@@ -73,6 +76,9 @@ export async function GET() {
     }
 
     if (auth.role === 'teacher') {
+      const pending = await passwordChangePendingResponse(auth)
+      if (pending) return pending
+
       const [
         courses,
         sessions,
@@ -116,6 +122,9 @@ export async function GET() {
     }
 
     // Role: admin
+    const pending = await passwordChangePendingResponse(auth)
+    if (pending) return pending
+
     const [
       courses,
       sessions,

@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import { addLeaveRequest, getLeaveRequests, updateLeaveRequestStatus } from '@/lib/attendance/leave'
 import { validateRequestBody, createLeaveRequestSchema, reviewLeaveRequestSchema } from '@/lib/validation'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const { searchParams } = new URL(request.url)
   const studentId = auth.role === 'student' ? auth.userId : (searchParams.get('studentId') ?? undefined)
@@ -16,6 +19,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const validation = await validateRequestBody(request, createLeaveRequestSchema, 'Dữ liệu xin nghỉ phép không hợp lệ')
   if (!validation.success) {
@@ -46,6 +52,9 @@ export async function PATCH(request: Request) {
   if (!auth || (auth.role !== 'teacher' && auth.role !== 'admin')) {
     return NextResponse.json({ ok: false, message: 'Forbidden' }, { status: 403 })
   }
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const validation = await validateRequestBody(request, reviewLeaveRequestSchema, 'Dữ liệu phê duyệt không hợp lệ')
   if (!validation.success) {

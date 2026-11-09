@@ -3,7 +3,6 @@ import { config } from 'dotenv'
 config({ path: '.env' })
 import {
   validateCsrfProtection,
-  isTrustedOrigin,
   generateCsrfToken,
   verifyCsrfToken,
   CSRF_COOKIE_NAME,

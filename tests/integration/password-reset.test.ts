@@ -16,11 +16,26 @@ config({ path: '.env' })
 const hasDb = Boolean(process.env.DATABASE_URL)
 
 describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
-  it('allows a student to self-reset password to their student code with mustChangePassword=true', async () => {
+  it('rejects unauthenticated self-reset for students (SEC-02) and allows authorized reset via adminResetStudentPassword', async () => {
     const orgId = `org_test_${nanoid(6)}`
     const studentUserId = `stu_test_${nanoid(6)}`
     const studentCode = `2026${Math.floor(1000 + Math.random() * 9000)}`
     const initialPasswordHash = await hashPassword('CustomSecretPassword123!')
+
+    const adminAuth: AuthContext = {
+      userId: `adm_${nanoid(6)}`,
+      membershipId: 'm_adm',
+      organizationId: orgId,
+      role: 'admin',
+      email: 'admin@reset-test.edu.vn',
+      name: 'Quản trị viên',
+      initials: 'QT',
+      department: null,
+      studentCode: null,
+      mustChangePassword: false,
+      organizationName: 'Reset Test University',
+      organizationPlan: 'Campus Plus',
+    }
 
     try {
       await db().insert(organizations).values({
@@ -47,19 +62,23 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
         status: 'active',
       })
 
-      // 1. Perform self-service password reset using studentCode
-      const result = await selfServiceResetPassword({
+      // 1. Unauthenticated self-service reset must be rejected for students (SEC-02 protection)
+      const selfResult = await selfServiceResetPassword({
         identifier: studentCode,
         portal: 'student',
       })
+      expect(selfResult.ok).toBe(false)
+      expect(selfResult.message).toContain('bảo mật')
 
+      // 2. Perform authorized reset via admin/teacher
+      const result = await adminResetStudentPassword(adminAuth, studentUserId)
       expect(result.ok).toBe(true)
       if (!result.ok) return
 
       expect(result.studentCode).toBe(studentCode)
-      expect(result.temporaryPassword).toBe(defaultStudentPassword(studentCode))
+      expect(result.defaultPassword).toBe(defaultStudentPassword(studentCode))
 
-      // 2. Verify in DB that password hash is now matching defaultStudentPassword
+      // 3. Verify in DB that password hash is now matching defaultStudentPassword and mustChangePassword=true
       const updatedUser = await db()
         .select({ passwordHash: users.passwordHash, mustChangePassword: users.mustChangePassword })
         .from(users)
@@ -201,7 +220,7 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
     }
   })
 
-  it('CASE-INSENSITIVE: Resolves student code case-insensitively during login and self-reset', async () => {
+  it('CASE-INSENSITIVE: Resolves student code case-insensitively during login and rejects unauthenticated reset', async () => {
     const orgId = `org_ci_${nanoid(6)}`
     const studentId = `stu_ci_${nanoid(6)}`
     const studentCodeUpper = `2026IT${Math.floor(100 + Math.random() * 900)}`
@@ -239,12 +258,13 @@ describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
       expect(resolved.length).toBeGreaterThan(0)
       expect(resolved[0].userId).toBe(studentId)
 
-      // Self-service reset with lowercase code
+      // Unauthenticated self-service reset is blocked (SEC-02)
       const resetRes = await selfServiceResetPassword({
         identifier: studentCodeLower,
         portal: 'student',
       })
-      expect(resetRes.ok).toBe(true)
+      expect(resetRes.ok).toBe(false)
+      expect(resetRes.message).toContain('bảo mật')
     } finally {
       await db().delete(organizationMemberships).where(eq(organizationMemberships.userId, studentId))
       await db().delete(users).where(eq(users.id, studentId))

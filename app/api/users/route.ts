@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { listDepartments, listDevices, listUsers } from '@/lib/attendance/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const { searchParams } = new URL(request.url)
   const kind = searchParams.get('kind')

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyAttendance } from '@/lib/attendance/server'
-import { requireAuth } from '@/lib/auth/context'
+import { AuthError, requireAuth } from '@/lib/auth/context'
 import { clientIp, verifyLimiter } from '@/lib/rate-limit'
 import { validateRequestBody, verifyAttendanceSchema } from '@/lib/validation'
 
@@ -41,6 +41,9 @@ export async function POST(request: Request) {
     })
     return NextResponse.json(result, { status: result.ok ? 200 : 400 })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ ok: false, confidence: 0, message: error.message }, { status: error.status })
+    }
     const message = error instanceof Error ? error.message : 'Verification failed.'
     return NextResponse.json({ ok: false, confidence: 0, message }, { status: 400 })
   }

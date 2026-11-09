@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getOrganizationMetrics, listSuspicious } from '@/lib/attendance/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 
 export async function GET() {
   const auth = await getCurrentAuth()
@@ -9,6 +9,9 @@ export async function GET() {
   if (auth.role !== 'teacher' && auth.role !== 'admin') {
     return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
   }
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const suspicious = await listSuspicious(auth)
   const metrics = await getOrganizationMetrics(auth, suspicious.length)

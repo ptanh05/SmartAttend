@@ -1,4 +1,4 @@
-import { z, ZodError, type ZodSchema } from 'zod'
+import { ZodError, type ZodSchema } from 'zod'
 import { NextResponse } from 'next/server'
 
 // Legacy validation helpers (kept for 100% backward compatibility)

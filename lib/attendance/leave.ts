@@ -195,7 +195,24 @@ export async function updateLeaveRequestStatus(
 
   // If approved, automatically synchronize attendance record to 'excused'
   if (status === 'approved') {
-    let targetSessionId = row.req.sessionId
+    let targetSessionId: string | null | undefined = row.req.sessionId
+
+    // If a session was attached, make sure it really belongs to the requested course.
+    if (targetSessionId) {
+      const owned = await db()
+        .select({ id: attendanceSessions.id })
+        .from(attendanceSessions)
+        .where(
+          and(
+            eq(attendanceSessions.id, targetSessionId),
+            eq(attendanceSessions.organizationId, auth.organizationId),
+            eq(attendanceSessions.courseId, row.req.courseId),
+          ),
+        )
+        .limit(1)
+
+      if (!owned[0]) targetSessionId = undefined
+    }
 
     // If no specific sessionId was attached, find the session matching the requested date
     if (!targetSessionId) {
@@ -222,7 +239,9 @@ export async function updateLeaveRequestStatus(
         )
       })
 
-      targetSessionId = matchingDateSession?.id ?? courseSessions[0]?.id
+      // Never fall back to an unrelated session. When the course has exactly
+      // one session the mapping is unambiguous, so it is safe to use it.
+      targetSessionId = matchingDateSession?.id ?? (courseSessions.length === 1 ? courseSessions[0].id : null)
     }
 
     if (targetSessionId) {

@@ -1,13 +1,12 @@
 import { config } from 'dotenv'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
-import { and, eq, gte, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   attendanceChallenges,
   attendanceRecords,
   attendanceSessions,
-  auditLogs,
   classEnrollments,
   courseSections,
   courses,

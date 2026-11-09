@@ -36,6 +36,7 @@ import {
   generateAcousticProofToken,
 } from '@/lib/attendance/ultrasonic'
 import {
+  adminResetStudentPassword,
   changeUserPassword,
   importStudents,
   selfServiceResetPassword,
@@ -405,15 +406,38 @@ describe.skipIf(!hasDb)('Hardened Security & Verification Suite', () => {
       expect(auth1After).toBeNull()
       expect(auth2After).toBeNull()
 
-      // Now create another active session and test self-service reset
+      // Now create another active session and verify that an AUTHORIZED reset
+      // (staff-driven) kicks out every active session.
       const session3 = await createAuthSession(userId, membershipId)
       expect(await getAuthContext(session3.token)).not.toBeNull()
 
-      // Self-service reset password kicks out all sessions
-      await selfServiceResetPassword({
+      // SEC-02/SEC-18: unauthenticated student self-service reset must be
+      // rejected outright and must NOT revoke sessions (no takeover surface).
+      const unauth = await selfServiceResetPassword({
         identifier: '2026003',
         portal: 'student',
       })
+      expect(unauth.ok).toBe(false)
+      expect(await getAuthContext(session3.token)).not.toBeNull()
+
+      // The authorized path (staff resets the student password) revokes all
+      // active sessions of that student.
+      const adminAuth: AuthContext = {
+        userId: `adm_${nanoid(6)}`,
+        membershipId: `m_adm_${nanoid(6)}`,
+        organizationId: orgId,
+        role: 'admin',
+        email: `adm_${orgId}@utc.edu.vn`,
+        name: 'Admin',
+        initials: 'AD',
+        department: null,
+        studentCode: null,
+        mustChangePassword: false,
+        organizationName: 'Harden Org 3',
+        organizationPlan: 'Campus Plus',
+      }
+      const adminReset = await adminResetStudentPassword(adminAuth, userId)
+      expect(adminReset.ok).toBe(true)
 
       expect(await getAuthContext(session3.token)).toBeNull()
     } finally {

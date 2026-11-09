@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 import { listRecords, manualCheckInStudent, overrideRecordStatus } from '@/lib/attendance/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import type { AttendanceStatus } from '@/lib/types/domain'
 import { validateRequestBody, manualCheckInSchema, overrideRecordSchema } from '@/lib/validation'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const { searchParams } = new URL(request.url)
   const studentId = searchParams.get('studentId') ?? undefined
@@ -19,6 +22,9 @@ export async function POST(request: Request) {
   if (!auth || (auth.role !== 'teacher' && auth.role !== 'admin')) {
     return NextResponse.json({ ok: false, message: 'Forbidden' }, { status: 403 })
   }
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const validation = await validateRequestBody(request, manualCheckInSchema, 'Dữ liệu điểm danh thủ công không hợp lệ')
   if (!validation.success) {
@@ -36,6 +42,9 @@ export async function PATCH(request: Request) {
   if (!auth || (auth.role !== 'teacher' && auth.role !== 'admin')) {
     return NextResponse.json({ ok: false, message: 'Forbidden' }, { status: 403 })
   }
+
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
 
   const validation = await validateRequestBody(request, overrideRecordSchema, 'Dữ liệu cập nhật điểm danh không hợp lệ')
   if (!validation.success) {

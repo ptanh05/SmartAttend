@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { rotateChallengeForSession, transitionSessionState } from '@/lib/attendance/server'
-import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { getCurrentAuth, requireAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import { clientIp, sessionActionLimiter } from '@/lib/rate-limit'
 import type { SessionStatus } from '@/lib/types/domain'
 import { validateRequestBody, sessionActionSchema } from '@/lib/validation'
@@ -29,7 +29,8 @@ export async function POST(_request: Request, context: RouteContext) {
 
     if (action === 'rotate') {
       const result = await rotateChallengeForSession(auth, id)
-      return NextResponse.json(result, { status: result.ok ? 200 : 400 })
+      const status = result.ok ? 200 : result.message?.includes('Forbidden') ? 403 : 400
+      return NextResponse.json(result, { status })
     }
 
     const nextStatus: Record<string, SessionStatus> = {
@@ -42,21 +43,29 @@ export async function POST(_request: Request, context: RouteContext) {
     if (!status) return NextResponse.json({ ok: false, message: 'Invalid action.' }, { status: 400 })
 
     const result = await transitionSessionState(auth, id, status)
-    return NextResponse.json(result, { status: result.ok ? 200 : 400 })
+    const statusCode = result.ok ? 200 : result.message?.includes('Forbidden') ? 403 : 400
+    return NextResponse.json(result, { status: statusCode })
   } catch (error) {
     console.error('Session action failed', error)
     return NextResponse.json({ ok: false, message: 'Unable to update session.' }, { status: 500 })
   }
 }
 
-export async function GET() {
+export async function GET(_request: Request, context: RouteContext) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false }, { status: 401 })
   if (auth.role === 'student') {
     return NextResponse.json({ ok: false, message: 'Role access denied' }, { status: 403 })
   }
 
+  const pending = await passwordChangePendingResponse(auth)
+  if (pending) return pending
+
+  const { id } = await context.params
   const { getLiveSessionDetails } = await import('@/lib/attendance/server')
-  const live = await getLiveSessionDetails(auth)
+  const live = await getLiveSessionDetails(auth, id)
+  if (!live) {
+    return NextResponse.json({ ok: false, message: 'Session not found or access denied.' }, { status: 404 })
+  }
   return NextResponse.json({ ok: true, live })
 }

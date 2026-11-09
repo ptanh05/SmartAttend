@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { authCookieManager, sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
+import { authCookieManager } from '@/lib/auth/cookies'
 import { CSRF_COOKIE_NAME, generateCsrfToken } from '@/lib/auth/csrf'
 import { verifyPassword } from '@/lib/auth/password'
 import { isLegacyStaffPortal, parsePortal, portalForRole } from '@/lib/auth/portals'

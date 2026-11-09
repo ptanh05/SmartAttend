@@ -110,7 +110,8 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
       // 2. Student submits leave request
       const newReq = await addLeaveRequest(studentAuth, {
         courseId,
-        date: '25/08/2026',
+        sessionId,
+        date: new Date().toISOString().split('T')[0],
         reason: 'Tham gia hoi thao khoa hoc',
         evidenceNote: 'Giay moi so 123/DHGTVT',
       })
@@ -158,12 +159,12 @@ describe.skipIf(!hasDb)('Leave Requests Workflow (PostgreSQL DB)', () => {
       const rejected = await updateLeaveRequestStatus(teacherAuth, newReq.id, 'rejected')
       expect(rejected?.status).toBe('rejected')
     } finally {
+      await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))
       await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId))
       await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId))
       await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId))
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId))
       await db().delete(notifications).where(eq(notifications.organizationId, orgId))
-      await db().delete(leaveRequests).where(eq(leaveRequests.organizationId, orgId))
       await db().delete(courses).where(eq(courses.organizationId, orgId))
       await db().delete(auditLogs).where(eq(auditLogs.organizationId, orgId))
       await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId))

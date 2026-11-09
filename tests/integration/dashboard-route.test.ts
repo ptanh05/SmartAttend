@@ -5,6 +5,7 @@ import type { AuthContext } from '@/lib/auth/session'
 
 vi.mock('@/lib/auth/context', () => ({
   getCurrentAuth: vi.fn(),
+  passwordChangePendingResponse: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/lib/attendance/server', () => ({

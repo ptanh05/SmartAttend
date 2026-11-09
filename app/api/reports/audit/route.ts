@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getCurrentAuth } from '@/lib/auth/context'
+import { getCurrentAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import { listAuditLogs } from '@/lib/attendance/server'
 import { toCsv } from '@/lib/reports/csv'
 
@@ -17,6 +17,9 @@ export async function GET() {
     if (!['staff', 'admin'].includes(auth.role)) {
       return NextResponse.json({ ok: false, message: 'Access denied.' }, { status: 403 })
     }
+
+    const pending = await passwordChangePendingResponse(auth)
+    if (pending) return pending
 
     const events = await listAuditLogs(auth)
 

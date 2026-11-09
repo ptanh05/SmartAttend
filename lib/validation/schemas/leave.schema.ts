@@ -1,5 +1,25 @@
 import { z } from 'zod'
 
+/**
+ * Evidence attachments are stored inline as base64 data URLs. Only small
+ * images are accepted so the request body stays bounded.
+ */
+export const MAX_LEAVE_ATTACHMENT_BYTES = 200 * 1024
+
+const attachmentSchema = z
+  .string()
+  .trim()
+  .max(MAX_LEAVE_ATTACHMENT_BYTES * 2, 'Tệp minh chứng đính kèm vượt quá giới hạn 200KB')
+  .refine(
+    (value) => {
+      const match = /^data:(image\/(png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(value)
+      if (!match) return false
+      // base64 payload length -> decoded byte size (approx. 3/4 of the payload)
+      return Math.ceil((match[3].length * 3) / 4) <= MAX_LEAVE_ATTACHMENT_BYTES
+    },
+    { message: 'Tệp minh chứng phải là ảnh (png/jpg/webp/gif) dạng base64 và không vượt quá 200KB' },
+  )
+
 export const createLeaveRequestSchema = z.object({
   courseId: z
     .string({ error: 'Môn học là bắt buộc' })
@@ -26,11 +46,7 @@ export const createLeaveRequestSchema = z.object({
     .trim()
     .max(500, 'Ghi chú minh chứng tối đa 500 ký tự')
     .optional(),
-  attachmentUrl: z
-    .string()
-    .trim()
-    .max(5000000, 'Tệp minh chứng đính kèm vượt quá giới hạn cho phép')
-    .optional(),
+  attachmentUrl: attachmentSchema.optional(),
 })
 
 export type CreateLeaveRequestInput = z.infer<typeof createLeaveRequestSchema>

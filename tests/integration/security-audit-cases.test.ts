@@ -388,4 +388,83 @@ describe.skipIf(!hasDb)('Production Security & Integrity Audit Test Suite', () =
       await cleanupOrg(orgId, [teacherId, studentId])
     }
   }, 30_000)
+
+  it('SEC-19: a check-in from an unknown device must not silently promote an unrelated device to trusted', async () => {
+    const orgId = `org_dev_${nanoid(6)}`
+    const teacherId = `usr_tdev_${nanoid(6)}`
+    const studentId = `usr_sdev_${nanoid(6)}`
+    const courseId = `crs_dev_${nanoid(6)}`
+    const sectionId = `sec_dev_${nanoid(6)}`
+
+    try {
+      await db().insert(organizations).values({ id: orgId, name: 'Device Policy Org' })
+      await db().insert(attendancePolicies).values({
+        id: nanoid(),
+        organizationId: orgId,
+        requireTrustedDevice: true,
+        challengeTtlSeconds: 60,
+      })
+      await db().insert(users).values([
+        { id: teacherId, email: `t_${orgId}@test.edu`, passwordHash: 'hash', name: 'Teacher Dev', initials: 'TD' },
+        { id: studentId, email: `s_${orgId}@test.edu`, passwordHash: 'hash', name: 'Student Dev', initials: 'SD' },
+      ])
+      await db().insert(organizationMemberships).values([
+        { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', studentCode: '20267777' },
+      ])
+      await db().insert(courses).values({
+        id: courseId,
+        organizationId: orgId,
+        code: 'SEC101',
+        name: 'Secure Systems',
+        department: 'IT',
+        teacherId,
+      })
+      await db().insert(courseSections).values({
+        id: sectionId,
+        organizationId: orgId,
+        courseId,
+        room: 'Lab 1',
+        startsAt: '08:00',
+        endsAt: '10:00',
+      })
+      await db().insert(classEnrollments).values({ sectionId, studentId, organizationId: orgId })
+
+      // A pre-existing, still UNTRUSTED device with a different label.
+      const existingDeviceId = nanoid()
+      await db().insert(devices).values({
+        id: existingDeviceId,
+        organizationId: orgId,
+        studentId,
+        label: 'Phone A',
+        trusted: false,
+      })
+
+      const teacherAuth = authCtx({ userId: teacherId, organizationId: orgId, role: 'teacher' })
+      const studentAuth = authCtx({ userId: studentId, organizationId: orgId, role: 'student' })
+
+      const sessionId = await getOrCreateLiveSession(teacherAuth, sectionId)
+      await transitionSessionState(teacherAuth, sessionId!, 'active')
+      const rotated = await rotateChallengeForSession(teacherAuth, sessionId!)
+      const challengeCode = (rotated as { challenge: string }).challenge
+
+      // Check in from a DIFFERENT device label.
+      const attempt = await verifyAttendance(studentAuth, challengeCode, 'Phone B')
+      expect(attempt.ok).toBe(true)
+
+      const deviceRows = await db()
+        .select()
+        .from(devices)
+        .where(eq(devices.organizationId, orgId))
+
+      // The unrelated device must stay untrusted.
+      const original = deviceRows.find((d) => d.id === existingDeviceId)
+      expect(original?.trusted).toBe(false)
+
+      // The new device is registered as its own row.
+      expect(deviceRows.some((d) => d.label === 'Phone B')).toBe(true)
+    } finally {
+      await cleanupOrg(orgId, [teacherId, studentId])
+    }
+  }, 30_000)
 })

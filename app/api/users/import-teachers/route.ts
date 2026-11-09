@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { importTeachers, parseTeacherCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
-import { validateRequestBody, importTeachersSchema } from '@/lib/validation'
+import { validateRequestBody, importTeachersSchema, MAX_IMPORT_TEACHER_ROWS } from '@/lib/validation'
 
 /**
  * Imports a lecturer roster.
@@ -35,6 +35,13 @@ export async function POST(request: Request) {
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, message: 'No lecturer rows found in import.' }, { status: 400 })
+    }
+
+    if (rows.length > MAX_IMPORT_TEACHER_ROWS) {
+      return NextResponse.json(
+        { ok: false, message: `Số lượng bản ghi (${rows.length}) vượt quá giới hạn tối đa ${MAX_IMPORT_TEACHER_ROWS} giảng viên mỗi lần nhập.` },
+        { status: 400 },
+      )
     }
 
     const result = await importTeachers(auth, rows)

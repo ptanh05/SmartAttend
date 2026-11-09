@@ -33,6 +33,10 @@ export async function PATCH(
       autoStart: body.autoStart !== undefined ? Boolean(body.autoStart) : undefined,
       status: body.status,
     })
+    if (!result.ok) {
+      const status = result.message?.includes('Forbidden') || result.message?.includes('Permission denied') ? 403 : 404
+      return NextResponse.json(result, { status })
+    }
     return NextResponse.json(result)
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
@@ -48,6 +52,10 @@ export async function DELETE(
     const auth = await requireAuth(['teacher', 'admin'])
     const { id } = await params
     const result = await deleteCourseSection(auth, id)
+    if (!result.ok) {
+      const status = result.message?.includes('Forbidden') || result.message?.includes('Permission denied') ? 403 : 404
+      return NextResponse.json(result, { status })
+    }
     return NextResponse.json(result)
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })

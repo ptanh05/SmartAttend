@@ -378,8 +378,12 @@ export function DynamicQRCode({
   useEffect(() => {
     let active = true
     if (!value || value === '------') {
-      setSvg('')
-      return
+      queueMicrotask(() => {
+        if (active) setSvg('')
+      })
+      return () => {
+        active = false
+      }
     }
     QRCode.toString(value, {
       type: 'svg',

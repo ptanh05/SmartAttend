@@ -6,10 +6,8 @@ import {
   changePasswordSchema,
   resetPasswordSchema,
   verifyAttendanceSchema,
-  createLiveSessionSchema,
   sessionActionSchema,
   manualCheckInSchema,
-  overrideRecordSchema,
   suspiciousActionSchema,
   attendancePolicySchema,
   createUserSchema,
@@ -285,6 +283,14 @@ describe('Zod Input Validation Engine', () => {
         rows: [{ studentCode: '20230001', name: 'Nguyễn Văn A' }],
       })
       expect((await validateRequestBody(rowsReq, importStudentsSchema)).success).toBe(true)
+
+      // Test max rows limit (2000 max)
+      const excessiveRows = Array.from({ length: 2001 }, (_, i) => ({
+        studentCode: `2023${String(i).padStart(4, '0')}`,
+        name: `Student ${i}`,
+      }))
+      const overLimitReq = makeMockRequest({ rows: excessiveRows })
+      expect((await validateRequestBody(overLimitReq, importStudentsSchema)).success).toBe(false)
     })
 
     it('validates import teachers schema rows email validation', async () => {
@@ -296,7 +302,7 @@ describe('Zod Input Validation Engine', () => {
   })
 
   describe('Priority 4: Leave, Course, Section, and Domain Schemas', () => {
-    it('validates create leave request schema required fields', async () => {
+    it('validates create leave request schema required fields and attachments', async () => {
       const missingReasonReq = makeMockRequest({
         courseId: 'crs_1',
         date: '2026-11-10',
@@ -311,6 +317,24 @@ describe('Zod Input Validation Engine', () => {
         evidenceNote: 'Đã đính kèm giấy xuất viện',
       })
       expect((await validateRequestBody(validReq, createLeaveRequestSchema)).success).toBe(true)
+
+      // Valid base64 image
+      const validImageReq = makeMockRequest({
+        courseId: 'crs_1',
+        date: '2026-11-10',
+        reason: 'Nghỉ ốm',
+        attachmentUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      })
+      expect((await validateRequestBody(validImageReq, createLeaveRequestSchema)).success).toBe(true)
+
+      // Invalid non-image MIME type (PDF)
+      const invalidMimeReq = makeMockRequest({
+        courseId: 'crs_1',
+        date: '2026-11-10',
+        reason: 'Nghỉ ốm',
+        attachmentUrl: 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjIgMCBvYmoKPDwvTGVuZ3RoIDM',
+      })
+      expect((await validateRequestBody(invalidMimeReq, createLeaveRequestSchema)).success).toBe(false)
     })
 
     it('validates review leave request schema status enum (approved, rejected)', async () => {

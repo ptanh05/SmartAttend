@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
@@ -340,10 +340,11 @@ export async function listClassSessions(organizationId: string, studentId?: stri
     .where(and(eq(attendanceSessions.organizationId, organizationId), eq(attendanceSessions.status, 'active')))
 
   const liveSessionIds = liveSessions.map((item) => item.session.id)
+  const isStudent = Boolean(studentId)
   const challengeBySession = new Map<string, string>()
-  const proofBySession = new Map<string, AcousticProofInput>()
 
-  if (liveSessionIds.length > 0) {
+  // Zero Client Trust (SEC-01): Do not load or leak active challenge codes or acoustic proof to students.
+  if (!isStudent && liveSessionIds.length > 0) {
     const activeChallenges = await db()
       .select()
       .from(attendanceChallenges)
@@ -359,7 +360,6 @@ export async function listClassSessions(organizationId: string, studentId?: stri
       if (!challengeBySession.has(ch.sessionId)) {
         const plain = ch.code ?? (await getActiveChallengePlain(ch.sessionId))
         if (plain) challengeBySession.set(ch.sessionId, plain)
-        proofBySession.set(ch.sessionId, generateAcousticProofToken(ch.sessionId, ch.sequence))
       }
     }
   }
@@ -386,8 +386,9 @@ export async function listClassSessions(organizationId: string, studentId?: stri
       autoStart: row.section.autoStart,
       enrolledCount: enrollmentCountBySection.get(row.section.id) ?? 0,
       status,
-      challenge: live ? challengeBySession.get(live.session.id) ?? '------' : '------',
-      acousticProof: live ? proofBySession.get(live.session.id) : undefined,
+      // For students, challenge is strictly masked to '------' and acousticProof is undefined
+      challenge: isStudent ? '------' : (live ? challengeBySession.get(live.session.id) ?? '------' : '------'),
+      acousticProof: undefined,
     })
   }
 
@@ -482,8 +483,32 @@ async function getActiveChallengePlain(sessionId: string) {
 }
 
 export async function rotateChallengeForSession(auth: AuthContext, sessionId: string) {
-  const session = await getSessionScoped(auth.organizationId, sessionId)
-  if (!session) return { ok: false as const, message: 'Session not found.' }
+  const sessionWithCourse = await db()
+    .select({
+      session: attendanceSessions,
+      courseTeacherId: courses.teacherId,
+    })
+    .from(attendanceSessions)
+    .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .where(
+      and(
+        eq(attendanceSessions.id, sessionId),
+        eq(attendanceSessions.organizationId, auth.organizationId),
+      ),
+    )
+    .limit(1)
+
+  const sessionRow = sessionWithCourse[0]
+  if (!sessionRow) return { ok: false as const, message: 'Session not found.' }
+
+  if (auth.role === 'teacher') {
+    const isOwner = sessionRow.session.teacherId === auth.userId || sessionRow.courseTeacherId === auth.userId
+    if (!isOwner) {
+      return { ok: false as const, message: 'Forbidden: You can only rotate challenges for sessions you teach.' }
+    }
+  }
+
+  const session = sessionRow.session
   if (session.status !== 'active') return { ok: false as const, message: 'Session is not active.' }
 
   const policy = await getPolicy(auth.organizationId)
@@ -528,9 +553,32 @@ async function getSessionScoped(organizationId: string, sessionId: string) {
 }
 
 export async function transitionSessionState(auth: AuthContext, sessionId: string, next: SessionStatus) {
-  const session = await getSessionScoped(auth.organizationId, sessionId)
-  if (!session) return { ok: false as const, message: 'Session not found.' }
+  const sessionWithCourse = await db()
+    .select({
+      session: attendanceSessions,
+      courseTeacherId: courses.teacherId,
+    })
+    .from(attendanceSessions)
+    .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .where(
+      and(
+        eq(attendanceSessions.id, sessionId),
+        eq(attendanceSessions.organizationId, auth.organizationId),
+      ),
+    )
+    .limit(1)
 
+  const sessionRow = sessionWithCourse[0]
+  if (!sessionRow) return { ok: false as const, message: 'Session not found.' }
+
+  if (auth.role === 'teacher') {
+    const isOwner = sessionRow.session.teacherId === auth.userId || sessionRow.courseTeacherId === auth.userId
+    if (!isOwner) {
+      return { ok: false as const, message: 'Forbidden: You can only control sessions for courses or classes you teach.' }
+    }
+  }
+
+  const session = sessionRow.session
   const currentNorm = (session.status === 'active' ? 'active' : session.status) as SessionStatus
   const nextNorm = (next === 'live' ? 'active' : next) as SessionStatus
 
@@ -910,7 +958,10 @@ export async function verifyAttendance(
   await appendAudit(auth, `Verified attendance (${verificationMethod})`, live.id, 'info')
 
   // Track/update the device used for this verification.
-  const knownDevice = deviceRows.find((device) => device.label === deviceLabel) ?? deviceRows[0]
+  // SEC: only the device that actually matches the reported label may be
+  // promoted to "trusted". Falling back to an unrelated row would let a
+  // student check in from a second device and silently trust the first one.
+  const knownDevice = deviceRows.find((device) => device.label === deviceLabel)
   if (knownDevice) {
     await db().update(devices).set({ trusted: true, lastSeenAt: verifiedAt }).where(eq(devices.id, knownDevice.id))
   } else {
@@ -959,11 +1010,38 @@ export async function verifyAttendance(
 
 export async function listRecords(auth: AuthContext, studentId?: string) {
   const targetStudent = auth.role === 'student' ? auth.userId : studentId
-  const where = targetStudent
-    ? and(eq(attendanceRecords.organizationId, auth.organizationId), eq(attendanceRecords.studentId, targetStudent))
-    : eq(attendanceRecords.organizationId, auth.organizationId)
+  const conditions = [eq(attendanceRecords.organizationId, auth.organizationId)]
+  if (targetStudent) {
+    conditions.push(eq(attendanceRecords.studentId, targetStudent))
+  }
 
-  const rows = await db().select().from(attendanceRecords).where(where).orderBy(desc(attendanceRecords.createdAt))
+  // SEC-12: Teachers must only see attendance records of students enrolled in
+  // the classes they teach — never the whole organization roster.
+  if (auth.role === 'teacher') {
+    const ownedSectionIds = await listOwnedSectionIds(auth)
+    if (ownedSectionIds.size === 0) return []
+
+    const ownedSessionIds = (
+      await db()
+        .select({ id: attendanceSessions.id })
+        .from(attendanceSessions)
+        .where(
+          and(
+            eq(attendanceSessions.organizationId, auth.organizationId),
+            inArray(attendanceSessions.sectionId, Array.from(ownedSectionIds)),
+          ),
+        )
+    ).map((r) => r.id)
+
+    if (ownedSessionIds.length === 0) return []
+    conditions.push(inArray(attendanceRecords.sessionId, ownedSessionIds))
+  }
+
+  const rows = await db()
+    .select()
+    .from(attendanceRecords)
+    .where(and(...conditions))
+    .orderBy(desc(attendanceRecords.createdAt))
 
   return rows.map((row) => ({
     id: row.id,
@@ -995,6 +1073,10 @@ export type ReportRecordRow = {
  */
 export async function listReportRecords(auth: AuthContext, courseId?: string): Promise<ReportRecordRow[]> {
   const conditions = [eq(attendanceRecords.organizationId, auth.organizationId)]
+  // Enforce teacher authorization boundary: teachers can only view reports for courses they teach
+  if (auth.role === 'teacher') {
+    conditions.push(eq(courses.teacherId, auth.userId))
+  }
   if (courseId) conditions.push(eq(courses.id, courseId))
 
   const rows = await db()
@@ -1026,11 +1108,25 @@ export async function listReportRecords(auth: AuthContext, courseId?: string): P
 }
 
 export async function getLiveSessionDetails(auth: AuthContext, specificSessionId?: string) {
+  // Live session management details are restricted to teachers and administrators; students cannot inspect live session controls
+  if (auth.role === 'student') return null
+
   await syncScheduledAttendance(auth.organizationId)
 
-  const whereClause = specificSessionId
+  let whereClause = specificSessionId
     ? and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.id, specificSessionId))
     : and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))
+
+  // SEC-07: Scope live session retrieval by teacherId to prevent cross-teacher collision
+  if (auth.role === 'teacher') {
+    whereClause = and(
+      whereClause,
+      or(
+        eq(attendanceSessions.teacherId, auth.userId),
+        eq(courses.teacherId, auth.userId),
+      ),
+    )
+  }
 
   const rows = await db()
     .select({
@@ -1175,14 +1271,55 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
   }
 }
 
+/**
+ * Resolves the class sections a teacher is allowed to administer.
+ *
+ * A teacher owns a section when they are the assigned lecturer of the parent
+ * course (`courses.teacherId`). Administrators are not restricted and receive
+ * every section of their organization.
+ */
+async function listOwnedSectionIds(auth: AuthContext): Promise<Set<string>> {
+  if (auth.role === 'admin') {
+    const rows = await db()
+      .select({ id: courseSections.id })
+      .from(courseSections)
+      .where(eq(courseSections.organizationId, auth.organizationId))
+    return new Set(rows.map((r) => r.id))
+  }
+
+  const rows = await db()
+    .select({ id: courseSections.id })
+    .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
+    .where(
+      and(
+        eq(courseSections.organizationId, auth.organizationId),
+        eq(courses.teacherId, auth.userId),
+      ),
+    )
+  return new Set(rows.map((r) => r.id))
+}
+
 export async function getOrCreateLiveSession(auth: AuthContext, sectionId: string) {
   const sectionRows = await db()
-    .select()
+    .select({
+      section: courseSections,
+      teacherId: courses.teacherId,
+    })
     .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
     .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+    .limit(1)
 
-  const section = sectionRows[0]
-  if (!section) return null
+  const sectionRow = sectionRows[0]
+  if (!sectionRow) return null
+
+  // Ensure teacher can only create/retrieve live sessions for their own assigned courses
+  if (auth.role === 'teacher' && sectionRow.teacherId !== auth.userId) {
+    return null
+  }
+
+  const section = sectionRow.section
 
   const existing = await db()
     .select()
@@ -1211,9 +1348,36 @@ export async function getOrCreateLiveSession(auth: AuthContext, sectionId: strin
 }
 
 export async function listUsers(auth: AuthContext, role?: string) {
-  const where = role
-    ? and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.role, role))
-    : eq(organizationMemberships.organizationId, auth.organizationId)
+  const conditions = [eq(organizationMemberships.organizationId, auth.organizationId)]
+  if (role) {
+    conditions.push(eq(organizationMemberships.role, role))
+  }
+
+  // SEC-15: Teachers must not receive the full organization directory. They only
+  // see the students enrolled in the classes they teach (plus themselves).
+  if (auth.role === 'teacher') {
+    const ownedSectionIds = await listOwnedSectionIds(auth)
+    const ownedStudentIds = new Set<string>()
+
+    if (ownedSectionIds.size > 0) {
+      const enrolled = await db()
+        .select({ studentId: classEnrollments.studentId })
+        .from(classEnrollments)
+        .where(
+          and(
+            eq(classEnrollments.organizationId, auth.organizationId),
+            eq(classEnrollments.status, 'active'),
+            inArray(classEnrollments.sectionId, Array.from(ownedSectionIds)),
+          ),
+        )
+      for (const row of enrolled) ownedStudentIds.add(row.studentId)
+    }
+
+    const allowedUserIds = new Set<string>([auth.userId, ...ownedStudentIds])
+    if (allowedUserIds.size === 0) return []
+
+    conditions.push(inArray(organizationMemberships.userId, Array.from(allowedUserIds)))
+  }
 
   const rows = await db()
     .select({
@@ -1227,7 +1391,7 @@ export async function listUsers(auth: AuthContext, role?: string) {
     })
     .from(organizationMemberships)
     .innerJoin(users, eq(organizationMemberships.userId, users.id))
-    .where(where)
+    .where(and(...conditions))
     .orderBy(desc(organizationMemberships.createdAt), desc(users.createdAt))
 
   return rows.map((row) => ({
@@ -1289,12 +1453,18 @@ export async function enrollStudentsToSection(
   }
 
   const sec = await db()
-    .select({ id: courseSections.id, courseId: courseSections.courseId })
+    .select({ id: courseSections.id, courseId: courseSections.courseId, teacherId: courses.teacherId })
     .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
     .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+    .limit(1)
 
   if (!sec[0]) {
     return { ok: false, enrolledCount: 0, message: 'Course section not found.' }
+  }
+
+  if (auth.role === 'teacher' && sec[0].teacherId !== auth.userId) {
+    return { ok: false, enrolledCount: 0, message: 'Forbidden: You can only manage enrollment for courses you teach.' }
   }
 
   const cleanIdentifiers = identifiers.map((id) => id.trim()).filter(Boolean)
@@ -1371,12 +1541,18 @@ export async function removeStudentFromSection(
   }
 
   const sec = await db()
-    .select({ id: courseSections.id, courseId: courseSections.courseId })
+    .select({ id: courseSections.id, courseId: courseSections.courseId, teacherId: courses.teacherId })
     .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
     .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+    .limit(1)
 
   if (!sec[0]) {
     return { ok: false, message: 'Course section not found.' }
+  }
+
+  if (auth.role === 'teacher' && sec[0].teacherId !== auth.userId) {
+    return { ok: false, message: 'Forbidden: You can only manage enrollment for courses you teach.' }
   }
 
   await db()
@@ -1735,6 +1911,19 @@ export async function createCourseSection(
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
   }
+
+  // Teacher ownership check: Teacher can only create sections for their own course
+  if (auth.role === 'teacher') {
+    const course = await db()
+      .select({ teacherId: courses.teacherId })
+      .from(courses)
+      .where(and(eq(courses.id, data.courseId), eq(courses.organizationId, auth.organizationId)))
+      .limit(1)
+    if (!course[0] || course[0].teacherId !== auth.userId) {
+      return { ok: false as const, message: 'Forbidden: You can only create sections for courses you teach.' }
+    }
+  }
+
   const sectionId = `sec_${nanoid(10)}`
   await db().insert(courseSections).values({
     id: sectionId,
@@ -1813,6 +2002,32 @@ export async function updateCourseSection(
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
   }
+
+  // Teacher ownership check (SEC-04): Teacher can only update their own sections
+  const existingSection = await db()
+    .select({
+      id: courseSections.id,
+      courseId: courseSections.courseId,
+      teacherId: courses.teacherId,
+    })
+    .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
+    .where(
+      and(
+        eq(courseSections.id, sectionId),
+        eq(courseSections.organizationId, auth.organizationId),
+      ),
+    )
+    .limit(1)
+
+  if (!existingSection[0]) {
+    return { ok: false as const, message: 'Section not found.' }
+  }
+
+  if (auth.role === 'teacher' && existingSection[0].teacherId !== auth.userId) {
+    return { ok: false as const, message: 'Forbidden: You can only update sections for courses you teach.' }
+  }
+
   await db()
     .update(courseSections)
     .set(data)
@@ -1825,6 +2040,31 @@ export async function updateCourseSection(
 export async function deleteCourseSection(auth: AuthContext, sectionId: string) {
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
+  }
+
+  // Teacher ownership check (SEC-03): Teacher can only delete their own sections
+  const existingSection = await db()
+    .select({
+      id: courseSections.id,
+      courseId: courseSections.courseId,
+      teacherId: courses.teacherId,
+    })
+    .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
+    .where(
+      and(
+        eq(courseSections.id, sectionId),
+        eq(courseSections.organizationId, auth.organizationId),
+      ),
+    )
+    .limit(1)
+
+  if (!existingSection[0]) {
+    return { ok: false as const, message: 'Section not found.' }
+  }
+
+  if (auth.role === 'teacher' && existingSection[0].teacherId !== auth.userId) {
+    return { ok: false as const, message: 'Forbidden: You can only delete sections for courses you teach.' }
   }
 
   // Cascade cleanup all attendance sessions, challenges and records belonging to this section
@@ -1996,6 +2236,11 @@ export async function getCourseAttendanceSummary(
     throw new Error('Course not found.')
   }
 
+  // Teacher authorization check: teacher can only view summary for courses they teach
+  if (auth.role === 'teacher' && course.teacherId !== auth.userId) {
+    throw new Error('Forbidden: You can only view attendance summary for courses you teach.')
+  }
+
   const conductedSessions = await db()
     .select()
     .from(attendanceSessions)
@@ -2037,29 +2282,48 @@ export async function getCourseAttendanceSummary(
   }
 
   const sessionIds = conductedSessions.map((s) => s.id)
-  let allRecords: { studentId: string; status: string }[] = []
+  // Aggregate in SQL/DB scope instead of scanning every record of the org:
+  // only rows belonging to the sessions of this course are fetched, and they
+  // are indexed by student id so the per-student loop is O(1).
+  const recordsByStudent = new Map<string, { present: number; late: number; excused: number; absent: number }>()
   if (sessionIds.length > 0) {
     const rawRecords = await db()
       .select({
         studentId: attendanceRecords.studentId,
         status: attendanceRecords.status,
-        sessionId: attendanceRecords.sessionId,
       })
       .from(attendanceRecords)
-      .where(and(eq(attendanceRecords.organizationId, auth.organizationId)))
-    allRecords = rawRecords.filter((r) => sessionIds.includes(r.sessionId))
+      .where(
+        and(
+          eq(attendanceRecords.organizationId, auth.organizationId),
+          inArray(attendanceRecords.sessionId, sessionIds),
+        ),
+      )
+
+    for (const record of rawRecords) {
+      let bucket = recordsByStudent.get(record.studentId)
+      if (!bucket) {
+        bucket = { present: 0, late: 0, excused: 0, absent: 0 }
+        recordsByStudent.set(record.studentId, bucket)
+      }
+      if (record.status === 'present') bucket.present += 1
+      else if (record.status === 'late') bucket.late += 1
+      else if (record.status === 'excused') bucket.excused += 1
+      else if (record.status === 'absent') bucket.absent += 1
+    }
   }
 
   const studentSummaryList: CourseAttendanceStudentSummary[] = []
   for (const { student, membership } of uniqueStudents.values()) {
-    const studentRecords = allRecords.filter((r) => r.studentId === student.id)
-    const presentCount = studentRecords.filter((r) => r.status === 'present').length
-    const lateCount = studentRecords.filter((r) => r.status === 'late').length
-    const excusedCount = studentRecords.filter((r) => r.status === 'excused').length
-    const unexcusedCount = studentRecords.filter((r) => r.status === 'absent').length
+    const bucket = recordsByStudent.get(student.id) ?? { present: 0, late: 0, excused: 0, absent: 0 }
+    const presentCount = bucket.present
+    const lateCount = bucket.late
+    const excusedCount = bucket.excused
+    const unexcusedCount = bucket.absent
 
     const attendedCount = presentCount + lateCount + excusedCount
-    const totalCount = Math.max(totalConducted, studentRecords.length)
+    const studentRecordCount = presentCount + lateCount + excusedCount + unexcusedCount
+    const totalCount = Math.max(totalConducted, studentRecordCount)
     const rate = totalCount > 0 ? Math.round((attendedCount / totalCount) * 1000) / 10 : 100
 
     let warningStatus: AttendanceWarningStatus = 'good'

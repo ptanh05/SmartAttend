@@ -12,7 +12,11 @@ export const UTF8_BOM = '\uFEFF'
 
 export function escapeCsvCell(value: unknown): string {
   const str = value === null || value === undefined ? '' : String(value)
-  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
+  // Mitigate CSV / Excel Formula Injection (DDE injection) including whitespace-prefixed formulas
+  const trimmed = str.replace(/^[ \t\r\n]+/, '')
+  const isFormula = /^[=+\-@\t\r]/.test(str) || /^[=+\-@]/.test(trimmed)
+  const sanitized = isFormula ? `'${str}` : str
+  return /[",\r\n]/.test(sanitized) ? `"${sanitized.replace(/"/g, '""')}"` : sanitized
 }
 
 export type CsvColumn = { header: string; key: string }
