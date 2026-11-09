@@ -16,7 +16,7 @@ config({ path: '.env' })
 const hasDb = Boolean(process.env.DATABASE_URL)
 
 describe.skipIf(!hasDb)('Password Reset & Recovery Integration Tests', () => {
-  it('allows a student to self-reset password to default Sv@{studentCode} with mustChangePassword=true', async () => {
+  it('allows a student to self-reset password to their student code with mustChangePassword=true', async () => {
     const orgId = `org_test_${nanoid(6)}`
     const studentUserId = `stu_test_${nanoid(6)}`
     const studentCode = `2026${Math.floor(1000 + Math.random() * 9000)}`

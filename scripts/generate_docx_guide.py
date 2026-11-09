@@ -211,11 +211,11 @@ def build_document(output_path):
     acc_widths = [1.2, 1.8, 1.2, 1.3, 1.5]
     
     acc_rows = [
-        ("Quản trị viên (Admin)", "admin@utc.edu.vn", "Admin@123456", "Toàn trường UTC", "Toàn quyền quản trị, nhập CSV sinh viên, phân quyền"),
-        ("Giảng viên (Teacher)", "teacher@utc.edu.vn", "Teacher@123456", "IT001 - An ninh mạng (P.302-A1)", "Mở điểm danh, phát sóng siêu âm, duyệt nghỉ phép, xuất CSV"),
-        ("Sinh viên 1 (Student)", "20260001", "Sv@20260001", "IT001 - An ninh mạng", "Đã đăng ký thiết bị tin cậy và Face ID / WebAuthn"),
-        ("Sinh viên 2 (Student)", "20260002", "Sv@20260002", "IT001 - An ninh mạng", "Sinh viên kiểm thử tính năng xin nghỉ phép & điểm danh bù"),
-        ("Giảng viên độc lập", "tester.20261006@smartattend.edu.vn", "SmartAttend@Test2026", "Lớp độc lập", "Dùng để kiểm thử độc lập ngoài dữ liệu mẫu UTC")
+        ("Quản trị viên (Admin)", "admin@utc.edu.vn", "Admin@123456", "Toàn trường UTC", "Toàn quyền quản trị, nhập CSV sinh viên & giảng viên, phân quyền"),
+        ("Giảng viên (Teacher)", "teacher@utc.edu.vn", "Gv@123456", "IT001 - An ninh mạng (P.302-A1)", "Được Admin import vào hệ thống; mở điểm danh, phát sóng siêu âm, duyệt nghỉ phép, xuất CSV"),
+        ("Sinh viên 1 (Student)", "20260001", "20260001", "IT001 - An ninh mạng", "Đã đăng ký thiết bị tin cậy và Face ID / WebAuthn"),
+        ("Sinh viên 2 (Student)", "20260002", "20260002", "IT001 - An ninh mạng", "Sinh viên kiểm thử tính năng xin nghỉ phép & điểm danh bù"),
+        ("Giảng viên độc lập", "tester.20261006@utc.edu.vn", "Gv@123456", "Lớp độc lập", "Dùng để kiểm thử độc lập ngoài dữ liệu mẫu UTC")
     ]
     
     for r_idx, row_data in enumerate(acc_rows):
@@ -228,7 +228,8 @@ def build_document(output_path):
     add_callout(
         doc,
         "Sinh viên có thể đăng nhập bằng Mã sinh viên (chữ hoa hay chữ thường đều được chấp nhận, ví dụ: '20260001' hoặc 'sv01'). "
-        "Mật khẩu ban đầu của sinh viên luôn tuân theo quy tắc bảo mật: Sv@{MãSinhViên}.",
+        "Tài khoản và mật khẩu ban đầu của sinh viên luôn trùng nhau và bằng chính Mã sinh viên. "
+        "Giảng viên được Admin import vào hệ thống, đăng nhập bằng email trường (đuôi @utc.edu.vn) với mật khẩu chung Gv@123456.",
         "QUY TẮC ĐĂNG NHẬP SINH VIÊN:"
     )
 
@@ -245,7 +246,7 @@ def build_document(output_path):
     tc_widths = [1.0, 2.7, 2.4, 0.6]
     
     tc_auth_rows = [
-        ("TC-AUTH-01", "Đăng nhập Sinh viên bằng Mã sinh viên hoa/thường:\n1. Vào cổng Sinh viên.\n2. Nhập mã thường '20260001' và pass 'Sv@20260001'.\n3. Bấm Đăng nhập.", "Đăng nhập thành công vào màn hình tổng quan sinh viên UTC, hiển thị đúng thông tin cá nhân và thời khóa biểu.", "PASS"),
+        ("TC-AUTH-01", "Đăng nhập Sinh viên bằng Mã sinh viên hoa/thường:\n1. Vào cổng Sinh viên.\n2. Nhập mã thường '20260001' và pass '20260001'.\n3. Bấm Đăng nhập.", "Đăng nhập thành công vào màn hình tổng quan sinh viên UTC, hiển thị đúng thông tin cá nhân và thời khóa biểu.", "PASS"),
         ("TC-AUTH-02", "Đăng nhập Cán bộ / Giảng viên:\n1. Vào cổng Cán bộ / Giảng viên.\n2. Nhập 'teacher@utc.edu.vn' và pass 'Teacher@123456'.\n3. Bấm Đăng nhập.", "Hệ thống cấp phiên HttpOnly cookie, chuyển vào Không gian Giảng viên với đầy đủ menu chuyên môn.", "PASS"),
         ("TC-AUTH-03", "Chống chiếm đoạt tài khoản Staff (Takeover Protection):\n1. Tại cổng Giảng viên, bấm 'Quên mật khẩu?'.\n2. Nhập email 'teacher@utc.edu.vn' hoặc 'admin@utc.edu.vn'.", "Hệ thống từ chối đổi mật khẩu công khai, hiển thị thông báo hướng dẫn liên hệ Quản trị viên UTC để đảm bảo an toàn.", "PASS"),
         ("TC-AUTH-04", "Đổi mật khẩu & Thu hồi token cũ (Session Revocation):\n1. Đăng nhập Giảng viên trên 2 trình duyệt A và B.\n2. Trên trình duyệt A, đổi mật khẩu mới.\n3. F5 lại trình duyệt B.", "Phiên cũ trên trình duyệt B bị hủy ngay lập tức, bắt buộc đăng nhập lại bằng mật khẩu mới.", "PASS"),
@@ -349,7 +350,7 @@ def build_document(output_path):
     tc_adm_table = doc.add_table(rows=4, cols=4)
     tc_adm_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     tc_adm_rows = [
-        ("TC-ADM-01", "Nhập danh sách sinh viên bằng CSV UTC:\n1. Admin vào 'Quản lý sinh viên' -> 'Nhập từ CSV'.\n2. Chọn file CSV chứa cột studentCode, name, email.\n3. Bấm 'Nhập dữ liệu'.", "Hệ thống tạo tài khoản sinh viên, cấp mật khẩu mặc định Sv@{MãSV} và tự động ghi danh vào lớp học phần.", "PASS"),
+        ("TC-ADM-01", "Nhập danh sách sinh viên bằng CSV UTC:\n1. Admin vào 'Quản lý người dùng' -> 'Import sinh viên'.\n2. Chọn file CSV chứa cột studentCode, name, email.\n3. Bấm 'Nhập dữ liệu'.", "Hệ thống tạo tài khoản sinh viên, cấp mật khẩu mặc định bằng chính Mã sinh viên và tự động ghi danh vào lớp học phần.", "PASS"),
         ("TC-ADM-02", "Khóa và Cấp lại mật khẩu sinh viên:\n1. Admin tìm kiếm sinh viên, bấm 'Đặt lại mật khẩu'.\n2. Mật khẩu được reset về mặc định và yêu cầu đổi mật khẩu ở lần đăng nhập tiếp theo.", "Mật khẩu sinh viên được khôi phục, cờ mustChangePassword bật, toàn bộ phiên cũ bị đăng xuất.", "PASS"),
         ("TC-ADM-03", "Xóa lớp học phần có dữ liệu điểm danh (Cascade Cleanup):\n1. Giảng viên / Admin xóa lớp học phần đã từng mở điểm danh.", "Hệ thống tự động dọn dẹp phân cấp theo thứ tự khóa ngoại, xóa thành công mà không văng lỗi 500 CSDL.", "PASS"),
     ]

@@ -2792,7 +2792,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     try {
       const res = await api.resetStudentPassword(studentId)
       if (res.ok) {
-        setNotice(res.message || t('teacher.resetPasswordSuccess', { name: studentName, password: `Sv@${studentCode}` }))
+        setNotice(res.message || t('teacher.resetPasswordSuccess', { name: studentName, password: studentCode }))
       } else {
         setNotice(res.message || t('teacher.resetPasswordError'))
       }
