@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
@@ -74,7 +74,208 @@ export async function listCourses(organizationId: string): Promise<Course[]> {
   }))
 }
 
+/**
+ * Synchronizes scheduled attendance sessions for the given organization:
+ * 1. Closes any active sessions that have exceeded the 3-minute attendance window
+ *    or were left active from a previous day.
+ * 2. 10 minutes before class: Dispatches reminder notification to all enrolled students
+ *    informing them that attendance will automatically open from startsAt to startsAt+3m.
+ * 3. At class start time (startsAt <= now < startsAt + 3m): Automatically activates
+ *    the attendance session if section.autoStart is true and the session was not already started today.
+ * 4. USER REQUIREMENT: When a teacher manually starts a session for today,
+ *    any scheduled auto-start and 10-minute notification for today are cancelled / will not trigger.
+ */
+export async function syncScheduledAttendance(organizationId: string) {
+  try {
+    const ATTENDANCE_WINDOW_MS = 3 * 60 * 1000 // 3 minutes
+
+    // Determine current time in Vietnam Time (UTC+7)
+    const now = new Date()
+    const vnOffsetMs = 7 * 60 * 60 * 1000
+    const vnTime = new Date(now.getTime() + (now.getTimezoneOffset() * 60 * 1000) + vnOffsetMs)
+    const day = vnTime.getDay()
+    const currentDayOfWeek = day === 0 ? 7 : day // 1 = Monday, ..., 7 = Sunday
+    const currentMinutes = vnTime.getHours() * 60 + vnTime.getMinutes()
+    const todayStartUtc = new Date(Date.UTC(vnTime.getFullYear(), vnTime.getMonth(), vnTime.getDate()) - vnOffsetMs)
+
+    // 1. Auto-close any active sessions older than 3 minutes or from previous days
+    const activeSessions = await db()
+      .select({
+        id: attendanceSessions.id,
+        startedAt: attendanceSessions.startedAt,
+        createdAt: attendanceSessions.createdAt,
+        teacherId: attendanceSessions.teacherId,
+        sectionId: attendanceSessions.sectionId,
+      })
+      .from(attendanceSessions)
+      .where(
+        and(
+          eq(attendanceSessions.organizationId, organizationId),
+          eq(attendanceSessions.status, 'active'),
+        ),
+      )
+
+    for (const session of activeSessions) {
+      const startTime = session.startedAt ? new Date(session.startedAt).getTime() : new Date(session.createdAt).getTime()
+      if (Date.now() - startTime >= ATTENDANCE_WINDOW_MS || startTime < todayStartUtc.getTime()) {
+        await db()
+          .update(attendanceSessions)
+          .set({ status: 'closed', closedAt: new Date() })
+          .where(eq(attendanceSessions.id, session.id))
+
+        await finalizeAbsentRecords(organizationId, session.id)
+
+        await db().insert(auditLogs).values({
+          id: nanoid(),
+          organizationId,
+          actorId: session.teacherId,
+          actorName: 'Hệ thống tự động',
+          action: 'Tự động đóng điểm danh sau 3 phút',
+          target: session.id,
+          severity: 'info',
+          metadata: { reason: '3_minute_window_expired', autoClosed: true },
+        }).catch(() => {})
+      }
+    }
+
+    // 2. Query today's scheduled sections
+    const todaySections = await db()
+      .select({
+        section: courseSections,
+        course: courses,
+      })
+      .from(courseSections)
+      .innerJoin(courses, eq(courseSections.courseId, courses.id))
+      .where(
+        and(
+          eq(courseSections.organizationId, organizationId),
+          eq(courseSections.dayOfWeek, currentDayOfWeek),
+          eq(courseSections.status, 'scheduled'),
+        ),
+      )
+
+    for (const { section, course } of todaySections) {
+      if (!section.startsAt || typeof section.startsAt !== 'string') continue
+      const [startH, startM] = section.startsAt.split(':').map(Number)
+      if (isNaN(startH) || isNaN(startM)) continue
+
+      const startsAtMinutes = startH * 60 + startM
+      const notifyBeforeMinutes = startsAtMinutes - 10
+      const autoCloseMinutes = startsAtMinutes + 3
+
+      const endWindowH = Math.floor(autoCloseMinutes / 60)
+      const endWindowM = autoCloseMinutes % 60
+      const endWindowTimeStr = `${String(endWindowH).padStart(2, '0')}:${String(endWindowM).padStart(2, '0')}`
+
+      // Check if ANY attendance session was already started or completed today for this section
+      const sessionsToday = await db()
+        .select({ id: attendanceSessions.id, status: attendanceSessions.status })
+        .from(attendanceSessions)
+        .where(
+          and(
+            eq(attendanceSessions.organizationId, organizationId),
+            eq(attendanceSessions.sectionId, section.id),
+            gte(attendanceSessions.createdAt, todayStartUtc),
+          ),
+        )
+
+      // USER REQUIREMENT:
+      // "khi giảng viên bật rồi thì lịch đã set từ trước kia sẽ không phát được nữa"
+      // If a session has already been started today (either active or closed),
+      // SKIP the scheduled 10-minute notification and scheduled auto-start!
+      if (sessionsToday.length > 0) {
+        continue
+      }
+
+      // 3. Within 10 minutes before class starts: Send advance notification to enrolled students
+      if (currentMinutes >= notifyBeforeMinutes && currentMinutes < startsAtMinutes) {
+        const notifTitle = `Thông báo mở điểm danh tự động: ${course.code} - ${course.name}`
+        const existingNotif = await db()
+          .select({ id: notifications.id })
+          .from(notifications)
+          .where(
+            and(
+              eq(notifications.organizationId, organizationId),
+              gte(notifications.createdAt, todayStartUtc),
+              eq(notifications.title, notifTitle),
+            ),
+          )
+          .limit(1)
+
+        if (existingNotif.length === 0) {
+          const enrolled = await db()
+            .select({ studentId: classEnrollments.studentId })
+            .from(classEnrollments)
+            .where(
+              and(
+                eq(classEnrollments.sectionId, section.id),
+                eq(classEnrollments.status, 'active'),
+              ),
+            )
+
+          const notifRecords = enrolled.map((e) => ({
+            id: nanoid(),
+            organizationId,
+            userId: e.studentId,
+            title: notifTitle,
+            body: `Buổi học tại phòng ${section.room} bắt đầu lúc ${section.startsAt}. Mã điểm danh sẽ tự động mở từ ${section.startsAt} đến ${endWindowTimeStr} (kéo dài 3 phút). Sinh viên vui lòng chuẩn bị có mặt để điểm danh.`,
+            createdAt: new Date(),
+          }))
+
+          if (notifRecords.length > 0) {
+            await db().insert(notifications).values(notifRecords).catch(() => {})
+          }
+        }
+      }
+
+      // 4. Exactly at class start time (within 3 minutes): Auto-start session if autoStart is true
+      if (section.autoStart && currentMinutes >= startsAtMinutes && currentMinutes < autoCloseMinutes) {
+        const sessionId = nanoid()
+        await db().insert(attendanceSessions).values({
+          id: sessionId,
+          organizationId,
+          sectionId: section.id,
+          courseId: section.courseId,
+          teacherId: course.teacherId,
+          status: 'active',
+          startedAt: new Date(),
+        })
+
+        const autoAuth: AuthContext = {
+          userId: course.teacherId,
+          membershipId: '',
+          organizationId,
+          role: 'teacher',
+          email: '',
+          name: 'Hệ thống tự động',
+          initials: 'HT',
+          department: '',
+          studentCode: null,
+          mustChangePassword: false,
+          organizationName: '',
+          organizationPlan: '',
+        }
+        await rotateChallengeForSession(autoAuth, sessionId).catch(() => {})
+
+        await db().insert(auditLogs).values({
+          id: nanoid(),
+          organizationId,
+          actorId: course.teacherId,
+          actorName: 'Hệ thống tự động',
+          action: `Tự động mở điểm danh theo lịch (3 phút: ${section.startsAt} - ${endWindowTimeStr})`,
+          target: sessionId,
+          severity: 'info',
+          metadata: { sectionId: section.id, autoStart: true, windowMinutes: 3 },
+        }).catch(() => {})
+      }
+    }
+  } catch (err) {
+    console.error('Error in syncScheduledAttendance:', err)
+  }
+}
+
 export async function listClassSessions(organizationId: string, studentId?: string): Promise<ClassSession[]> {
+  await syncScheduledAttendance(organizationId)
   let enrolledSectionIds: Set<string> | null = null
   if (studentId) {
     const studentEnrollments = await db()
@@ -341,7 +542,7 @@ export async function transitionSessionState(auth: AuthContext, sessionId: strin
     status: nextNorm,
   }
 
-  if (nextNorm === 'active' && !session.startedAt) updates.startedAt = new Date()
+  if (nextNorm === 'active') updates.startedAt = new Date()
   if (nextNorm === 'closed' || nextNorm === 'expired') updates.closedAt = new Date()
 
   await db().update(attendanceSessions).set(updates).where(eq(attendanceSessions.id, sessionId))
@@ -825,6 +1026,8 @@ export async function listReportRecords(auth: AuthContext, courseId?: string): P
 }
 
 export async function getLiveSessionDetails(auth: AuthContext, specificSessionId?: string) {
+  await syncScheduledAttendance(auth.organizationId)
+
   const whereClause = specificSessionId
     ? and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.id, specificSessionId))
     : and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))
@@ -843,6 +1046,26 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
 
   const row = rows[0]
   if (!row) return null
+
+  // 3-minute attendance window enforcement
+  const ATTENDANCE_WINDOW_MS = 3 * 60 * 1000
+  const sessionStartTime = row.session.startedAt ? new Date(row.session.startedAt).getTime() : new Date(row.session.createdAt).getTime()
+  const elapsedMs = Date.now() - sessionStartTime
+
+  if (row.session.status === 'active' && elapsedMs >= ATTENDANCE_WINDOW_MS) {
+    try {
+      await db()
+        .update(attendanceSessions)
+        .set({ status: 'closed', closedAt: new Date() })
+        .where(eq(attendanceSessions.id, row.session.id))
+      await finalizeAbsentRecords(auth.organizationId, row.session.id)
+    } catch (err) {
+      console.error('Failed to auto-close expired session in getLiveSessionDetails', err)
+    }
+    return null
+  }
+
+  const remainingSeconds = Math.max(0, Math.floor((ATTENDANCE_WINDOW_MS - elapsedMs) / 1000))
 
   const activeChallengeRow = await getActiveChallenge(row.session.id)
   let challenge = activeChallengeRow?.code ?? (await getActiveChallengePlain(row.session.id))
@@ -945,6 +1168,9 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
     dayOfWeek: row.section.dayOfWeek,
     challenge,
     challengeExpiresAt,
+    startedAt: row.session.startedAt ? row.session.startedAt.toISOString() : row.session.createdAt.toISOString(),
+    remainingSeconds,
+    durationSeconds: 180,
     records: finalRecords,
   }
 }
