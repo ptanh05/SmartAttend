@@ -29,11 +29,27 @@ type MeResponse = {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const extraHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+  }
+
+  // Attach CSRF token if present in document.cookie for defense-in-depth
+  if (typeof document !== 'undefined') {
+    const match = document.cookie
+      .split('; ')
+      .find((row) => row.startsWith('smartattend_csrf='))
+    if (match) {
+      const token = match.split('=')[1]
+      if (token) extraHeaders['x-csrf-token'] = decodeURIComponent(token)
+    }
+  }
+
   const response = await fetch(path, {
     cache: 'no-store',
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...extraHeaders,
       ...(init?.headers ?? {}),
     },
     credentials: 'include',

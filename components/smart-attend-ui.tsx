@@ -298,6 +298,72 @@ export function formatDayOfWeek(t: (key: string) => string, dayOfWeek?: number) 
 }
 
 
+/**
+ * Strips script tags, event handlers, and active content from SVG before
+ * rendering to guarantee XSS prevention.
+ *
+ * Enforces a strict whitelist: only pure graphical SVG tags (<svg>, <path>, <rect>, <g>)
+ * and safe styling/geometry attributes are permitted.
+ */
+export function sanitizeSvg(rawSvg: string): string {
+  if (!rawSvg || typeof rawSvg !== 'string') return ''
+  const trimmed = rawSvg.trim()
+  if (!trimmed.startsWith('<svg') || !trimmed.endsWith('</svg>')) return ''
+
+  // 1. Immediately reject any executable or external resource tags
+  if (/<(script|foreignobject|iframe|embed|object|use|animate|set|a|image|audio|video)\b/i.test(trimmed)) {
+    return ''
+  }
+
+  // 2. Reject ANY inline event handler (e.g. onload, onerror, onbegin, onend, onclick)
+  if (/\bon[a-zA-Z0-9_-]+\s*=/i.test(trimmed)) {
+    return ''
+  }
+
+  // 3. Reject active protocols (javascript:, vbscript:, data:text/html)
+  if (/(javascript|vbscript|data\s*:\s*text\/html)/i.test(trimmed)) {
+    return ''
+  }
+
+  // 4. Decode HTML entities to detect entity-encoded javascript: or event handlers
+  const decoded = trimmed
+    .replace(/&#(\d+);?/g, (_, num) => String.fromCharCode(Number(num)))
+    .replace(/&#x([0-9a-f]+);?/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+  if (/(javascript|vbscript|data\s*:\s*text\/html)/i.test(decoded) || /\bon[a-zA-Z0-9_-]+\s*=/i.test(decoded)) {
+    return ''
+  }
+
+  // 5. In browser DOM environment, validate tree elements strictly
+  if (typeof window !== 'undefined' && typeof window.DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(trimmed, 'image/svg+xml')
+      if (doc.querySelector('parsererror')) return ''
+
+      const allowedTags = new Set(['svg', 'path', 'rect', 'g'])
+      const allElements = doc.querySelectorAll('*')
+      for (let i = 0; i < allElements.length; i++) {
+        const el = allElements[i]
+        if (!allowedTags.has(el.tagName.toLowerCase())) {
+          return ''
+        }
+        for (let j = 0; j < el.attributes.length; j++) {
+          const attr = el.attributes[j]
+          const attrName = attr.name.toLowerCase()
+          const attrValue = attr.value.toLowerCase()
+          if (attrName.startsWith('on') || attrValue.includes('javascript:') || attrValue.includes('data:text/html')) {
+            return ''
+          }
+        }
+      }
+    } catch {
+      return ''
+    }
+  }
+
+  return trimmed
+}
+
 export function DynamicQRCode({
   value,
   size = 180,
@@ -312,6 +378,7 @@ export function DynamicQRCode({
   useEffect(() => {
     let active = true
     if (!value || value === '------') {
+      setSvg('')
       return
     }
     QRCode.toString(value, {
@@ -332,7 +399,9 @@ export function DynamicQRCode({
     }
   }, [value, size])
 
-  if (!svg || !value || value === '------') {
+  const safeSvg = sanitizeSvg(svg)
+
+  if (!safeSvg || !value || value === '------') {
     return (
       <div
         className={`flex items-center justify-center rounded-xl border-2 border-dashed bg-muted/40 p-4 text-muted-foreground ${className}`}
@@ -346,7 +415,7 @@ export function DynamicQRCode({
   return (
     <div
       className={`inline-block overflow-hidden rounded-xl border bg-white p-2 shadow-sm ${className}`}
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: safeSvg }}
     />
   )
 }
