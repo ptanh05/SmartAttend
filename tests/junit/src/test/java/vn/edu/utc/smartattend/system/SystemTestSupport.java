@@ -18,11 +18,11 @@ abstract class SystemTestSupport {
     }
 
     static SmartAttendClient loggedInTeacher() throws Exception {
-        return loggedIn(SystemTestConfig.teacherEmail(), SystemTestConfig.teacherPassword(), "staff", "teacher");
+        return loggedIn(SystemTestConfig.teacherEmail(), SystemTestConfig.teacherPassword(), "teacher", "teacher");
     }
 
     static SmartAttendClient loggedInAdmin() throws Exception {
-        return loggedIn(SystemTestConfig.adminEmail(), SystemTestConfig.adminPassword(), "staff", "admin");
+        return loggedIn(SystemTestConfig.adminEmail(), SystemTestConfig.adminPassword(), "admin", "admin");
     }
 
     private static SmartAttendClient loggedIn(String identifier, String password, String portal, String role) throws Exception {

@@ -430,3 +430,4 @@ if __name__ == "__main__":
     downloads_dir = os.path.join(os.environ.get("USERPROFILE", "C:\\Users\\admin"), "Downloads")
     output_docx = os.path.join(downloads_dir, "HUONG_DAN_KIEM_THU_SMARTATTEND_PRODUCTION.docx")
     build_document(output_docx)
+

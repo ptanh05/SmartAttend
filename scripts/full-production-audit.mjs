@@ -19,8 +19,9 @@ async function fullProductionAudit() {
   const pages = [
     '/',
     '/student/login',
-    '/staff/login',
-    '/staff/register',
+    '/teacher/login',
+    '/teacher/register',
+    '/admin/login',
     '/unauthorized',
     '/session-expired',
     '/account-disabled',
@@ -74,7 +75,7 @@ async function fullProductionAudit() {
   const teacherLoginRes = await fetch(`${PROD_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'staff' }),
+    body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'teacher' }),
   })
   const teacherLoginData = await teacherLoginRes.json()
   const teacherSetCookie = teacherLoginRes.headers.get('set-cookie') || ''
@@ -90,7 +91,7 @@ async function fullProductionAudit() {
   const adminLoginRes = await fetch(`${PROD_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier: 'admin@smartattend.edu.vn', password: '12345678', portal: 'staff' }),
+    body: JSON.stringify({ identifier: 'admin@smartattend.edu.vn', password: '12345678', portal: 'admin' }),
   })
   const adminLoginData = await adminLoginRes.json()
   const adminSetCookie = adminLoginRes.headers.get('set-cookie') || ''

@@ -19,10 +19,10 @@ All tasks in the approved implementation plan have been executed and verified.
 
 ### 2. Microsoft 365 OAuth/OIDC Hardening
 - **Initiation Route** (`app/api/auth/microsoft/route.ts`):
-  - Captured `portal` query parameter (`student` vs `staff`) into a secure temporary cookie (`ms_auth_portal`).
+  - Captured `portal` query parameter (`student` / `teacher` / `admin`) into a secure temporary cookie (`ms_auth_portal`).
 - **Callback Route** (`app/api/auth/microsoft/callback/route.ts`):
   - Fixed 404 error redirect by redirecting to `/${portal}/login?error=...`.
-  - Fixed staff login destination to redirect to `/teacher/dashboard` or `/admin/dashboard` instead of forcing `/student/dashboard`.
+  - Fixed lecturer/admin login destination to redirect to `/teacher/dashboard` or `/admin/dashboard` instead of forcing `/student/dashboard`.
   - Added tenant ID verification against `process.env.MICROSOFT_TENANT_ID`.
   - Directly resolved user organization membership via `userIdToLogin`.
   - Added audit logging for Microsoft SSO logins.
@@ -49,9 +49,9 @@ All tasks in the approved implementation plan have been executed and verified.
 
 ### 5. Teacher Password Management & Forgot Password Recovery Flow
 - **Interactive Self-Service Recovery Modal** (`components/utc-login-landing.tsx`):
-  - Clicking "Quên mật khẩu?" now launches an interactive modal supporting both Student and Staff recovery.
+  - Clicking "Quên mật khẩu?" now launches an interactive modal supporting Student, Lecturer, and Admin recovery.
   - For students: Recovers password back to the university standard `Sv@{studentCode}`, enforces `mustChangePassword = true`, and autofills credentials into the login box.
-  - For staff: Recovers internal password with temporary token or directs to Microsoft 365 UTC SSO if external OAuth is detected.
+  - For lecturer/admin: Directs to Microsoft 365 UTC SSO if external OAuth is detected.
 - **Admin & Teacher Reset Student Password** (`app/api/users/reset-student-password/route.ts`, `components/smart-attend.tsx`):
   - Added dedicated "Đặt lại mật khẩu" action for each student in the Teacher/Staff roster directory.
   - Enforced organization-scoped tenant isolation (Teacher in Org A cannot reset student in Org B).

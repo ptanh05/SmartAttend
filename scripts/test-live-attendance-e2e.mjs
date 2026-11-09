@@ -7,7 +7,7 @@ async function testAttendanceFlow() {
   const teacherLogin = await fetch(`${PROD_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'staff' }),
+    body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'teacher' }),
   })
   const teacherCookie = (teacherLogin.headers.get('set-cookie') || '').split(';')[0]
   console.log('Teacher Login:', teacherLogin.status, 'Cookie set:', Boolean(teacherCookie))

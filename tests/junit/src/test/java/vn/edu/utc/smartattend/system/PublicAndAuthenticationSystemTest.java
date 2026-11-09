@@ -27,7 +27,7 @@ class PublicAndAuthenticationSystemTest extends SystemTestSupport {
         var response = new SmartAttendClient().login(
             "missing-user-" + System.nanoTime() + "@example.invalid",
             "wrong-password",
-            "staff"
+            "teacher"
         );
 
         assertEquals(401, response.status());

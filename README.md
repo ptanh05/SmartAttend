@@ -60,7 +60,7 @@ cp .env.example .env
 ```
 Populate `.env` with your credentials:
 - `DATABASE_URL`: PostgreSQL connection string.
-- `TEACHER_REGISTRATION_API_KEY`: Secret key authorizing teacher account creation.
+- `TEACHER_REGISTRATION_API_KEY`: Secret key authorizing administrator account creation.
 
 ### 2. Install Dependencies & Push Schema
 ```bash

@@ -56,7 +56,7 @@ async function runQa() {
     const teacherLogin = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'staff' }),
+      body: JSON.stringify({ identifier: 'teacher@smartattend.edu.vn', password: '12345678', portal: 'teacher' }),
     })
     const teacherJson = await teacherLogin.json()
     const setCookie = teacherLogin.headers.get('set-cookie') || ''
@@ -72,7 +72,7 @@ async function runQa() {
     const adminLogin = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: 'admin@smartattend.edu.vn', password: '12345678', portal: 'staff' }),
+      body: JSON.stringify({ identifier: 'admin@smartattend.edu.vn', password: '12345678', portal: 'admin' }),
     })
     const adminJson = await adminLogin.json()
     const setCookie = adminLogin.headers.get('set-cookie') || ''

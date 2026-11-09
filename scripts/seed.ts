@@ -74,6 +74,7 @@ async function seed() {
     id: orgId,
     name: 'Đại học Giao Thông Vận Tải (UTC)',
     plan: 'Campus Plus',
+    emailDomain: 'utc.edu.vn',
   })
 
   await db().insert(attendancePolicies).values({
@@ -95,7 +96,6 @@ async function seed() {
 
   console.log('--- Creating Teachers & Admins... ---')
   const passwordHash = await bcrypt.hash('12345678', 10)
-  const studentPasswordHash = await bcrypt.hash('student123', 10)
 
   const teacherId = 'usr_teacher_1'
   await db().insert(users).values({
@@ -223,6 +223,8 @@ async function seed() {
   console.log('--- Creating Students & Class Enrollments... ---')
   for (const st of sampleStudents) {
     const studentUserId = `usr_${st.code}`
+    // Each student signs in with their student code as both identifier and password.
+    const studentPasswordHash = await bcrypt.hash(st.code, 10)
     await db().insert(users).values({
       id: studentUserId,
       email: st.email,
@@ -254,7 +256,7 @@ async function seed() {
   console.log('--------------------------------------------------')
   console.log('📌 TEACHER LOGIN:  teacher@smartattend.edu.vn / 12345678')
   console.log('📌 ADMIN LOGIN:    admin@smartattend.edu.vn   / 12345678')
-  console.log('📌 STUDENT LOGIN:  20260001 (hoặc 20260001@student.utc.edu.vn) / student123')
+  console.log('📌 STUDENT LOGIN:  20260001 (hoặc 20260001@student.utc.edu.vn) / 20260001')
   console.log('--------------------------------------------------')
 }
 
