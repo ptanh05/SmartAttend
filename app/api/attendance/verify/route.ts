@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { verifyAttendance } from '@/lib/attendance/server'
 import { requireAuth } from '@/lib/auth/context'
 import { clientIp, verifyLimiter } from '@/lib/rate-limit'
-import { challengeCode } from '@/lib/validation'
+import { validateRequestBody, verifyAttendanceSchema } from '@/lib/validation'
 
 export async function POST(request: Request) {
   try {
@@ -14,20 +14,28 @@ export async function POST(request: Request) {
         { status: 429, headers: { 'Retry-After': String(rate.retryAfterSeconds) } },
       )
     }
-    const body = await request.json()
-    const code = challengeCode(body.code)
-    const device = typeof body.device === 'string' ? body.device : 'This browser'
-    const method = typeof body.method === 'string' ? body.method : 'manual_code'
-    const webauthnAssertion = body.webauthnAssertion && typeof body.webauthnAssertion === 'object' ? body.webauthnAssertion : undefined
-    const acousticProof = body.acousticProof && typeof body.acousticProof === 'object' ? body.acousticProof : undefined
 
-    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined
+    const validation = await validateRequestBody(request, verifyAttendanceSchema, 'Dữ liệu điểm danh không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const {
+      code,
+      device,
+      method,
+      sessionId,
+      ultrasonicVerified,
+      biometricVerified,
+      webauthnAssertion,
+      acousticProof,
+    } = validation.data
 
     const result = await verifyAttendance(auth, code, device, {
       sessionId,
       method,
-      ultrasonicVerified: Boolean(body.ultrasonicVerified),
-      biometricVerified: Boolean(body.biometricVerified),
+      ultrasonicVerified: Boolean(ultrasonicVerified),
+      biometricVerified: Boolean(biometricVerified),
       webauthnAssertion,
       acousticProof,
     })

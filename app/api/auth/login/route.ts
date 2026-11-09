@@ -1,28 +1,28 @@
 import { NextResponse } from 'next/server'
 import { authCookieManager, sessionCookieOptions, SESSION_COOKIE } from '@/lib/auth/cookies'
+import { CSRF_COOKIE_NAME, generateCsrfToken } from '@/lib/auth/csrf'
 import { verifyPassword } from '@/lib/auth/password'
 import { isLegacyStaffPortal, parsePortal, portalForRole } from '@/lib/auth/portals'
 import { createAuthSession, resolveMembershipForLogin, resolveMembershipForStudentLogin } from '@/lib/auth/session'
 import { clientIp, loginLimiter } from '@/lib/rate-limit'
 import type { Role } from '@/lib/types/domain'
+import { validateRequestBody, loginSchema } from '@/lib/validation'
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : ''
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
-    const loginId = identifier || email
-    const password = typeof body.password === 'string' ? body.password : ''
-    const portal = parsePortal(body.portal)
-
-    if (!loginId || !password) {
-      return NextResponse.json({ ok: false, message: 'Login ID and password are required.' }, { status: 400 })
+    const validation = await validateRequestBody(request, loginSchema, 'Thông tin đăng nhập không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
+
+    const { identifier, email, password, portal: portalRaw } = validation.data
+    const loginId = (identifier || email || '').trim()
+    const portal = parsePortal(portalRaw)
 
     // `staff` is the legacy combined portal (teacher + admin). It is still
     // accepted so existing integrations keep working; the UI now offers three
     // explicit portals.
-    const legacyStaff = isLegacyStaffPortal(body.portal)
+    const legacyStaff = isLegacyStaffPortal(portalRaw)
     if (!portal && !legacyStaff) {
       return NextResponse.json({ ok: false, message: 'Unknown login portal.' }, { status: 400 })
     }
@@ -103,6 +103,13 @@ export async function POST(request: Request) {
       mustChangePassword: match.mustChangePassword,
     })
     authCookieManager.saveSession(response, token, maxAge)
+    response.cookies.set(CSRF_COOKIE_NAME, generateCsrfToken(), {
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      httpOnly: false,
+      maxAge,
+    })
     return response
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

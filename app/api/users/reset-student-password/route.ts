@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { adminResetStudentPassword } from '@/lib/auth/users'
 import { changePasswordLimiter, clientIp } from '@/lib/rate-limit'
+import { validateRequestBody, resetStudentPasswordSchema } from '@/lib/validation'
 
 export async function POST(request: Request) {
   try {
@@ -15,12 +16,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json().catch(() => ({}))
-    const studentId = typeof body.studentId === 'string' ? body.studentId.trim() : ''
-
-    if (!studentId) {
-      return NextResponse.json({ ok: false, message: 'Thiếu studentId.' }, { status: 400 })
+    const validation = await validateRequestBody(request, resetStudentPasswordSchema, 'Dữ liệu đặt lại mật khẩu sinh viên không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
+
+    const { studentId } = validation.data
 
     const result = await adminResetStudentPassword(auth, studentId)
     if (!result.ok) {

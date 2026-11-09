@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createCourse, listCourses } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
+import { validateRequestBody, createCourseSchema } from '@/lib/validation'
 
 export async function GET() {
   try {
@@ -16,15 +17,17 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const body = await request.json()
-    if (!body.code || !body.name || !body.department) {
-      return NextResponse.json({ ok: false, message: 'Code, name, and department are required.' }, { status: 400 })
+    const validation = await validateRequestBody(request, createCourseSchema, 'Dữ liệu khóa học không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
+
+    const { code, name, department, color } = validation.data
     const result = await createCourse(auth, {
-      code: body.code,
-      name: body.name,
-      department: body.department,
-      color: body.color,
+      code,
+      name,
+      department,
+      color,
     })
     return NextResponse.json(result)
   } catch (error) {

@@ -3,6 +3,7 @@ import { rotateChallengeForSession, transitionSessionState } from '@/lib/attenda
 import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
 import { clientIp, sessionActionLimiter } from '@/lib/rate-limit'
 import type { SessionStatus } from '@/lib/types/domain'
+import { validateRequestBody, sessionActionSchema } from '@/lib/validation'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -19,8 +20,12 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params
-    const body = await _request.json().catch(() => ({}))
-    const action = body.action as 'start' | 'pause' | 'close' | 'rotate'
+    const validation = await validateRequestBody(_request, sessionActionSchema, 'Hành động điều khiển phiên không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { action } = validation.data
 
     if (action === 'rotate') {
       const result = await rotateChallengeForSession(auth, id)

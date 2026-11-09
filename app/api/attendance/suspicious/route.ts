@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server'
 import { resolveSuspiciousAttempt } from '@/lib/attendance/server'
 import { requireAuth } from '@/lib/auth/context'
+import { validateRequestBody, suspiciousActionSchema } from '@/lib/validation'
 
 export async function PATCH(request: Request) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const body = await request.json()
-    const { attemptId, action } = body
-
-    if (!attemptId || (action !== 'approved' && action !== 'dismissed')) {
-      return NextResponse.json({ ok: false, message: 'Invalid attemptId or action' }, { status: 400 })
+    const validation = await validateRequestBody(request, suspiciousActionSchema, 'Dữ liệu xử lý cảnh báo không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
+
+    const { attemptId, action } = validation.data
 
     const result = await resolveSuspiciousAttempt(auth, attemptId, action)
     if (!result.ok) {

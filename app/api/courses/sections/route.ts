@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createCourseSection, listClassSessions } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
+import { validateRequestBody, createSectionSchema } from '@/lib/validation'
 
 export async function GET() {
   try {
@@ -16,17 +17,19 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const body = await request.json()
-    if (!body.courseId || !body.room || !body.startsAt || !body.endsAt) {
-      return NextResponse.json({ ok: false, message: 'Course ID, room, start time, and end time are required.' }, { status: 400 })
+    const validation = await validateRequestBody(request, createSectionSchema, 'Dữ liệu lớp học phần không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
+
+    const { courseId, room, startsAt, endsAt, dayOfWeek, autoStart } = validation.data
     const result = await createCourseSection(auth, {
-      courseId: body.courseId,
-      room: body.room,
-      startsAt: body.startsAt,
-      endsAt: body.endsAt,
-      dayOfWeek: typeof body.dayOfWeek === 'number' ? body.dayOfWeek : Number(body.dayOfWeek) || 1,
-      autoStart: body.autoStart !== undefined ? Boolean(body.autoStart) : true,
+      courseId,
+      room,
+      startsAt,
+      endsAt,
+      dayOfWeek,
+      autoStart,
     })
     return NextResponse.json(result)
   } catch (error) {

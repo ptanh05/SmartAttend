@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getLiveSessionDetails, getOrCreateLiveSession, listClassSessions } from '@/lib/attendance/server'
 import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { validateRequestBody, createLiveSessionSchema } from '@/lib/validation'
 
 export async function GET() {
   const auth = await getCurrentAuth()
@@ -16,9 +17,12 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const body = await request.json()
-    const sectionId = typeof body.sectionId === 'string' ? body.sectionId : ''
-    if (!sectionId) return NextResponse.json({ ok: false, message: 'sectionId is required.' }, { status: 400 })
+    const validation = await validateRequestBody(request, createLiveSessionSchema, 'Dữ liệu tạo phiên không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { sectionId } = validation.data
 
     const sessionId = await getOrCreateLiveSession(auth, sectionId)
     if (!sessionId) return NextResponse.json({ ok: false, message: 'Section not found.' }, { status: 404 })

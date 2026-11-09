@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { organizations } from '@/lib/db/schema'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { normalizeEmailDomain } from '@/lib/auth/default-credentials'
+import { validateRequestBody, updateEmailDomainSchema } from '@/lib/validation'
 
 /**
  * Updates the institution's email domain.
@@ -15,8 +16,12 @@ export async function PATCH(request: Request) {
   try {
     const auth = await requireAuth(['admin'])
 
-    const body = await request.json()
-    const raw = typeof body.emailDomain === 'string' ? body.emailDomain : ''
+    const validation = await validateRequestBody(request, updateEmailDomainSchema, 'Dữ liệu tên miền không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const raw = validation.data.emailDomain ?? ''
     const domain = raw.trim() ? normalizeEmailDomain(raw) : null
 
     if (raw.trim() && !domain) {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { importTeachers, parseTeacherCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
+import { validateRequestBody, importTeachersSchema } from '@/lib/validation'
 
 /**
  * Imports a lecturer roster.
@@ -22,11 +23,15 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json()
-    const csv = typeof body.csv === 'string' ? body.csv : ''
-    const rows = Array.isArray(body.rows)
-      ? body.rows
-      : parseTeacherCsv(csv, auth.organizationEmailDomain ?? null)
+    const validation = await validateRequestBody(request, importTeachersSchema, 'Dữ liệu nhập danh sách giảng viên không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { csv, rows: rawRows } = validation.data
+    const rows = Array.isArray(rawRows) && rawRows.length > 0
+      ? rawRows
+      : parseTeacherCsv(csv ?? '', auth.organizationEmailDomain ?? null)
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, message: 'No lecturer rows found in import.' }, { status: 400 })

@@ -2,28 +2,18 @@ import { NextResponse } from 'next/server'
 import { isLegacyStaffPortal, parsePortal } from '@/lib/auth/portals'
 import { selfServiceResetPassword } from '@/lib/auth/users'
 import { clientIp, resetPasswordLimiter } from '@/lib/rate-limit'
+import { validateRequestBody, resetPasswordSchema } from '@/lib/validation'
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}))
-    const identifier = typeof body.identifier === 'string' ? body.identifier.trim() : ''
-    const portal = parsePortal(body.portal)
-    const legacyStaff = isLegacyStaffPortal(body.portal)
-    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : undefined
-
-    if (!identifier) {
-      return NextResponse.json(
-        { ok: false, message: 'Vui lòng nhập Mã sinh viên hoặc Email đăng ký.' },
-        { status: 400 },
-      )
+    const validation = await validateRequestBody(request, resetPasswordSchema, 'Dữ liệu đặt lại mật khẩu không hợp lệ')
+    if (!validation.success) {
+      return validation.response
     }
 
-    if (!portal && !legacyStaff) {
-      return NextResponse.json(
-        { ok: false, message: 'Cổng đăng nhập không hợp lệ.' },
-        { status: 400 },
-      )
-    }
+    const { identifier, portal: portalRaw, newPassword } = validation.data
+    const portal = parsePortal(portalRaw)
+    const legacyStaff = isLegacyStaffPortal(portalRaw)
 
     const rateKey = `${clientIp(request)}:${identifier.toLowerCase()}`
     const rate = await resetPasswordLimiter.consume(rateKey)

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { importStudents, parseStudentCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
+import { validateRequestBody, importStudentsSchema } from '@/lib/validation'
 
 /**
  * Imports a student roster.
@@ -21,16 +22,19 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json()
-    const csv = typeof body.csv === 'string' ? body.csv : ''
-    const rows = Array.isArray(body.rows) ? body.rows : parseStudentCsv(csv)
+    const validation = await validateRequestBody(request, importStudentsSchema, 'Dữ liệu nhập danh sách sinh viên không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { csv, rows: rawRows, sectionId } = validation.data
+    const rows = rawRows && rawRows.length > 0 ? rawRows : parseStudentCsv(csv ?? '')
 
     if (rows.length === 0) {
       return NextResponse.json({ ok: false, message: 'No student rows found in import.' }, { status: 400 })
     }
 
-    const sectionId = typeof body.sectionId === 'string' && body.sectionId.trim() ? body.sectionId.trim() : undefined
-    const result = await importStudents(auth, rows, { sectionId })
+    const result = await importStudents(auth, rows, { sectionId: sectionId || undefined })
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })

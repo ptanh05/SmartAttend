@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { changeUserPassword } from '@/lib/auth/users'
 import { changePasswordLimiter, clientIp } from '@/lib/rate-limit'
+import { validateRequestBody, changePasswordSchema } from '@/lib/validation'
 
 export async function POST(request: Request) {
   try {
@@ -15,9 +16,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const body = await request.json()
-    const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
-    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : ''
+    const validation = await validateRequestBody(request, changePasswordSchema, 'Dữ liệu đổi mật khẩu không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { currentPassword, newPassword } = validation.data
 
     const result = await changeUserPassword(auth, currentPassword, newPassword)
     if (!result.ok) {

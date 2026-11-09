@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAttendancePolicy, updateAttendancePolicy } from '@/lib/attendance/server'
 import { getCurrentAuth, requireAuth } from '@/lib/auth/context'
+import { validateRequestBody, attendancePolicySchema } from '@/lib/validation'
 
 export async function GET() {
   try {
@@ -18,12 +19,17 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const body = await request.json()
+    const validation = await validateRequestBody(request, attendancePolicySchema, 'Cấu hình điểm danh không hợp lệ')
+    if (!validation.success) {
+      return validation.response
+    }
+
+    const { challengeTtlSeconds, lateAfterMinutes, requireTrustedDevice } = validation.data
 
     const result = await updateAttendancePolicy(auth, {
-      challengeTtlSeconds: typeof body.challengeTtlSeconds === 'number' ? body.challengeTtlSeconds : undefined,
-      lateAfterMinutes: typeof body.lateAfterMinutes === 'number' ? body.lateAfterMinutes : undefined,
-      requireTrustedDevice: typeof body.requireTrustedDevice === 'boolean' ? body.requireTrustedDevice : undefined,
+      challengeTtlSeconds,
+      lateAfterMinutes,
+      requireTrustedDevice,
     })
 
     if (!result.ok) {

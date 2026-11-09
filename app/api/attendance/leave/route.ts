@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAuth } from '@/lib/auth/context'
 import { addLeaveRequest, getLeaveRequests, updateLeaveRequestStatus } from '@/lib/attendance/leave'
+import { validateRequestBody, createLeaveRequestSchema, reviewLeaveRequestSchema } from '@/lib/validation'
 
 export async function GET(request: Request) {
   const auth = await getCurrentAuth()
@@ -16,12 +17,12 @@ export async function POST(request: Request) {
   const auth = await getCurrentAuth()
   if (!auth) return NextResponse.json({ ok: false, message: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json()
-  const { courseId, sessionId, date, reason, evidenceNote, attachmentUrl } = body
-
-  if (!courseId || !reason || !date) {
-    return NextResponse.json({ ok: false, message: 'Missing required fields' }, { status: 400 })
+  const validation = await validateRequestBody(request, createLeaveRequestSchema, 'Dữ liệu xin nghỉ phép không hợp lệ')
+  if (!validation.success) {
+    return validation.response
   }
+
+  const { courseId, sessionId, date, reason, evidenceNote, attachmentUrl } = validation.data
 
   try {
     const created = await addLeaveRequest(auth, {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
       date,
       reason,
       evidenceNote,
-      attachmentUrl: typeof attachmentUrl === 'string' ? attachmentUrl : undefined,
+      attachmentUrl: attachmentUrl || undefined,
     })
 
     return NextResponse.json({ ok: true, request: created })
@@ -46,12 +47,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: false, message: 'Forbidden' }, { status: 403 })
   }
 
-  const body = await request.json()
-  const { requestId, status } = body
-
-  if (!requestId || (status !== 'approved' && status !== 'rejected')) {
-    return NextResponse.json({ ok: false, message: 'Invalid payload' }, { status: 400 })
+  const validation = await validateRequestBody(request, reviewLeaveRequestSchema, 'Dữ liệu phê duyệt không hợp lệ')
+  if (!validation.success) {
+    return validation.response
   }
+
+  const { requestId, status } = validation.data
 
   const updated = await updateLeaveRequestStatus(auth, requestId, status)
   if (!updated) {
