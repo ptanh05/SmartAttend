@@ -61,7 +61,7 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
       ])
       await db().insert(organizationMemberships).values([
         { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher', status: 'active' },
-        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: '2026999' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: `S_${nanoid(6)}` },
       ])
       await db().insert(courses).values({
         id: courseId,
@@ -159,7 +159,7 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
       ])
       await db().insert(organizationMemberships).values([
         { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher', status: 'active' },
-        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: '2026888' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: `S_${nanoid(6)}` },
       ])
       await db().insert(courses).values({
         id: courseId,
@@ -263,7 +263,7 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
       ])
       await db().insert(organizationMemberships).values([
         { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher', status: 'active' },
-        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: '2026777' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: `S_${nanoid(6)}` },
       ])
       await db().insert(courses).values({
         id: courseId,
@@ -308,6 +308,106 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
     } finally {
       vi.useRealTimers()
       await db().delete(notifications).where(eq(notifications.organizationId, orgId)).catch(() => {})
+      await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId)).catch(() => {})
+      await db().delete(courseSections).where(eq(courseSections.organizationId, orgId)).catch(() => {})
+      await db().delete(courses).where(eq(courses.organizationId, orgId)).catch(() => {})
+      await db().delete(organizationMemberships).where(eq(organizationMemberships.organizationId, orgId)).catch(() => {})
+      await db().delete(users).where(inArray(users.id, [teacherId, studentId])).catch(() => {})
+      await db().delete(organizations).where(eq(organizations.id, orgId)).catch(() => {})
+    }
+  }, 30_000)
+
+  it('SCHEDULE-05: Does not auto-start or notify when today is outside [startDate, endDate]', async () => {
+    const orgId = `org_date_${nanoid(6)}`
+    const teacherId = `usr_t_date_${nanoid(6)}`
+    const studentId = `usr_s_date_${nanoid(6)}`
+    const courseId = `crs_date_${nanoid(6)}`
+    const sectionFutureId = `sec_fut_${nanoid(6)}`
+    const sectionPastId = `sec_past_${nanoid(6)}`
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-09T08:00:00+07:00'))
+
+    const now = new Date()
+    const vnOffsetMs = 7 * 60 * 60 * 1000
+    const vnTime = new Date(now.getTime() + (now.getTimezoneOffset() * 60 * 1000) + vnOffsetMs)
+    const day = vnTime.getDay()
+    const todayDayOfWeek = day === 0 ? 7 : day
+
+    const scheduledStartsAt = '08:00'
+
+    try {
+      await db().insert(organizations).values({ id: orgId, name: 'Date Range Org' })
+      await db().insert(users).values([
+        { id: teacherId, email: `teacher_d_${orgId}@utc.edu.vn`, passwordHash: 'hash', name: 'Teacher D', initials: 'TD' },
+        { id: studentId, email: `student_d_${orgId}@utc.edu.vn`, passwordHash: 'hash', name: 'Student D', initials: 'SD' },
+      ])
+      await db().insert(organizationMemberships).values([
+        { id: nanoid(), organizationId: orgId, userId: teacherId, role: 'teacher', status: 'active' },
+        { id: nanoid(), organizationId: orgId, userId: studentId, role: 'student', status: 'active', studentCode: `S_${nanoid(6)}` },
+      ])
+      await db().insert(courses).values({
+        id: courseId,
+        organizationId: orgId,
+        code: 'DATE101',
+        name: 'Kiem thu ngay thang',
+        department: 'CNTT',
+        teacherId,
+        status: 'active',
+      })
+      // 1. Future section: starts next year
+      await db().insert(courseSections).values({
+        id: sectionFutureId,
+        organizationId: orgId,
+        courseId,
+        room: 'P.401',
+        startsAt: scheduledStartsAt,
+        endsAt: '12:00',
+        startDate: '2027-01-01',
+        endDate: '2027-12-31',
+        dayOfWeek: todayDayOfWeek,
+        autoStart: true,
+        status: 'scheduled',
+      })
+      // 2. Past section: ended last year
+      await db().insert(courseSections).values({
+        id: sectionPastId,
+        organizationId: orgId,
+        courseId,
+        room: 'P.402',
+        startsAt: scheduledStartsAt,
+        endsAt: '12:00',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        dayOfWeek: todayDayOfWeek,
+        autoStart: true,
+        status: 'scheduled',
+      })
+      await db().insert(classEnrollments).values([
+        { organizationId: orgId, sectionId: sectionFutureId, studentId, status: 'active' },
+        { organizationId: orgId, sectionId: sectionPastId, studentId, status: 'active' },
+      ])
+
+      // Execute syncScheduledAttendance
+      await syncScheduledAttendance(orgId)
+
+      // Verify NO sessions were created
+      const sessions = await db()
+        .select()
+        .from(attendanceSessions)
+        .where(eq(attendanceSessions.organizationId, orgId))
+      expect(sessions.length).toBe(0)
+
+      // Verify NO advance notifications were dispatched
+      const notifs = await db()
+        .select()
+        .from(notifications)
+        .where(eq(notifications.organizationId, orgId))
+      expect(notifs.length).toBe(0)
+    } finally {
+      vi.useRealTimers()
+      await db().delete(notifications).where(eq(notifications.organizationId, orgId)).catch(() => {})
+      await db().delete(attendanceSessions).where(eq(attendanceSessions.organizationId, orgId)).catch(() => {})
       await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId)).catch(() => {})
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId)).catch(() => {})
       await db().delete(courses).where(eq(courses.organizationId, orgId)).catch(() => {})

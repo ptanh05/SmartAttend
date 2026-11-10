@@ -265,7 +265,16 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
     URL.revokeObjectURL(url)
   }
 
-  const liveSession = sessions.find((session) => session.status === 'live')
+  const [selectedLiveSessionId, setSelectedLiveSessionId] = useState<string | null>(null)
+
+  const liveSessions = useMemo(() => sessions.filter((session) => session.status === 'live'), [sessions])
+  const liveSession = useMemo(() => {
+    if (selectedLiveSessionId) {
+      const match = liveSessions.find((s) => s.id === selectedLiveSessionId)
+      if (match) return match
+    }
+    return liveSessions[0] || null
+  }, [liveSessions, selectedLiveSessionId])
   const liveCourse = liveSession ? courses.find((course) => course.id === liveSession.courseId) : null
   const myRecord = liveSession ? records.find((r) => r.sessionId === liveSession.id && (r.status === 'present' || r.status === 'late' || r.status === 'excused')) : null
   const rate = calcAttendanceRate(records)
@@ -456,7 +465,6 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   }
 
   if (page === 'join') {
-    const liveSessions = sessions.filter((session) => session.status === 'live')
     const scheduledSessions = sessions.filter((session) => session.status !== 'live')
     const courseForSession = (session: ClassSession) => courses.find((course) => course.id === session.courseId)
     return (
@@ -473,13 +481,70 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
               <span>Hiện chưa có ca học nào đang live.</span>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
+              {liveSessions.length > 1 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300 flex items-center gap-2">
+                  <Info className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                  <span>
+                    Hiện có <strong>{liveSessions.length} ca học</strong> đang mở điểm danh đồng thời. Vui lòng bấm chọn đúng ca học bạn đang tham dự.
+                  </span>
+                </div>
+              )}
               {liveSessions.map((session) => {
                 const course = courseForSession(session)
-                return <button key={session.id} type="button" onClick={() => { if (session.id !== liveSession?.id) go('join') }} className="flex w-full items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-50">
-                  <div><p className="font-semibold text-emerald-900">{course?.code ?? session.courseCode} · {course?.name ?? session.courseName}</p><p className="mt-1 text-xs text-emerald-700">{session.room} · {session.startsAt} – {session.endsAt}</p><p className="mt-1 text-[11px] text-emerald-700/80">Học kỳ: {session.startDate ?? '2026-01-01'} → {session.endDate ?? '2026-12-31'}</p></div>
-                  <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">LIVE</span>
-                </button>
+                const isSelected = session.id === liveSession?.id
+                const checkedRecord = records.find(
+                  (r) => r.sessionId === session.id && (r.status === 'present' || r.status === 'late' || r.status === 'excused')
+                )
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLiveSessionId(session.id)
+                      setResult(null)
+                      setCode('')
+                      setUltrasonicStatus('idle')
+                      setBiometricStatus('idle')
+                      setStepNotice('')
+                    }}
+                    className={`flex w-full items-center justify-between rounded-xl border p-4 text-left transition cursor-pointer ${
+                      isSelected
+                        ? 'border-emerald-500 bg-emerald-50/90 dark:bg-emerald-950/50 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-card hover:border-emerald-300 hover:bg-emerald-50/40'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`font-semibold text-sm ${isSelected ? 'text-emerald-950 dark:text-emerald-200' : 'text-foreground'}`}>
+                          {course?.code ?? session.courseCode} · {course?.name ?? session.courseName}
+                        </p>
+                        {isSelected && (
+                          <span className="inline-flex items-center rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                            Đang chọn
+                          </span>
+                        )}
+                        {checkedRecord && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 dark:bg-blue-950/60 px-2 py-0.5 text-[10px] font-bold text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            <CheckCircle2 className="size-3 text-blue-600 dark:text-blue-400" />
+                            Đã điểm danh
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Phòng {session.room} · {session.startsAt} – {session.endsAt}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                        Học kỳ: {session.startDate ?? '2026-01-01'} → {session.endDate ?? '2026-12-31'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white animate-pulse">
+                        LIVE
+                      </span>
+                    </div>
+                  </button>
+                )
               })}
             </div>
           )}

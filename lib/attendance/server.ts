@@ -99,6 +99,7 @@ export async function syncScheduledAttendance(organizationId: string) {
     const currentDayOfWeek = day === 0 ? 7 : day // 1 = Monday, ..., 7 = Sunday
     const currentMinutes = vnTime.getHours() * 60 + vnTime.getMinutes()
     const todayStartUtc = new Date(Date.UTC(vnTime.getFullYear(), vnTime.getMonth(), vnTime.getDate()) - vnOffsetMs)
+    const todayDateStr = `${vnTime.getFullYear()}-${String(vnTime.getMonth() + 1).padStart(2, '0')}-${String(vnTime.getDate()).padStart(2, '0')}`
 
     // 1. Auto-close any active sessions older than 3 minutes or from previous days
     const activeSessions = await db()
@@ -157,6 +158,12 @@ export async function syncScheduledAttendance(organizationId: string) {
       )
 
     for (const { section, course } of todaySections) {
+      // Semester date boundary check: ensure today is within [startDate, endDate]
+      const sStart = section.startDate?.trim()
+      const sEnd = section.endDate?.trim()
+      if (sStart && todayDateStr < sStart) continue
+      if (sEnd && todayDateStr > sEnd) continue
+
       if (!section.startsAt || typeof section.startsAt !== 'string') continue
       const [startH, startM] = section.startsAt.split(':').map(Number)
       if (isNaN(startH) || isNaN(startM)) continue
