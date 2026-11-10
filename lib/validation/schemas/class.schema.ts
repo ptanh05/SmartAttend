@@ -16,6 +16,7 @@ export const createCourseSchema = z.object({
     .trim()
     .min(1, 'Khoa không được để trống')
     .max(100, 'Tên khoa tối đa 100 ký tự'),
+  teacherId: z.string().trim().optional(),
   color: z
     .string()
     .trim()
@@ -24,6 +25,30 @@ export const createCourseSchema = z.object({
 })
 
 export type CreateCourseInput = z.infer<typeof createCourseSchema>
+
+export const createDepartmentSchema = z.object({
+  name: z
+    .string({ error: 'Tên khoa/bộ môn là bắt buộc' })
+    .trim()
+    .min(2, 'Tên khoa/bộ môn tối thiểu 2 ký tự')
+    .max(100, 'Tên khoa/bộ môn tối đa 100 ký tự'),
+})
+
+export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>
+
+export const updateDepartmentSchema = z.object({
+  id: z
+    .string({ error: 'Mã khoa/bộ môn là bắt buộc' })
+    .trim()
+    .min(1, 'Mã khoa/bộ môn không được để trống'),
+  name: z
+    .string({ error: 'Tên khoa/bộ môn là bắt buộc' })
+    .trim()
+    .min(2, 'Tên khoa/bộ môn tối thiểu 2 ký tự')
+    .max(100, 'Tên khoa/bộ môn tối đa 100 ký tự'),
+})
+
+export type UpdateDepartmentInput = z.infer<typeof updateDepartmentSchema>
 
 export const createSectionSchema = z.object({
   courseId: z
@@ -44,6 +69,8 @@ export const createSectionSchema = z.object({
     .string({ error: 'Giờ kết thúc là bắt buộc' })
     .trim()
     .regex(/^\d{1,2}:\d{2}$/, 'Giờ kết thúc phải có định dạng HH:MM'),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày bắt đầu phải có định dạng YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày kết thúc phải có định dạng YYYY-MM-DD').optional(),
   dayOfWeek: z
     .coerce
     .number({ error: 'Thứ trong tuần là bắt buộc' })
@@ -62,6 +89,8 @@ export const updateSectionSchema = z.object({
   room: z.string().trim().max(50).optional(),
   startsAt: z.string().trim().regex(/^\d{1,2}:\d{2}$/).optional(),
   endsAt: z.string().trim().regex(/^\d{1,2}:\d{2}$/).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   dayOfWeek: z.coerce.number().int().min(1).max(7).optional(),
   autoStart: z.boolean().optional(),
 })

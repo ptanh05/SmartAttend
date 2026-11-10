@@ -28,12 +28,12 @@ describe('evaluateDevicePolicy', () => {
     expect(decision.enforceTrustedDevice).toBe(true)
   })
 
-  it('flags an untrusted device under an enforced policy with a low score', () => {
+  it('rejects an untrusted device under an enforced policy', () => {
     const decision = evaluateDevicePolicy({ hasTrustedDevice: false, hasSeenDevice: true, requireTrustedDevice: true })
     expect(decision.suspicious).toBe(true)
     expect(decision.score).toBe(60)
     expect(decision.enforceTrustedDevice).toBe(true)
-    expect(decision.allowed).toBe(true)
+    expect(decision.allowed).toBe(false)
   })
 
   it('flags an unseen device under an enforced policy with the lowest score', () => {
@@ -41,6 +41,7 @@ describe('evaluateDevicePolicy', () => {
     expect(decision.suspicious).toBe(true)
     expect(decision.score).toBe(55)
     expect(decision.reason).toBe('unseen_under_policy')
+    expect(decision.allowed).toBe(false)
   })
 })
 

@@ -22,12 +22,14 @@ export async function POST(request: Request) {
       return validation.response
     }
 
-    const { courseId, room, startsAt, endsAt, dayOfWeek, autoStart } = validation.data
+    const { courseId, room, startsAt, endsAt, startDate, endDate, dayOfWeek, autoStart } = validation.data
     const result = await createCourseSection(auth, {
       courseId,
       room,
       startsAt,
       endsAt,
+      startDate,
+      endDate,
       dayOfWeek,
       autoStart,
     })

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
@@ -25,18 +25,20 @@ import {
   suspiciousAttempts,
   users,
 } from '@/lib/db/schema'
-import type { AttendanceStatus, AttendanceWarningStatus, ClassSession, Course, SessionStatus } from '@/lib/types/domain'
+import type { AttendanceStatus, AttendanceWarningStatus, ClassSession, Course, DepartmentItem, SessionStatus } from '@/lib/types/domain'
 
 function mapSessionStatus(status: string): SessionStatus {
   if (status === 'active') return 'live'
   return status as SessionStatus
 }
 
-export async function listCourses(organizationId: string): Promise<Course[]> {
+export async function listCourses(organizationId: string, teacherId?: string): Promise<Course[]> {
+  const courseConditions = [eq(courses.organizationId, organizationId), eq(courses.status, 'active')]
+  if (teacherId) courseConditions.push(eq(courses.teacherId, teacherId))
   const rows = await db()
     .select()
     .from(courses)
-    .where(and(eq(courses.organizationId, organizationId), eq(courses.status, 'active')))
+    .where(and(...courseConditions))
 
   // Calculate live enrolled counts by counting distinct students across all sections of each course
   const enrollments = await db()
@@ -274,7 +276,7 @@ export async function syncScheduledAttendance(organizationId: string) {
   }
 }
 
-export async function listClassSessions(organizationId: string, studentId?: string): Promise<ClassSession[]> {
+export async function listClassSessions(organizationId: string, studentId?: string, teacherId?: string): Promise<ClassSession[]> {
   await syncScheduledAttendance(organizationId)
   let enrolledSectionIds: Set<string> | null = null
   if (studentId) {
@@ -296,6 +298,7 @@ export async function listClassSessions(organizationId: string, studentId?: stri
   if (enrolledSectionIds !== null) {
     conditions.push(inArray(courseSections.id, Array.from(enrolledSectionIds)))
   }
+  if (teacherId) conditions.push(eq(courses.teacherId, teacherId))
 
   const rows = await db()
     .select({
@@ -321,13 +324,17 @@ export async function listClassSessions(organizationId: string, studentId?: stri
   const enrollments = await db()
     .select({
       sectionId: classEnrollments.sectionId,
+      courseId: courseSections.courseId,
+      studentId: classEnrollments.studentId,
     })
     .from(classEnrollments)
+    .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
     .where(and(eq(classEnrollments.organizationId, organizationId), eq(classEnrollments.status, 'active')))
 
-  const enrollmentCountBySection = new Map<string, number>()
+  const studentsByCourse = new Map<string, Set<string>>()
   for (const en of enrollments) {
-    enrollmentCountBySection.set(en.sectionId, (enrollmentCountBySection.get(en.sectionId) ?? 0) + 1)
+    if (!studentsByCourse.has(en.courseId)) studentsByCourse.set(en.courseId, new Set())
+    studentsByCourse.get(en.courseId)!.add(en.studentId)
   }
 
   const liveSessions = await db()
@@ -382,9 +389,11 @@ export async function listClassSessions(organizationId: string, studentId?: stri
       room: row.section.room,
       startsAt: row.section.startsAt,
       endsAt: row.section.endsAt,
+      startDate: row.section.startDate,
+      endDate: row.section.endDate,
       dayOfWeek: row.section.dayOfWeek,
       autoStart: row.section.autoStart,
-      enrolledCount: enrollmentCountBySection.get(row.section.id) ?? 0,
+      enrolledCount: studentsByCourse.get(row.section.courseId)?.size ?? 0,
       status,
       // For students, challenge is strictly masked to '------' and acousticProof is undefined
       challenge: isStudent ? '------' : (live ? challengeBySession.get(live.session.id) ?? '------' : '------'),
@@ -850,6 +859,16 @@ export async function verifyAttendance(
     hasSeenDevice: Boolean(currentDevice),
     requireTrustedDevice: policy.requireTrustedDevice,
   })
+
+  if (!deviceDecision.allowed) {
+    return {
+      ok: false,
+      confidence: deviceDecision.score,
+      message: currentDevice
+        ? 'Thiết bị này chưa được tin cậy. Vui lòng dùng thiết bị đã liên kết hoặc liên hệ quản trị viên để xác nhận thiết bị.'
+        : 'Thiết bị này chưa được liên kết với tài khoản sinh viên. Vui lòng liên kết thiết bị trước khi điểm danh.',
+    }
+  }
 
   // Duplicate check-in idempotency: If student is already marked present or excused, return existing record
   const existing = await db()
@@ -1555,11 +1574,18 @@ export async function removeStudentFromSection(
     return { ok: false, message: 'Forbidden: You can only manage enrollment for courses you teach.' }
   }
 
+  const courseSectionIds = await db()
+    .select({ id: courseSections.id })
+    .from(courseSections)
+    .where(and(eq(courseSections.courseId, sec[0].courseId), eq(courseSections.organizationId, auth.organizationId)))
+
+  // A roster belongs to the course, so removing a student from one section
+  // removes that student from every scheduled section of the same course.
   await db()
     .delete(classEnrollments)
     .where(
       and(
-        eq(classEnrollments.sectionId, sectionId),
+        inArray(classEnrollments.sectionId, courseSectionIds.map((section) => section.id)),
         eq(classEnrollments.studentId, studentId),
         eq(classEnrollments.organizationId, auth.organizationId),
       ),
@@ -1850,6 +1876,200 @@ export async function listDepartments(auth: AuthContext) {
   return rows.map((row) => row.name)
 }
 
+export async function listDepartmentsWithDetails(auth: AuthContext): Promise<DepartmentItem[]> {
+  const depRows = await db()
+    .select({
+      id: departments.id,
+      name: departments.name,
+      createdAt: departments.createdAt,
+    })
+    .from(departments)
+    .where(eq(departments.organizationId, auth.organizationId))
+    .orderBy(asc(departments.name))
+
+  const courseCounts = await db()
+    .select({
+      department: courses.department,
+      count: count(),
+    })
+    .from(courses)
+    .where(eq(courses.organizationId, auth.organizationId))
+    .groupBy(courses.department)
+
+  const countMap = new Map<string, number>()
+  for (const row of courseCounts) {
+    if (row.department) {
+      countMap.set(row.department.toLowerCase(), Number(row.count))
+    }
+  }
+
+  const result: DepartmentItem[] = depRows.map((dep) => ({
+    id: dep.id,
+    name: dep.name,
+    courseCount: countMap.get(dep.name.toLowerCase()) ?? 0,
+    createdAt: dep.createdAt.toISOString(),
+  }))
+
+  // Auto-populate any courses that have a department name not yet in departments table
+  for (const row of courseCounts) {
+    const dName = row.department?.trim()
+    if (dName && !result.some((d) => d.name.toLowerCase() === dName.toLowerCase())) {
+      const newId = `dep_${nanoid(8)}`
+      try {
+        await db().insert(departments).values({
+          id: newId,
+          organizationId: auth.organizationId,
+          name: dName,
+        })
+        result.push({
+          id: newId,
+          name: dName,
+          courseCount: Number(row.count),
+          createdAt: new Date().toISOString(),
+        })
+      } catch {
+        // Ignore duplicate in race condition
+      }
+    }
+  }
+
+  result.sort((a, b) => a.name.localeCompare(b.name))
+
+  // If teacher, only return departments associated with courses taught by this teacher
+  if (auth.role === 'teacher') {
+    const teacherCourses = await db()
+      .select({ department: courses.department })
+      .from(courses)
+      .where(and(eq(courses.organizationId, auth.organizationId), eq(courses.teacherId, auth.userId)))
+
+    const teacherDeptSet = new Set(teacherCourses.map((c) => c.department.toLowerCase()))
+    return result.filter((d) => teacherDeptSet.has(d.name.toLowerCase()))
+  }
+
+  return result
+}
+
+export async function createDepartment(auth: AuthContext, name: string) {
+  if (auth.role !== 'admin') {
+    return { ok: false as const, message: 'Chỉ quản trị viên mới có quyền tạo khoa/bộ môn.' }
+  }
+
+  const trimmed = name.trim()
+  if (!trimmed || trimmed.length < 2 || trimmed.length > 100) {
+    return { ok: false as const, message: 'Tên khoa/bộ môn phải từ 2 đến 100 ký tự.' }
+  }
+
+  const existing = await db()
+    .select({ id: departments.id })
+    .from(departments)
+    .where(and(eq(departments.organizationId, auth.organizationId), sql`lower(${departments.name}) = lower(${trimmed})`))
+    .limit(1)
+
+  if (existing[0]) {
+    return { ok: false as const, message: 'Khoa/Bộ môn này đã tồn tại trong hệ thống.' }
+  }
+
+  const id = `dep_${nanoid(8)}`
+  await db().insert(departments).values({
+    id,
+    organizationId: auth.organizationId,
+    name: trimmed,
+  })
+
+  await appendAudit(auth, 'department.create', trimmed, 'info')
+  return { ok: true as const, department: { id, name: trimmed } }
+}
+
+export async function updateDepartment(auth: AuthContext, id: string, newName: string) {
+  if (auth.role !== 'admin') {
+    return { ok: false as const, message: 'Chỉ quản trị viên mới có quyền cập nhật khoa/bộ môn.' }
+  }
+
+  const trimmed = newName.trim()
+  if (!trimmed || trimmed.length < 2 || trimmed.length > 100) {
+    return { ok: false as const, message: 'Tên khoa/bộ môn phải từ 2 đến 100 ký tự.' }
+  }
+
+  const current = await db()
+    .select()
+    .from(departments)
+    .where(and(eq(departments.id, id), eq(departments.organizationId, auth.organizationId)))
+    .limit(1)
+
+  if (!current[0]) {
+    return { ok: false as const, message: 'Không tìm thấy khoa/bộ môn.' }
+  }
+
+  const oldName = current[0].name
+  if (oldName === trimmed) {
+    return { ok: true as const }
+  }
+
+  const duplicate = await db()
+    .select({ id: departments.id })
+    .from(departments)
+    .where(and(eq(departments.organizationId, auth.organizationId), sql`lower(${departments.name}) = lower(${trimmed})`, ne(departments.id, id)))
+    .limit(1)
+
+  if (duplicate[0]) {
+    return { ok: false as const, message: 'Tên khoa/bộ môn này đã được sử dụng.' }
+  }
+
+  await db()
+    .update(departments)
+    .set({ name: trimmed })
+    .where(and(eq(departments.id, id), eq(departments.organizationId, auth.organizationId)))
+
+  await db()
+    .update(courses)
+    .set({ department: trimmed })
+    .where(and(eq(courses.organizationId, auth.organizationId), eq(courses.department, oldName)))
+
+  await db()
+    .update(organizationMemberships)
+    .set({ department: trimmed })
+    .where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.department, oldName)))
+
+  await appendAudit(auth, 'department.update', `${oldName} -> ${trimmed}`, 'info')
+  return { ok: true as const }
+}
+
+export async function deleteDepartment(auth: AuthContext, id: string) {
+  if (auth.role !== 'admin') {
+    return { ok: false as const, message: 'Chỉ quản trị viên mới có quyền xóa khoa/bộ môn.' }
+  }
+
+  const current = await db()
+    .select()
+    .from(departments)
+    .where(and(eq(departments.id, id), eq(departments.organizationId, auth.organizationId)))
+    .limit(1)
+
+  if (!current[0]) {
+    return { ok: false as const, message: 'Không tìm thấy khoa/bộ môn.' }
+  }
+
+  const linkedCourses = await db()
+    .select({ count: count() })
+    .from(courses)
+    .where(and(eq(courses.organizationId, auth.organizationId), eq(courses.department, current[0].name)))
+
+  const activeCourseCount = Number(linkedCourses[0]?.count ?? 0)
+  if (activeCourseCount > 0) {
+    return {
+      ok: false as const,
+      message: `Không thể xóa: Khoa/bộ môn "${current[0].name}" hiện đang có ${activeCourseCount} môn học trực thuộc. Vui lòng chuyển môn học sang khoa khác trước khi xóa.`,
+    }
+  }
+
+  await db()
+    .delete(departments)
+    .where(and(eq(departments.id, id), eq(departments.organizationId, auth.organizationId)))
+
+  await appendAudit(auth, 'department.delete', current[0].name, 'warning')
+  return { ok: true as const }
+}
+
 async function appendAudit(auth: AuthContext, action: string, target: string, severity: 'info' | 'warning') {
   await db().insert(auditLogs).values({
     id: nanoid(),
@@ -1880,6 +2100,20 @@ export async function createCourse(
   if (auth.role !== 'admin' && auth.role !== 'teacher') {
     return { ok: false as const, message: 'Permission denied.' }
   }
+  const assignedTeacherId = data.teacherId || auth.userId
+  const teacher = await db()
+    .select({ userId: organizationMemberships.userId })
+    .from(organizationMemberships)
+    .where(
+      and(
+        eq(organizationMemberships.organizationId, auth.organizationId),
+        eq(organizationMemberships.userId, assignedTeacherId),
+        eq(organizationMemberships.role, 'teacher'),
+        eq(organizationMemberships.status, 'active'),
+      ),
+    )
+    .limit(1)
+  if (!teacher[0]) return { ok: false as const, message: 'Giảng viên phụ trách không hợp lệ.' }
   const courseId = `crs_${nanoid(10)}`
   await db().insert(courses).values({
     id: courseId,
@@ -1887,12 +2121,21 @@ export async function createCourse(
     code: data.code.trim().toUpperCase(),
     name: data.name.trim(),
     department: data.department.trim(),
-    teacherId: data.teacherId || auth.userId,
+    teacherId: assignedTeacherId,
     color: data.color || 'indigo',
     status: 'active',
   })
   await appendAudit(auth, `Created course ${data.code} (${data.name})`, courseId, 'info')
   return { ok: true as const, courseId }
+}
+
+export async function updateCourseTeacher(auth: AuthContext, courseId: string, teacherId: string) {
+  if (auth.role !== 'admin') return { ok: false as const, message: 'Permission denied.' }
+  const teacher = await db().select({ userId: organizationMemberships.userId }).from(organizationMemberships).where(and(eq(organizationMemberships.organizationId, auth.organizationId), eq(organizationMemberships.userId, teacherId), eq(organizationMemberships.role, 'teacher'), eq(organizationMemberships.status, 'active'))).limit(1)
+  if (!teacher[0]) return { ok: false as const, message: 'Giảng viên không hợp lệ.' }
+  const result = await db().update(courses).set({ teacherId }).where(and(eq(courses.id, courseId), eq(courses.organizationId, auth.organizationId)))
+  if (!result.rowCount) return { ok: false as const, message: 'Không tìm thấy môn học.' }
+  return { ok: true as const }
 }
 
 export async function createCourseSection(
@@ -1902,6 +2145,8 @@ export async function createCourseSection(
     room: string
     startsAt: string
     endsAt: string
+    startDate?: string
+    endDate?: string
     dayOfWeek?: number
     autoStart?: boolean
     enrollAll?: boolean
@@ -1932,6 +2177,8 @@ export async function createCourseSection(
     room: data.room.trim(),
     startsAt: data.startsAt.trim(),
     endsAt: data.endsAt.trim(),
+    startDate: data.startDate?.trim() || '2026-01-01',
+    endDate: data.endDate?.trim() || '2026-12-31',
     dayOfWeek: data.dayOfWeek ?? 1,
     autoStart: data.autoStart ?? true,
     status: 'scheduled',
@@ -1994,6 +2241,8 @@ export async function updateCourseSection(
     room?: string
     startsAt?: string
     endsAt?: string
+    startDate?: string
+    endDate?: string
     dayOfWeek?: number
     autoStart?: boolean
     status?: string

@@ -107,6 +107,8 @@ export type ImportStudentsResult = {
 }
 
 export type ImportStudentsOptions = {
+  courseId?: string
+  /** Backward-compatible direct section import for existing integrations. */
   sectionId?: string
   autoEnrollSections?: boolean
 }
@@ -339,16 +341,11 @@ export async function importStudents(
         )
 
       if (existing.length > 0) {
-        if (options?.sectionId) {
-          await db()
-            .insert(classEnrollments)
-            .values({
-              sectionId: options.sectionId,
-              studentId: existing[0].userId,
-              organizationId: auth.organizationId,
-              status: 'active',
-            })
-            .onConflictDoNothing()
+        if (options?.courseId || options?.sectionId) {
+          const sections = options.sectionId
+            ? [{ id: options.sectionId }]
+            : await db().select({ id: courseSections.id }).from(courseSections).where(and(eq(courseSections.courseId, options.courseId!), eq(courseSections.organizationId, auth.organizationId)))
+          for (const section of sections) await db().insert(classEnrollments).values({ sectionId: section.id, studentId: existing[0].userId, organizationId: auth.organizationId, status: 'active' }).onConflictDoNothing()
           created.push({ studentCode, name, defaultPassword: '(Tài khoản đã tồn tại - đã ghi danh)' })
           continue
         } else {
@@ -396,16 +393,11 @@ export async function importStudents(
         status: 'active',
       })
 
-      if (options?.sectionId) {
-        await db()
-          .insert(classEnrollments)
-          .values({
-            sectionId: options.sectionId,
-            studentId: userId,
-            organizationId: auth.organizationId,
-            status: 'active',
-          })
-          .onConflictDoNothing()
+      if (options?.courseId || options?.sectionId) {
+        const sections = options.sectionId
+          ? [{ id: options.sectionId }]
+          : await db().select({ id: courseSections.id }).from(courseSections).where(and(eq(courseSections.courseId, options.courseId!), eq(courseSections.organizationId, auth.organizationId)))
+        for (const section of sections) await db().insert(classEnrollments).values({ sectionId: section.id, studentId: userId, organizationId: auth.organizationId, status: 'active' }).onConflictDoNothing()
       } else if (options?.autoEnrollSections !== false) {
         const existingSections = await db()
           .select({ id: courseSections.id })

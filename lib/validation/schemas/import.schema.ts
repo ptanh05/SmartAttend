@@ -24,7 +24,7 @@ const csvText = (label: string) =>
 export const importStudentsSchema = z.object({
   csv: csvText('student').optional(),
   rows: z.array(studentRowSchema).max(MAX_IMPORT_STUDENT_ROWS, `Mỗi lần nhập tối đa ${MAX_IMPORT_STUDENT_ROWS} bản ghi`).optional(),
-  sectionId: z.string().trim().max(100).optional(),
+  courseId: z.string().trim().max(100).optional(),
 }).refine((data) => Boolean(data.csv?.trim() || (data.rows && data.rows.length > 0)), {
   message: 'Cần cung cấp nội dung CSV hoặc danh sách hàng sinh viên',
 })

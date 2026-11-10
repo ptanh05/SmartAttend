@@ -8,6 +8,7 @@ export type Portal = 'student' | 'teacher' | 'admin'
 export const portals: Portal[] = ['student', 'teacher', 'admin']
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused' | 'pending' | 'flagged' | 'unmarked'
 export type User = { id: string; organizationId: string; name: string; email: string; role: Role; initials: string; department: string }
+export type DepartmentItem = { id: string; name: string; courseCount: number; createdAt: string }
 export type Course = { id: string; organizationId: string; code: string; name: string; department: string; teacherId: string; enrolled: number; color: string }
 export type SessionStatus = 'draft' | 'active' | 'paused' | 'closed' | 'expired' | 'scheduled' | 'live'
 export type ClassSession = {
@@ -19,6 +20,8 @@ export type ClassSession = {
   room: string
   startsAt: string
   endsAt: string
+  startDate?: string
+  endDate?: string
   dayOfWeek?: number
   autoStart?: boolean
   status: SessionStatus

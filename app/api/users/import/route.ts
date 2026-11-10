@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       return validation.response
     }
 
-    const { csv, rows: rawRows, sectionId } = validation.data
+    const { csv, rows: rawRows, courseId } = validation.data
     const rows = rawRows && rawRows.length > 0 ? rawRows : parseStudentCsv(csv ?? '')
 
     if (rows.length === 0) {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await importStudents(auth, rows, { sectionId: sectionId || undefined })
+    const result = await importStudents(auth, rows, { courseId: courseId || undefined })
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })

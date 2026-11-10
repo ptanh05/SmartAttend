@@ -148,7 +148,7 @@ export function Status({ children, tone = 'success' }: { children: React.ReactNo
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shadow-xs ${styles[tone]}`}><span className="size-1.5 rounded-full bg-current" />{children}</span>
 }
 
-export function Button({ children, variant = 'primary', onClick, type = 'button', disabled, className = '' }: { children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost' | 'danger' | 'microsoft'; onClick?: () => void; type?: 'button' | 'submit'; disabled?: boolean; size?: string; className?: string }) {
+export function Button({ children, variant = 'primary', onClick, type = 'button', disabled, title, className = '' }: { children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost' | 'danger' | 'microsoft'; onClick?: () => void; type?: 'button' | 'submit'; disabled?: boolean; size?: string; title?: string; className?: string }) {
   const styles = {
     primary: 'bg-[#1e4da1] text-white hover:bg-[#163c80] active:scale-[0.99] shadow-sm',
     outline: 'border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 shadow-xs',
@@ -156,7 +156,7 @@ export function Button({ children, variant = 'primary', onClick, type = 'button'
     danger: 'bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.99] shadow-sm',
     microsoft: 'bg-[#0078d4] text-white hover:bg-[#006cbd] active:scale-[0.99] shadow-sm',
   }
-  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50 cursor-pointer ${styles[variant]} ${className}`}>{children}</button>
+  return <button type={type} onClick={onClick} disabled={disabled} title={title} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50 cursor-pointer ${styles[variant]} ${className}`}>{children}</button>
 }
 
 export function PillButton({ children, onClick, active = false }: { children: React.ReactNode; onClick?: () => void; active?: boolean }) {

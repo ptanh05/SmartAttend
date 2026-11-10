@@ -90,8 +90,8 @@ export async function GET() {
         leaveRequests,
         policy,
       ] = await Promise.all([
-        listCourses(auth.organizationId),
-        listClassSessions(auth.organizationId),
+        listCourses(auth.organizationId, auth.userId),
+        listClassSessions(auth.organizationId, undefined, auth.userId),
         getLiveSessionDetails(auth),
         listRecords(auth),
         listNotifications(auth),

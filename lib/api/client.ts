@@ -4,6 +4,7 @@ import type {
   AuditEvent,
   ClassSession,
   Course,
+  DepartmentItem,
   LeaveRequest,
   Portal,
   Role,
@@ -123,7 +124,7 @@ export const api = {
       body: JSON.stringify({ studentId }),
     })
   },
-  importStudents(csv: string, sectionId?: string) {
+  importStudents(csv: string, courseId?: string) {
     return request<{
       ok: boolean
       created: { studentCode: string; name: string; defaultPassword: string }[]
@@ -131,7 +132,7 @@ export const api = {
       message?: string
     }>('/api/users/import', {
       method: 'POST',
-      body: JSON.stringify({ csv, sectionId }),
+      body: JSON.stringify({ csv, courseId }),
     })
   },
   importTeachers(csv: string) {
@@ -339,11 +340,34 @@ export const api = {
   departments() {
     return request<{ ok: boolean; departments: string[] }>('/api/users?kind=departments')
   },
-  createCourse(data: { code: string; name: string; department: string; color?: string }) {
+  listDepartments() {
+    return request<{ ok: boolean; departments: DepartmentItem[]; message?: string }>('/api/departments')
+  },
+  createDepartment(data: { name: string }) {
+    return request<{ ok: boolean; department?: { id: string; name: string }; message?: string }>('/api/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  updateDepartment(data: { id: string; name: string }) {
+    return request<{ ok: boolean; message?: string }>('/api/departments', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+  deleteDepartment(id: string) {
+    return request<{ ok: boolean; message?: string }>(`/api/departments?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  },
+  createCourse(data: { code: string; name: string; department: string; color?: string; teacherId?: string }) {
     return request<{ ok: boolean; courseId?: string; message?: string }>('/api/courses', {
       method: 'POST',
       body: JSON.stringify(data),
     })
+  },
+  updateCourseTeacher(courseId: string, teacherId: string) {
+    return request<{ ok: boolean; message?: string }>(`/api/courses/${courseId}`, { method: 'PATCH', body: JSON.stringify({ teacherId }) })
   },
   sections() {
     return request<{ ok: boolean; sections: ClassSession[] }>('/api/courses/sections')
@@ -377,13 +401,13 @@ export const api = {
       availableStudents: { id: string; name: string; email: string; studentCode: string; department: string }[]
     }>(`/api/courses/sections/${sectionId}/students?search=${encodeURIComponent(search)}`)
   },
-  createSection(data: { courseId: string; room: string; startsAt: string; endsAt: string; dayOfWeek?: number; autoStart?: boolean }) {
+  createSection(data: { courseId: string; room: string; startsAt: string; endsAt: string; startDate?: string; endDate?: string; dayOfWeek?: number; autoStart?: boolean }) {
     return request<{ ok: boolean; sectionId?: string; message?: string }>('/api/courses/sections', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   },
-  updateSection(sectionId: string, data: { room?: string; startsAt?: string; endsAt?: string; dayOfWeek?: number; autoStart?: boolean; status?: string }) {
+  updateSection(sectionId: string, data: { room?: string; startsAt?: string; endsAt?: string; startDate?: string; endDate?: string; dayOfWeek?: number; autoStart?: boolean; status?: string }) {
     return request<{ ok: boolean; message?: string }>(`/api/courses/sections/${sectionId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

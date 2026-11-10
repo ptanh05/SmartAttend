@@ -16,7 +16,7 @@ export type DevicePolicyInput = {
 }
 
 export type DevicePolicyDecision = {
-  /** Whether attendance may be recorded from this device. Always true today. */
+  /** Whether attendance may be recorded from this device. */
   allowed: boolean
   /** Bounded 0..100 verification score contributed by the device. */
   score: number
@@ -53,14 +53,11 @@ export function evaluateDevicePolicy({
   if (hasTrustedDevice) {
     return { allowed: true, score: TRUSTED_SCORE, suspicious: false, enforceTrustedDevice: true, reason: 'trusted' }
   }
-  // No trusted device while the policy is enforced. Attendance is still
-  // recorded (so the flow is not hard-broken for first-time students), but the
-  // attempt is scored low and flagged for admin review. The device becomes
-  // trusted on the next successful verification.
+  // Strict enforcement: an untrusted or unknown device cannot check in.
   if (hasSeenDevice) {
-    return { allowed: true, score: POLICY_UNTRUSTED_SCORE, suspicious: true, enforceTrustedDevice: true, reason: 'untrusted_under_policy' }
+    return { allowed: false, score: POLICY_UNTRUSTED_SCORE, suspicious: true, enforceTrustedDevice: true, reason: 'untrusted_under_policy' }
   }
-  return { allowed: true, score: POLICY_UNSEEN_SCORE, suspicious: true, enforceTrustedDevice: true, reason: 'unseen_under_policy' }
+  return { allowed: false, score: POLICY_UNSEEN_SCORE, suspicious: true, enforceTrustedDevice: true, reason: 'unseen_under_policy' }
 }
 
 /** Clamp any score into the 0..100 verification range. */

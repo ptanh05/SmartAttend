@@ -6,7 +6,7 @@ import { validateRequestBody, createCourseSchema } from '@/lib/validation'
 export async function GET() {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const courses = await listCourses(auth.organizationId)
+    const courses = await listCourses(auth.organizationId, auth.role === 'teacher' ? auth.userId : undefined)
     return NextResponse.json({ ok: true, courses })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
@@ -22,12 +22,13 @@ export async function POST(request: Request) {
       return validation.response
     }
 
-    const { code, name, department, color } = validation.data
+    const { code, name, department, color, teacherId } = validation.data
     const result = await createCourse(auth, {
       code,
       name,
       department,
       color,
+      teacherId,
     })
     return NextResponse.json(result)
   } catch (error) {

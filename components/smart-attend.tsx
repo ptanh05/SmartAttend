@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertTriangle, ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Cookie, Copy, Download, Edit3, Eye, FileCheck, FileSpreadsheet, FileText, Fingerprint, Globe, Image as ImageIcon, Info, KeyRound, Layers, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  AlertTriangle, ArrowLeft, BarChart3, Bell, BookOpen, Building2, Calendar, CalendarClock, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
+  ClipboardCheck, Clock, Cookie, Copy, Download, Edit3, Eye, FileCheck, FileCheck2, FileSpreadsheet, FileText, Fingerprint, FlaskConical, Globe, Image as ImageIcon, Info, KeyRound, Layers, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
   PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, UserRound, Users, Volume2, Waves, Wifi, X, Zap
 } from 'lucide-react'
 import {
@@ -22,7 +22,7 @@ import { UtcLoginLanding } from './utc-login-landing'
 import { UtcStudentDashboard } from './utc-student-dashboard'
 import { RegisterScreen } from '@/components/auth/auth-screens'
 import { openCookieSettings } from '@/components/cookie-consent-banner'
-import type { AttendanceStatus, ClassSession, Course, Portal, Role } from '@/lib/types/domain'
+import type { AttendanceStatus, ClassSession, Course, DepartmentItem, Portal, Role } from '@/lib/types/domain'
 import { startUltrasonicBeacon, detectUltrasonicBeacon, DEFAULT_ULTRASONIC_FREQ, type BeaconController } from '@/lib/attendance/ultrasonic'
 import { authenticateWithBiometrics, registerDeviceBiometrics } from '@/lib/auth/webauthn-client'
 
@@ -167,6 +167,7 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const [stepNotice, setStepNotice] = useState('')
   const [biometricStatus, setBiometricStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
   const [stage2SubMethod, setStage2SubMethod] = useState<'instant' | 'qr' | 'manual'>('instant')
+  const [selectedWeekStart, setSelectedWeekStart] = useState('')
 
   useEffect(() => {
     return () => {
@@ -455,14 +456,34 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   }
 
   if (page === 'join') {
+    const liveSessions = sessions.filter((session) => session.status === 'live')
+    const scheduledSessions = sessions.filter((session) => session.status !== 'live')
+    const courseForSession = (session: ClassSession) => courses.find((course) => course.id === session.courseId)
     return (
       <div className="mx-auto max-w-2xl">
         <SectionHeader
           eyebrow={t('student.verification')}
           title={t('student.joinTitle')}
           detail={t('student.joinDetail')}
-          action={<Button variant="ghost" onClick={() => { stopCamera(); go('overview') }}><ArrowLeft />{t('common.back')}</Button>}
         />
+        <Card title="Các ca đang live" description="Chọn ca học đang mở để thực hiện điểm danh.">
+          {liveSessions.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              <Clock className="size-5" />
+              <span>Hiện chưa có ca học nào đang live.</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {liveSessions.map((session) => {
+                const course = courseForSession(session)
+                return <button key={session.id} type="button" onClick={() => { if (session.id !== liveSession?.id) go('join') }} className="flex w-full items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-50">
+                  <div><p className="font-semibold text-emerald-900">{course?.code ?? session.courseCode} · {course?.name ?? session.courseName}</p><p className="mt-1 text-xs text-emerald-700">{session.room} · {session.startsAt} – {session.endsAt}</p><p className="mt-1 text-[11px] text-emerald-700/80">Học kỳ: {session.startDate ?? '2026-01-01'} → {session.endDate ?? '2026-12-31'}</p></div>
+                  <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">LIVE</span>
+                </button>
+              })}
+            </div>
+          )}
+        </Card>
         <Card
           title={myRecord ? (liveCourse?.name ?? 'Đã hoàn tất điểm danh') : (liveCourse?.name ?? t('student.noLiveClass'))}
           description={liveSession ? `${liveCourse?.code ?? ''} · ${liveSession.room} · ${t('common.liveNow')}` : t('student.waitingSession')}
@@ -477,9 +498,6 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 <p className="text-xs text-muted-foreground max-w-sm mt-1 mb-5">
                   {t('student.waitingSession')}
                 </p>
-                <Button variant="outline" onClick={() => go('overview')}>
-                  <ArrowLeft />{t('common.back')}
-                </Button>
               </div>
             ) : myRecord ? (
               <div className="flex flex-col items-center justify-center p-6 text-center">
@@ -848,6 +866,9 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
             )}
           </div>
         </Card>
+        <Card title="Tất cả các ca học" description="Các ca học thuộc những môn bạn đã ghi danh.">
+          {scheduledSessions.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có ca học nào khác.</p> : <div className="divide-y">{scheduledSessions.map((session) => { const course = courseForSession(session); return <div key={session.id} className="flex items-center justify-between gap-3 py-3 text-sm"><div><p className="font-medium">{course?.code ?? session.courseCode} · {course?.name ?? session.courseName}</p><p className="mt-1 text-xs text-muted-foreground">{session.startsAt} – {session.endsAt} · {session.room}</p><p className="mt-1 text-[11px] text-muted-foreground">Học kỳ: {session.startDate ?? '2026-01-01'} → {session.endDate ?? '2026-12-31'}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{session.status === 'scheduled' ? 'Sắp tới' : session.status}</span></div> })}</div>}
+        </Card>
       </div>
     )
   }
@@ -1121,9 +1142,40 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   }
 
   if (page === 'courses') {
+    const semesterStart = sessions.map((s) => s.startDate).filter(Boolean).sort()[0] ?? '2026-01-01'
+    const semesterEnd = sessions.map((s) => s.endDate).filter(Boolean).sort().at(-1) ?? '2026-12-31'
+    const semesterStartDate = new Date(`${semesterStart}T00:00:00`)
+    const semesterEndDate = new Date(`${semesterEnd}T00:00:00`)
+    const firstMonday = new Date(semesterStartDate)
+    const firstDay = firstMonday.getDay() || 7
+    firstMonday.setDate(firstMonday.getDate() - firstDay + 1)
+    const weekOptions: { value: string; label: string }[] = []
+    for (let cursor = new Date(firstMonday); cursor <= semesterEndDate; cursor.setDate(cursor.getDate() + 7)) {
+      const end = new Date(cursor)
+      end.setDate(end.getDate() + 6)
+      weekOptions.push({ value: cursor.toISOString().slice(0, 10), label: `Tuần ${weekOptions.length + 1} · ${cursor.toLocaleDateString('vi-VN')} – ${end.toLocaleDateString('vi-VN')}` })
+    }
+    const activeWeekStart = selectedWeekStart || weekOptions[0]?.value || semesterStart
+    const activeWeekDate = new Date(`${activeWeekStart}T00:00:00`)
+    const weeklySessions = sessions.filter((session) => {
+      const day = session.dayOfWeek || 1
+      const occurrence = new Date(activeWeekDate)
+      occurrence.setDate(activeWeekDate.getDate() + day - 1)
+      const dateValue = occurrence.toISOString().slice(0, 10)
+      return dateValue >= (session.startDate ?? semesterStart) && dateValue <= (session.endDate ?? semesterEnd)
+    })
     return (
       <div className="flex flex-col gap-6">
         <SectionHeader eyebrow={t('student.workspace')} title={t('student.myClasses')} detail={t('student.myClassesDetail')} />
+        <Card title="Lịch học theo tuần" description={`Học kỳ: ${semesterStart} → ${semesterEnd}`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <label className="text-sm font-medium">Chọn tuần</label>
+            <select value={activeWeekStart} onChange={(event) => setSelectedWeekStart(event.target.value)} className="h-10 min-w-[260px] rounded-lg border bg-background px-3 text-sm">
+              {weekOptions.map((week) => <option key={week.value} value={week.value}>{week.label}</option>)}
+            </select>
+          </div>
+          {weeklySessions.length === 0 ? <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Tuần này không có ca học.</p> : <div className="divide-y">{weeklySessions.map((session) => { const course = courses.find((item) => item.id === session.courseId); const date = new Date(activeWeekDate); date.setDate(activeWeekDate.getDate() + (session.dayOfWeek || 1) - 1); return <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-semibold">{course?.code ?? session.courseCode} · {course?.name ?? session.courseName}</p><p className="mt-1 text-xs text-muted-foreground">{date.toLocaleDateString('vi-VN')} · {session.startsAt} – {session.endsAt} · {session.room}</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700">{session.status === 'live' ? 'Đang live' : 'Theo lịch'}</span></div> })}</div>}
+        </Card>
         <div className="grid gap-4 md:grid-cols-2">
           {courses.map((course) => {
             const courseSectionsList = sessions.filter((s) => s.courseId === course.id)
@@ -1276,9 +1328,9 @@ function StudentImportPanel({
   setCsvText,
   importing,
   importResult,
-  targetSectionId,
-  setTargetSectionId,
-  sections,
+  targetCourseId,
+  setTargetCourseId,
+  courses,
   onImport,
   onClose,
   t,
@@ -1290,9 +1342,9 @@ function StudentImportPanel({
     created: { studentCode: string; name: string; defaultPassword: string }[]
     skipped: { studentCode: string; reason: string }[]
   } | null
-  targetSectionId: string
-  setTargetSectionId: (value: string) => void
-  sections?: ClassSession[]
+  targetCourseId: string
+  setTargetCourseId: (value: string) => void
+  courses?: Course[]
   onImport: () => void
   onClose: () => void
   t: (key: string, params?: Record<string, string | number>) => string
@@ -1414,17 +1466,12 @@ function StudentImportPanel({
           <span>{t('admin.selectSectionForImport')}</span>
         </label>
         <select
-          value={targetSectionId}
-          onChange={(e) => setTargetSectionId(e.target.value)}
+          value={targetCourseId}
+          onChange={(e) => setTargetCourseId(e.target.value)}
           className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 dark:text-white outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all cursor-pointer"
         >
-          <option value="">{t('admin.importTargetAll')}</option>
-          {sections &&
-            sections.map((sec) => (
-              <option key={sec.sectionId} value={sec.sectionId}>
-                {sec.courseCode} · {sec.courseName} ({sec.room} · {sec.startsAt})
-              </option>
-            ))}
+          <option value="">Toàn bộ trường</option>
+          {courses?.map((course) => <option key={course.id} value={course.id}>{course.code} · {course.name}</option>)}
         </select>
       </div>
 
@@ -2379,7 +2426,8 @@ function ClassRosterModal({
     setSectionImportResult(null)
     setActionMessage(null)
     try {
-      const res = await api.importStudents(sectionCsvText, section.sectionId)
+      // A roster belongs to the course; synchronize it to every scheduled section.
+      const res = await api.importStudents(sectionCsvText, section.courseId)
       if (res.ok) {
         setSectionImportResult({ created: res.created, skipped: res.skipped })
         setActionMessage({
@@ -2726,21 +2774,288 @@ function ClassRosterModal({
   )
 }
 
+function DepartmentModal({
+  initialDept,
+  onClose,
+  onSaved,
+}: {
+  initialDept?: DepartmentItem | null
+  onClose: () => void
+  onSaved: (msg: string) => void
+}) {
+  const [name, setName] = useState(initialDept?.name || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const suggestions = [
+    'Khoa Công nghệ thông tin',
+    'Khoa Điện - Điện tử',
+    'Khoa Công trình',
+    'Khoa Cơ khí',
+    'Khoa Vận tải - Kinh tế',
+    'Khoa Quản trị kinh doanh',
+    'Khoa Khoa học cơ bản',
+    'Bộ môn Giáo dục thể chất & QP',
+  ]
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed || trimmed.length < 2) {
+      setError('Tên khoa/bộ môn phải từ 2 ký tự trở lên.')
+      return
+    }
+    setLoading(true)
+    setError('')
+    try {
+      if (initialDept) {
+        const res = await api.updateDepartment({ id: initialDept.id, name: trimmed })
+        if (!res.ok) throw new Error(res.message || 'Không thể đổi tên khoa/bộ môn')
+        onSaved(`Đã đổi tên khoa/bộ môn thành "${trimmed}" thành công.`)
+      } else {
+        const res = await api.createDepartment({ name: trimmed })
+        if (!res.ok) throw new Error(res.message || 'Không thể tạo khoa/bộ môn')
+        onSaved(`Đã thêm khoa/bộ môn "${trimmed}" thành công.`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Có lỗi xảy ra khi lưu khoa/bộ môn')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] p-6 shadow-2xl text-slate-800 dark:text-slate-100 my-auto">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-900 shadow-2xs">
+              <Building2 className="size-5" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                {initialDept ? 'Đổi tên Khoa / Bộ môn' : 'Thêm Khoa / Bộ môn mới'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {initialDept ? `Cập nhật tên định danh cho ${initialDept.name}` : 'Thiết lập đơn vị đào tạo trực thuộc trường'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <form onSubmit={submit} className="mt-5 flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+            <span>Tên Khoa / Bộ môn <span className="text-rose-500">*</span></span>
+            <input
+              type="text"
+              className="h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3.5 text-sm font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              placeholder="Ví dụ: Khoa Công nghệ thông tin"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+            />
+          </label>
+
+          {/* Quick presets for new department */}
+          {!initialDept && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Gợi ý đơn vị đào tạo phổ biến tại UTC:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setName(item)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                      name === item
+                        ? 'bg-blue-600 text-white font-bold'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {initialDept && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/30 p-3 text-xs text-blue-800 dark:text-blue-300">
+              <p className="font-semibold flex items-center gap-1.5">
+                <Info className="size-3.5" /> Đồng bộ dữ liệu tự động:
+              </p>
+              <p className="mt-1 text-[11px] text-blue-700 dark:text-blue-400">
+                Khi đổi tên khoa, tất cả các môn học và tài khoản giảng viên hiện thuộc &ldquo;{initialDept.name}&rdquo; sẽ được tự động đồng bộ sang tên mới.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200 flex items-center gap-2">
+              <CircleAlert className="size-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="mt-2 flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <Button variant="outline" onClick={onClose} className="cursor-pointer">
+              Hủy
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || !name.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 gap-2 cursor-pointer shadow-sm"
+            >
+              {loading ? (
+                <>
+                  <RotateCw className="size-4 animate-spin" />
+                  <span>Đang xử lý...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="size-4 stroke-[2.5]" />
+                  <span>{initialDept ? 'Lưu thay đổi' : 'Tạo khoa/bộ môn'}</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function DeleteDepartmentModal({
+  dept,
+  coursesCount,
+  onClose,
+  onDeleted,
+}: {
+  dept: DepartmentItem
+  coursesCount: number
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const hasCourses = coursesCount > 0
+
+  const confirmDelete = async () => {
+    if (hasCourses) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api.deleteDepartment(dept.id)
+      if (!res.ok) throw new Error(res.message || 'Không thể xóa khoa/bộ môn')
+      onDeleted()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi hệ thống khi xóa khoa/bộ môn')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] p-6 shadow-2xl text-slate-800 dark:text-slate-100 my-auto">
+        <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div className={`grid size-10 place-items-center rounded-xl ${hasCourses ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'}`}>
+            <AlertTriangle className="size-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {hasCourses ? 'Không thể xóa khoa/bộ môn' : 'Xác nhận xóa khoa/bộ môn'}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{dept.name}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 text-xs space-y-3">
+          {hasCourses ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="font-bold">Đang có {coursesCount} môn học trực thuộc khoa này!</p>
+              <p className="mt-1 text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                Để đảm bảo tính toàn vẹn dữ liệu học phần và điểm danh của sinh viên, bạn phải chuyển các môn học hiện tại sang khoa khác trước khi có thể xóa khoa này.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3.5 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+              <p className="font-bold">Bạn có chắc chắn muốn xóa khoa &ldquo;{dept.name}&rdquo;?</p>
+              <p className="mt-1 text-[11px] text-rose-800/90 dark:text-rose-300/90 leading-relaxed">
+                Khoa này hiện chưa có môn học nào trực thuộc. Thao tác xóa sẽ được lưu vào nhật ký kiểm toán hệ thống.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <Button variant="outline" onClick={onClose} className="cursor-pointer">
+            {hasCourses ? 'Đã hiểu & Quay lại' : 'Hủy'}
+          </Button>
+          {!hasCourses && (
+            <Button
+              type="button"
+              disabled={loading}
+              onClick={confirmDelete}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-4 gap-2 cursor-pointer shadow-sm"
+            >
+              {loading ? (
+                <>
+                  <RotateCw className="size-4 animate-spin" />
+                  <span>Đang xóa...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" />
+                  <span>Xóa vĩnh viễn</span>
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CourseModal({
   departments,
+  teachers,
+  isAdmin,
   onClose,
   onCreated,
   t,
 }: {
   departments: string[]
+  teachers: { id: string; name: string; email: string }[]
+  isAdmin: boolean
   onClose: () => void
   onCreated: () => void
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
-  const [department, setDepartment] = useState(departments[0] || 'Công nghệ thông tin')
+  const [department, setDepartment] = useState(departments[0] || 'Khoa Công nghệ thông tin')
   const [color] = useState('indigo')
+  const [teacherId, setTeacherId] = useState(teachers[0]?.id || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -2749,7 +3064,7 @@ function CourseModal({
     setLoading(true)
     setError('')
     try {
-      const res = await api.createCourse({ code, name, department, color })
+      const res = await api.createCourse({ code, name, department, color, teacherId: isAdmin ? teacherId : undefined })
       if (!res.ok) throw new Error(res.message || 'Failed to create course')
       onCreated()
       onClose()
@@ -2778,8 +3093,35 @@ function CourseModal({
           </label>
           <label className="flex flex-col gap-1.5 text-sm font-medium">
             {t('common.department')}
-            <input className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={department} onChange={(e) => setDepartment(e.target.value)} required />
+            {departments.length > 0 ? (
+              <select
+                className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary cursor-pointer"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                required
+              >
+                {departments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                required
+              />
+            )}
           </label>
+          {isAdmin && (
+            <label className="flex flex-col gap-1.5 text-sm font-medium">
+              Giảng viên phụ trách
+              <select className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} required>
+                <option value="" disabled>Chọn giảng viên</option>
+                {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.email}</option>)}
+              </select>
+            </label>
+          )}
           {error && <div className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</div>}
           <div className="mt-2 flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>{t('common.back')}</Button>
@@ -2791,10 +3133,72 @@ function CourseModal({
   )
 }
 
+export type SessionTypeKey = 'theory' | 'practice' | 'makeup' | 'exam' | 'tutoring'
+
+export function parseSessionType(roomStr: string): {
+  type: SessionTypeKey
+  cleanRoom: string
+  label: string
+  badgeBg: string
+  badgeText: string
+  badgeBorder: string
+} {
+  const room = (roomStr || '').trim()
+  if (/\[\s*thực hành\s*\]|\(\s*thực hành\s*\)|thực hành|lab|thí nghiệm|pm\.|pm /i.test(room)) {
+    return {
+      type: 'practice',
+      cleanRoom: room.replace(/\[\s*thực hành\s*\]|\(\s*thực hành\s*\)/gi, '').trim(),
+      label: 'Thực hành',
+      badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40',
+      badgeText: 'text-emerald-700 dark:text-emerald-300',
+      badgeBorder: 'border-emerald-200 dark:border-emerald-800',
+    }
+  }
+  if (/\[\s*học bù[^\]]*\]|\(\s*học bù[^\)]*\)|học bù|dạy bù/i.test(room)) {
+    return {
+      type: 'makeup',
+      cleanRoom: room.replace(/\[\s*học bù[^\]]*\]|\(\s*học bù[^\)]*\)/gi, '').trim(),
+      label: 'Học bù',
+      badgeBg: 'bg-amber-50 dark:bg-amber-950/40',
+      badgeText: 'text-amber-700 dark:text-amber-300',
+      badgeBorder: 'border-amber-200 dark:border-amber-800',
+    }
+  }
+  if (/\[\s*kiểm tra\s*\]|\(\s*kiểm tra\s*\)|\[\s*thi\s*\]|\(\s*thi\s*\)|kiểm tra|thi|đồ án|bảo vệ/i.test(room)) {
+    return {
+      type: 'exam',
+      cleanRoom: room.replace(/\[\s*kiểm tra\s*\]|\(\s*kiểm tra\s*\)|\[\s*thi\s*\]|\(\s*thi\s*\)/gi, '').trim(),
+      label: 'Kiểm tra',
+      badgeBg: 'bg-purple-50 dark:bg-purple-950/40',
+      badgeText: 'text-purple-700 dark:text-purple-300',
+      badgeBorder: 'border-purple-200 dark:border-purple-800',
+    }
+  }
+  if (/\[\s*phụ đạo\s*\]|\(\s*phụ đạo\s*\)|phụ đạo|bổ trợ/i.test(room)) {
+    return {
+      type: 'tutoring',
+      cleanRoom: room.replace(/\[\s*phụ đạo\s*\]|\(\s*phụ đạo\s*\)/gi, '').trim(),
+      label: 'Phụ đạo',
+      badgeBg: 'bg-sky-50 dark:bg-sky-950/40',
+      badgeText: 'text-sky-700 dark:text-sky-300',
+      badgeBorder: 'border-sky-200 dark:border-sky-800',
+    }
+  }
+  return {
+    type: 'theory',
+    cleanRoom: room.replace(/\[\s*lý thuyết\s*\]|\(\s*lý thuyết\s*\)|\[\s*chính khóa\s*\]/gi, '').trim(),
+    label: 'Chính khóa',
+    badgeBg: 'bg-blue-50 dark:bg-blue-950/40',
+    badgeText: 'text-blue-700 dark:text-blue-300',
+    badgeBorder: 'border-blue-200 dark:border-blue-800',
+  }
+}
+
 function ScheduleModal({
   courses,
   initialCourseId,
   initialSection,
+  isAdmin = false,
   onClose,
   onSaved,
   t,
@@ -2802,48 +3206,168 @@ function ScheduleModal({
   courses: Course[]
   initialCourseId?: string
   initialSection?: ClassSession
+  isAdmin?: boolean
   onClose: () => void
   onSaved: () => void
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
+  const initialRoom = initialSection?.room ?? ''
+  const initialMeta = useMemo(() => parseSessionType(initialRoom), [initialRoom])
   const [courseId, setCourseId] = useState(initialSection?.courseId || initialCourseId || courses[0]?.id || '')
+  const [sessionType, setSessionType] = useState<SessionTypeKey>(initialMeta.type || 'theory')
   const [dayOfWeek, setDayOfWeek] = useState<number>(initialSection?.dayOfWeek ?? 1)
-  const [startsAt, setStartsAt] = useState(initialSection?.startsAt || '07:30')
-  const [endsAt, setEndsAt] = useState(initialSection?.endsAt || '09:30')
-  const [room, setRoom] = useState(initialSection?.room || 'P.302 - Nhà A1')
+  const [startsAt, setStartsAt] = useState(initialSection?.startsAt || '07:00')
+  const [endsAt, setEndsAt] = useState(initialSection?.endsAt || '09:25')
+  const [startDate, setStartDate] = useState(initialSection?.startDate || '2026-01-01')
+  const [endDate, setEndDate] = useState(initialSection?.endDate || '2026-12-31')
+  const [room, setRoom] = useState(initialMeta.cleanRoom || initialRoom || 'P.302 - Nhà A1')
+
+  const [makeupNote, setMakeupNote] = useState(() => {
+    if (!initialRoom) return ''
+    const match = initialRoom.match(/\[\s*Học bù\s*-\s*([^\]]+)\]/i)
+    return match ? match[1].trim() : ''
+  })
+
   const [autoStart, setAutoStart] = useState(initialSection?.autoStart ?? true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const sessionTypes: {
+    key: SessionTypeKey
+    title: string
+    subtitle: string
+    icon: typeof BookOpen
+    activeColor: string
+    activeBorder: string
+    activeBg: string
+  }[] = [
+    {
+      key: 'theory',
+      title: t('teacher.sessionTypeTheory') || 'Chính khóa / Lý thuyết',
+      subtitle: t('teacher.sessionTypeTheoryDesc') || 'Ca giảng dạy lý thuyết theo tiến trình học phần',
+      icon: BookOpen,
+      activeColor: 'text-blue-600 dark:text-blue-400',
+      activeBorder: 'border-blue-500 dark:border-blue-400',
+      activeBg: 'bg-blue-50/80 dark:bg-blue-950/40',
+    },
+    {
+      key: 'practice',
+      title: t('teacher.sessionTypePractice') || 'Thực hành / Thí nghiệm',
+      subtitle: t('teacher.sessionTypePracticeDesc') || 'Thực hành máy tính, phòng lab hoặc thí nghiệm',
+      icon: FlaskConical,
+      activeColor: 'text-emerald-600 dark:text-emerald-400',
+      activeBorder: 'border-emerald-500 dark:border-emerald-400',
+      activeBg: 'bg-emerald-50/80 dark:bg-emerald-950/40',
+    },
+    {
+      key: 'makeup',
+      title: t('teacher.sessionTypeMakeup') || 'Học bù',
+      subtitle: t('teacher.sessionTypeMakeupDesc') || 'Dạy bù ngày nghỉ lễ, bận công tác hoặc đột xuất',
+      icon: CalendarClock,
+      activeColor: 'text-amber-600 dark:text-amber-400',
+      activeBorder: 'border-amber-500 dark:border-amber-400',
+      activeBg: 'bg-amber-50/80 dark:bg-amber-950/40',
+    },
+    {
+      key: 'exam',
+      title: t('teacher.sessionTypeExam') || 'Kiểm tra / Thi / Đồ án',
+      subtitle: t('teacher.sessionTypeExamDesc') || 'Buổi thi giữa kỳ, kiểm tra hoặc bảo vệ đồ án',
+      icon: FileCheck2,
+      activeColor: 'text-purple-600 dark:text-purple-400',
+      activeBorder: 'border-purple-500 dark:border-purple-400',
+      activeBg: 'bg-purple-50/80 dark:bg-purple-950/40',
+    },
+    {
+      key: 'tutoring',
+      title: t('teacher.sessionTypeTutoring') || 'Bổ trợ / Phụ đạo',
+      subtitle: t('teacher.sessionTypeTutoringDesc') || 'Buổi ôn tập, giải đáp thắc mắc chuyên đề',
+      icon: Sparkles,
+      activeColor: 'text-sky-600 dark:text-sky-400',
+      activeBorder: 'border-sky-500 dark:border-sky-400',
+      activeBg: 'bg-sky-50/80 dark:bg-sky-950/40',
+    },
+  ]
+
+  // Standard UTC period quick chips
+  const utcPeriodChips = [
+    { label: 'Tiết 1 – 3 (Sáng)', start: '07:00', end: '09:25' },
+    { label: 'Tiết 4 – 6 (Sáng)', start: '09:35', end: '12:00' },
+    { label: 'Tiết 7 – 9 (Chiều)', start: '12:45', end: '15:10' },
+    { label: 'Tiết 10 – 12 (Chiều)', start: '15:20', end: '17:45' },
+    { label: 'Tiết 13 – 15 (Tối)', start: '18:00', end: '20:25' },
+  ]
+
+  // Room suggestions based on session type
+  const roomSuggestions = useMemo(() => {
+    switch (sessionType) {
+      case 'practice':
+        return ['PM.201 - Nhà A1', 'PM.305 - Nhà B3', 'Lab IoT - P.402', 'Xưởng Cơ khí - C5']
+      case 'makeup':
+        return ['P.201 - Nhà A1', 'P.302 - Nhà A1', 'P.405 - Nhà A2', 'Online (Google Meet)']
+      case 'exam':
+        return ['Hội trường G3', 'P.302 - Nhà A1', 'PM.201 - Nhà A1', 'P.405 - Nhà A2']
+      case 'tutoring':
+        return ['P.201 - Nhà A1', 'Phòng Hội thảo A1', 'Online (Zoom)']
+      default:
+        return ['P.201 - Nhà A1', 'P.302 - Nhà A1', 'P.405 - Nhà A2', 'Hội trường G3']
+    }
+  }, [sessionType])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
+      const clean = room.replace(/\[[^\]]+\]|\([^\)]+\)/g, '').trim() || 'P.302'
+      let composedRoom = clean
+      if (sessionType === 'practice') {
+        composedRoom = `${clean} [Thực hành]`
+      } else if (sessionType === 'makeup') {
+        const note = makeupNote.trim()
+        composedRoom = note ? `${clean} [Học bù - ${note}]` : `${clean} [Học bù]`
+      } else if (sessionType === 'exam') {
+        composedRoom = `${clean} [Kiểm tra]`
+      } else if (sessionType === 'tutoring') {
+        composedRoom = `${clean} [Phụ đạo]`
+      } else if (sessionType === 'theory') {
+        composedRoom = `${clean} [Lý thuyết]`
+      }
+
+      // Ensure room string length does not exceed 50 characters (Zod schema limit)
+      if (composedRoom.length > 50) {
+        const tag = composedRoom.slice(clean.length)
+        const allowedCleanLen = Math.max(10, 50 - tag.length)
+        composedRoom = `${clean.slice(0, allowedCleanLen)}${tag}`
+      }
+
       if (initialSection) {
         const res = await api.updateSection(initialSection.sectionId, {
-          room,
+          room: composedRoom,
           startsAt,
           endsAt,
+          startDate,
+          endDate,
           dayOfWeek,
           autoStart,
         })
-        if (!res.ok) throw new Error(res.message || 'Failed')
+        if (!res.ok) throw new Error(res.message || 'Không thể cập nhật ca học')
       } else {
         const res = await api.createSection({
           courseId,
-          room,
+          room: composedRoom,
           startsAt,
           endsAt,
+          startDate,
+          endDate,
           dayOfWeek,
           autoStart,
         })
-        if (!res.ok) throw new Error(res.message || 'Failed')
+        if (!res.ok) throw new Error(res.message || 'Không thể đăng ký ca học')
       }
       onSaved()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error')
+      setError(err instanceof Error ? err.message : 'Lỗi hệ thống khi lưu ca học')
     } finally {
       setLoading(false)
     }
@@ -2859,37 +3383,137 @@ function ScheduleModal({
     { value: 7, label: t('common.day7') },
   ]
 
+  const modalTitle = initialSection
+    ? (t('common.editSchedule') || 'Chỉnh sửa ca học')
+    : isAdmin
+      ? (t('common.addSchedule') || 'Thêm ca học cố định')
+      : (t('teacher.registerSession') || 'Đăng ký ca học mới')
+
+  const modalSubtitle = isAdmin
+    ? t('common.scheduleDetail')
+    : (t('teacher.registerSessionDesc') || 'Đăng ký ca học chính khóa, ca thực hành, học bù hoặc thi cho các học phần được phân công')
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-2xl border bg-card p-6 shadow-2xl">
-        <div className="flex items-center justify-between border-b pb-3">
-          <div>
-            <h3 className="text-lg font-semibold">{initialSection ? t('common.editSchedule') : t('common.addSchedule')}</h3>
-            <p className="text-xs text-muted-foreground">{t('common.scheduleDetail')}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto">
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] p-6 shadow-2xl my-auto text-slate-800 dark:text-slate-100 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-900 shadow-2xs">
+              <CalendarDays className="size-5" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                {modalTitle}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">{modalSubtitle}</p>
+            </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><X className="size-5" /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <X className="size-5" />
+          </button>
         </div>
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
+
+        <form onSubmit={submit} className="mt-5 flex flex-col gap-5">
+          {/* Kiểu ca học (Session Type Selector) */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                {t('teacher.sessionType') || 'Kiểu ca học'} <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Chọn hình thức tổ chức ca học
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {sessionTypes.map((item) => {
+                const Icon = item.icon
+                const isSelected = sessionType === item.key
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setSessionType(item.key)}
+                    className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                      isSelected
+                        ? `${item.activeBorder} ${item.activeBg} ring-2 ring-blue-500/20 shadow-xs`
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-white dark:bg-slate-900 shadow-2xs' : 'bg-slate-200/60 dark:bg-slate-800'}`}>
+                        <Icon className={`size-4 ${isSelected ? item.activeColor : 'text-slate-500 dark:text-slate-400'}`} />
+                      </div>
+                      {isSelected && (
+                        <Check className="size-3.5 text-blue-600 dark:text-blue-400 stroke-[3]" />
+                      )}
+                    </div>
+                    <span className={`text-xs font-bold mt-1 ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                      {item.title}
+                    </span>
+                    <span className="text-[10.5px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-tight">
+                      {item.subtitle}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Ghi chú khi chọn ca Học bù */}
+          {sessionType === 'makeup' && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 dark:border-amber-900/50 dark:bg-amber-950/20 flex flex-col gap-2 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs font-bold">
+                <CalendarClock className="size-4 shrink-0" />
+                <span>{t('teacher.makeupNoteLabel') || 'Ghi chú ca học bù'} (tùy chọn)</span>
+              </div>
+              <input
+                type="text"
+                value={makeupNote}
+                onChange={(e) => setMakeupNote(e.target.value)}
+                placeholder={t('teacher.makeupNotePlaceholder') || 'Ví dụ: Dạy bù buổi nghỉ lễ 10/11 hoặc Bù bài 4: SQL'}
+                className="h-10 rounded-lg border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-900 px-3 text-xs text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 italic">
+                * Ghi chú này sẽ được đính kèm vào tên ca học để sinh viên dễ dàng theo dõi thời khóa biểu học bù.
+              </p>
+            </div>
+          )}
+
+          {/* Chọn môn học (Khi tạo mới) */}
           {!initialSection && (
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              {t('common.course')}
-              <select
-                className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-                value={courseId}
-                onChange={(e) => setCourseId(e.target.value)}
-                required
-              >
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
-                ))}
-              </select>
+            <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <span>{t('common.course')} <span className="text-rose-500">*</span></span>
+              {courses.length === 0 ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-normal text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300">
+                  Bạn chưa được phân công môn học nào. Vui lòng liên hệ Quản trị viên để được phân công học phần phụ trách.
+                </div>
+              ) : (
+                <select
+                  className="h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
+                  value={courseId}
+                  onChange={(e) => setCourseId(e.target.value)}
+                  required
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} · {c.name} {c.department ? `(${c.department})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
           )}
 
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            {t('common.dayOfWeek')}
+          {/* Thứ trong tuần */}
+          <label className="flex flex-col gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+            <span>{t('common.dayOfWeek')} <span className="text-rose-500">*</span></span>
             <select
-              className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
+              className="h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"
               value={dayOfWeek}
               onChange={(e) => setDayOfWeek(Number(e.target.value))}
             >
@@ -2899,58 +3523,158 @@ function ScheduleModal({
             </select>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              {t('common.startTime')}
-              <input
-                type="time"
-                className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-                value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                required
-              />
+          <div className="grid grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-900/40 dark:bg-blue-950/20">
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
+              Ngày bắt đầu học kỳ
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10 rounded-lg border bg-background px-2 text-xs" required />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              {t('common.endTime')}
-              <input
-                type="time"
-                className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                required
-              />
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
+              Ngày kết thúc học kỳ
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10 rounded-lg border bg-background px-2 text-xs" required />
             </label>
           </div>
 
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            {t('common.room')}
-            <input
-              className="h-11 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-              placeholder="P.302 - Nhà A1"
-              value={room}
-              onChange={(e) => setRoom(e.target.value)}
-              required
-            />
-          </label>
+          {/* Khung giờ học UTC */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                {t('teacher.timeSlotQuickPick') || 'Khung tiết học UTC'}
+              </label>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">Chọn nhanh hoặc tự nhập</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {utcPeriodChips.map((slot) => {
+                const isActive = startsAt === slot.start && endsAt === slot.end
+                return (
+                  <button
+                    key={slot.label}
+                    type="button"
+                    onClick={() => {
+                      setStartsAt(slot.start)
+                      setEndsAt(slot.end)
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {slot.label}
+                  </button>
+                )
+              })}
+            </div>
 
-          <label className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm font-medium cursor-pointer">
+            <div className="grid grid-cols-2 gap-3 mt-1">
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="size-3.5 text-blue-600" />
+                  {t('common.startTime')}
+                </span>
+                <input
+                  type="time"
+                  className="h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={startsAt}
+                  onChange={(e) => setStartsAt(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="size-3.5 text-slate-500" />
+                  {t('common.endTime')}
+                </span>
+                <input
+                  type="time"
+                  className="h-11 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  value={endsAt}
+                  onChange={(e) => setEndsAt(e.target.value)}
+                  required
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Phòng học / Phòng máy */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                {t('common.room')} <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                {t('teacher.roomQuickPick') || 'Gợi ý phòng'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {roomSuggestions.map((sug) => (
+                <button
+                  key={sug}
+                  type="button"
+                  onClick={() => setRoom(sug)}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                    room === sug
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                      : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {sug}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <Building2 className="absolute left-3.5 top-3.5 size-4 text-slate-400" />
+              <input
+                className="h-11 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 pl-10 pr-3 text-xs font-medium text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Ví dụ: P.302 - Nhà A1 hoặc PM.204"
+                value={room}
+                onChange={(e) => setRoom(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Tự động mở điểm danh */}
+          <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3 text-xs cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-colors">
             <input
               type="checkbox"
               checked={autoStart}
               onChange={(e) => setAutoStart(e.target.checked)}
-              className="size-4 rounded border-gray-300 text-primary focus:ring-primary"
+              className="mt-0.5 size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
-            <div>
-              <p>{t('common.autoOpen')}</p>
-              <p className="text-xs font-normal text-muted-foreground">{t('common.autoStartTooltip')}</p>
+            <div className="flex-1">
+              <p className="font-bold text-slate-800 dark:text-slate-200">{t('common.autoOpen')}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t('common.autoStartTooltip')}</p>
             </div>
           </label>
 
-          {error && <div className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{error}</div>}
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200 flex items-center gap-2">
+              <CircleAlert className="size-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-          <div className="mt-2 flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>{t('common.back')}</Button>
-            <Button type="submit" disabled={loading}>{loading ? '...' : t('common.saveChanges')}</Button>
+          <div className="mt-2 flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <Button variant="outline" onClick={onClose} className="cursor-pointer">
+              {t('common.back')}
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || (!initialSection && courses.length === 0)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 gap-2 cursor-pointer shadow-sm"
+            >
+              {loading ? (
+                <>
+                  <RotateCw className="size-4 animate-spin" />
+                  <span>Đang lưu...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="size-4 stroke-[2.5]" />
+                  <span>{initialSection ? t('common.saveChanges') : (isAdmin ? t('common.saveChanges') : (t('teacher.registerSession') || 'Đăng ký ca học'))}</span>
+                </>
+              )}
+            </Button>
           </div>
         </form>
       </div>
@@ -3206,6 +3930,47 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [showStaffChangePassword, setShowStaffChangePassword] = useState(false)
   const [selectedCourseId, setSelectedCourseId] = useState<string | undefined>()
   const [selectedSection, setSelectedSection] = useState<ClassSession | undefined>()
+  const [departmentsList, setDepartmentsList] = useState<DepartmentItem[]>([])
+  const [deptLoading, setDeptLoading] = useState(false)
+  const [deptModalOpen, setDeptModalOpen] = useState(false)
+  const [editingDept, setEditingDept] = useState<DepartmentItem | null>(null)
+  const [deletingDept, setDeletingDept] = useState<DepartmentItem | null>(null)
+  const [deptSearch, setDeptSearch] = useState('')
+
+  const refreshDepartments = async () => {
+    setDeptLoading(true)
+    try {
+      const res = await api.listDepartments()
+      if (res.ok && res.departments) {
+        setDepartmentsList(res.departments)
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setDeptLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (page !== 'departments') return
+    let active = true
+    api.listDepartments().then((res) => {
+      if (active && res.ok && res.departments) {
+        setDepartmentsList(res.departments)
+      }
+    }).catch(() => {
+      /* ignore */
+    })
+    return () => {
+      active = false
+    }
+  }, [page])
+
+  const filteredDepartments = useMemo(() => {
+    if (!deptSearch.trim()) return departmentsList
+    const q = deptSearch.trim().toLowerCase()
+    return departmentsList.filter((d) => d.name.toLowerCase().includes(q))
+  }, [departmentsList, deptSearch])
   const [projectorMode, setProjectorMode] = useState(false)
   const [ultrasonicActive, setUltrasonicActive] = useState(false)
   const beaconRef = useRef<BeaconController | null>(null)
@@ -3875,12 +4640,16 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     const [startH, startM] = (sec.startsAt || '').split(':').map(Number)
                     const autoCloseMinutes = (!isNaN(startH) && !isNaN(startM)) ? (startH * 60 + startM + 3) : 0
                     const endWindowStr = autoCloseMinutes > 0 ? `${String(Math.floor(autoCloseMinutes / 60)).padStart(2, '0')}:${String(autoCloseMinutes % 60).padStart(2, '0')}` : ''
+                    const meta = parseSessionType(sec.room)
 
                     return (
                       <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
                         <div className="flex-1 min-w-[280px]">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-foreground">{sec.courseCode} · {sec.courseName}</span>
+                            <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold border ${meta.badgeBg} ${meta.badgeText} ${meta.badgeBorder}`}>
+                              {meta.label}
+                            </span>
                             {sec.autoStart && (
                               <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                                 {t('common.autoOpen')}
@@ -3893,7 +4662,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                             )}
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            <Calendar className="mr-1 inline size-3.5" />{formatDayOfWeek(t, sec.dayOfWeek)} · <Clock className="mr-1 inline size-3.5" />{sec.startsAt} – {sec.endsAt} · {sec.room} · {t('teacher.enrolledCount', { count: sec.enrolledCount ?? 0 })}
+                            <Calendar className="mr-1 inline size-3.5" />{formatDayOfWeek(t, sec.dayOfWeek)} · <Clock className="mr-1 inline size-3.5" />{sec.startsAt} – {sec.endsAt} · <Building2 className="mr-1 inline size-3.5" />{meta.cleanRoom || sec.room} · {t('teacher.enrolledCount', { count: sec.enrolledCount ?? 0 })}
                           </p>
                           <p className="mt-1 text-[11px] text-muted-foreground/80 italic">
                             * {t('teacher.tenMinNoticeDesc')}
@@ -3903,7 +4672,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                           <Button
                             variant="primary"
                             onClick={() => startSpecificSession(sec.sectionId)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm cursor-pointer"
                           >
                             <Zap className="size-4" />{t('teacher.startManualSession')}
                           </Button>
@@ -3924,19 +4693,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
             <Card title={t('common.allClassSessions')} description={organization.name}>
               <div className="divide-y">
-                {sessions.map((sec) => (
-                  <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-3">
-                    <div>
-                      <p className="font-medium text-sm">{sec.courseCode} · {sec.courseName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDayOfWeek(t, sec.dayOfWeek)} · {sec.startsAt} – {sec.endsAt} · {sec.room}
-                      </p>
+                {sessions.map((sec) => {
+                  const meta = parseSessionType(sec.room)
+                  return (
+                    <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm">{sec.courseCode} · {sec.courseName}</p>
+                          <span className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-bold border ${meta.badgeBg} ${meta.badgeText} ${meta.badgeBorder}`}>
+                            {meta.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatDayOfWeek(t, sec.dayOfWeek)} · {sec.startsAt} – {sec.endsAt} · {meta.cleanRoom || sec.room}
+                        </p>
+                      </div>
+                      <Button variant="outline" onClick={() => startSpecificSession(sec.sectionId)} className="cursor-pointer">
+                        <Play className="size-3.5" />{t('teacher.startAttendance')}
+                      </Button>
                     </div>
-                    <Button variant="outline" onClick={() => startSpecificSession(sec.sectionId)}>
-                      <Play className="size-3.5" />{t('teacher.startAttendance')}
-                    </Button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </Card>
           </div>
@@ -3945,29 +4722,45 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     )
   }
 
-  if (page === 'courses' || (isAdmin && page === 'departments')) {
+  if (page === 'courses') {
     return (
       <div className="flex flex-col gap-6">
         {notice && <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary" role="status">{notice}</div>}
         <SectionHeader
           eyebrow={staffEyebrow}
-          title={page === 'departments' ? t('teacher.departmentsTitle') : t('common.recurringSchedule')}
-          detail={t('common.scheduleDetail')}
+          title={
+            isAdmin
+              ? (t('common.recurringSchedule') || 'Khóa học & Lịch học cố định')
+              : (t('teacher.coursesTitle') || 'Khóa học & Ca giảng dạy')
+          }
+          detail={
+            isAdmin
+              ? (t('common.scheduleDetail') || 'Quản lý danh sách môn học, lịch học cố định, giảng viên phụ trách và sinh viên ghi danh.')
+              : (t('teacher.registerSessionDesc') || 'Đăng ký ca học chính khóa, ca thực hành, học bù hoặc thi cho các học phần được phân công.')
+          }
           action={
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setCourseModalOpen(true)}>
-                <Plus />{t('common.createNewCourse')}
-              </Button>
-              <Button onClick={() => { setSelectedSection(undefined); setSelectedCourseId(undefined); setScheduleModalOpen(true) }}>
-                <CalendarDays />{t('common.addSchedule')}
+              {isAdmin && (
+                <Button variant="outline" onClick={() => setCourseModalOpen(true)} className="cursor-pointer">
+                  <Plus className="size-4" />{t('common.createNewCourse')}
+                </Button>
+              )}
+              <Button
+                onClick={() => { setSelectedSection(undefined); setSelectedCourseId(undefined); setScheduleModalOpen(true) }}
+                className={!isAdmin ? "bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-sm gap-2 cursor-pointer" : "gap-2 cursor-pointer"}
+              >
+                <CalendarDays className="size-4" />
+                {isAdmin ? t('common.addSchedule') : (t('teacher.registerSession') || 'Đăng ký ca học')}
               </Button>
             </div>
           }
         />
 
-        {courseModalOpen && (
+        {isAdmin && courseModalOpen && (
           <CourseModal
             departments={departments}
+            teachers={users.filter((item) => item.role === 'teacher').map((item) => ({ id: item.id, name: item.name, email: item.email }))}
+            isAdmin={isAdmin}
             onClose={() => setCourseModalOpen(false)}
             onCreated={async () => {
               setNotice(t('common.courseCreated'))
@@ -3982,9 +4775,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             courses={courses}
             initialCourseId={selectedCourseId}
             initialSection={selectedSection}
+            isAdmin={isAdmin}
             onClose={() => setScheduleModalOpen(false)}
             onSaved={async () => {
-              setNotice(t('common.scheduleSaved'))
+              setNotice(isAdmin ? t('common.scheduleSaved') : 'Đã đăng ký ca học thành công.')
               await refresh()
             }}
             t={t}
@@ -4000,17 +4794,35 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 title={`${course.code} — ${course.name}`}
                 description={`${course.department} · ${t('teacher.enrolledCount', { count: course.enrolled })}`}
                 action={
-                  <Button
-                    variant="outline"
-                    className="text-xs"
-                    onClick={() => {
-                      setSelectedSection(undefined)
-                      setSelectedCourseId(course.id)
-                      setScheduleModalOpen(true)
-                    }}
-                  >
-                    <Plus />{t('common.addSchedule')}
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {isAdmin && (
+                      <select
+                        className="h-9 max-w-[230px] rounded-lg border bg-background px-2 text-xs"
+                        value={course.teacherId}
+                        onChange={async (event) => {
+                          const result = await api.updateCourseTeacher(course.id, event.target.value)
+                          setNotice(result.ok ? 'Đã phân công giảng viên cho môn học.' : (result.message ?? 'Không thể phân công môn học.'))
+                          if (result.ok) await refresh()
+                        }}
+                        aria-label="Giảng viên phụ trách"
+                      >
+                        <option value="" disabled>Chưa phân công giảng viên</option>
+                        {users.filter((item) => item.role === 'teacher').map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+                      </select>
+                    )}
+                    <Button
+                      variant="outline"
+                      className="text-xs gap-1.5 cursor-pointer"
+                      onClick={() => {
+                        setSelectedSection(undefined)
+                        setSelectedCourseId(course.id)
+                        setScheduleModalOpen(true)
+                      }}
+                    >
+                      <Plus className="size-3.5" />
+                      {isAdmin ? t('common.addSchedule') : (t('teacher.registerSession') || 'Đăng ký ca học')}
+                    </Button>
+                  </div>
                 }
               >
                 {courseSections.length > 0 ? (
@@ -4027,75 +4839,88 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {courseSections.map((sec) => (
-                          <tr key={sec.sectionId} className="hover:bg-muted/40 transition-colors">
-                            <td className="py-3 font-medium text-foreground">
-                              <span className="inline-flex items-center gap-1.5">
-                                <Calendar className="size-3.5 text-primary" />
-                                {formatDayOfWeek(t, sec.dayOfWeek)}
+                        {courseSections.map((sec) => {
+                          const meta = parseSessionType(sec.room)
+                          return (
+                            <tr key={sec.sectionId} className="hover:bg-muted/40 transition-colors">
+                              <td className="py-3 font-medium text-foreground">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Calendar className="size-3.5 text-primary" />
+                                  {formatDayOfWeek(t, sec.dayOfWeek)}
+                                </span>
+                              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                                {sec.startDate ?? '2026-01-01'} → {sec.endDate ?? '2026-12-31'}
                               </span>
-                            </td>
-                            <td className="py-3 font-mono text-xs">
-                              {sec.startsAt} – {sec.endsAt}
-                            </td>
-                            <td className="py-3 font-medium">{sec.room}</td>
-                            <td className="py-3">
-                              {sec.autoStart ? (
-                                <Status tone="success">{t('common.active')}</Status>
-                              ) : (
-                                <Status tone="neutral">{t('common.off')}</Status>
-                              )}
-                            </td>
-                            <td className="py-3">
-                              <button
-                                type="button"
-                                onClick={() => openRoster(sec)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs transition-colors cursor-pointer"
-                                title={t('admin.viewRoster')}
-                              >
-                                <Users className="size-3.5" />
-                                <span>{sec.enrolledCount ?? 0}</span>
-                              </button>
-                            </td>
-                            <td className="py-3 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button
-                                  variant="outline"
-                                  className="h-8 px-2.5 text-xs"
+                              </td>
+                              <td className="py-3 font-mono text-xs">
+                                {sec.startsAt} – {sec.endsAt}
+                              </td>
+                              <td className="py-3">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-100">{meta.cleanRoom || sec.room}</span>
+                                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10.5px] font-bold border ${meta.badgeBg} ${meta.badgeText} ${meta.badgeBorder}`}>
+                                    {meta.label}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-3">
+                                {sec.autoStart ? (
+                                  <Status tone="success">{t('common.active')}</Status>
+                                ) : (
+                                  <Status tone="neutral">{t('common.off')}</Status>
+                                )}
+                              </td>
+                              <td className="py-3">
+                                <button
+                                  type="button"
                                   onClick={() => openRoster(sec)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-medium text-xs transition-colors cursor-pointer"
+                                  title={t('admin.viewRoster')}
                                 >
-                                  <Users className="size-3" />
-                                  <span className="hidden sm:inline">{t('admin.viewRoster')}</span>
-                                </Button>
-                                <Button
-                                  variant="primary"
-                                  className="h-8 px-2.5 text-xs"
-                                  onClick={() => startSpecificSession(sec.sectionId)}
-                                >
-                                  <Play className="size-3" />{t('teacher.startAttendance')}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  className="h-8 px-2.5 text-xs"
-                                  onClick={() => {
-                                    setSelectedSection(sec)
-                                    setSelectedCourseId(sec.courseId)
-                                    setScheduleModalOpen(true)
-                                  }}
-                                >
-                                  <Edit3 className="size-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
-                                  onClick={() => deleteSection(sec.sectionId)}
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  <Users className="size-3.5" />
+                                  <span>{sec.enrolledCount ?? 0}</span>
+                                </button>
+                              </td>
+                              <td className="py-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    className="h-8 px-2.5 text-xs"
+                                    onClick={() => openRoster(sec)}
+                                  >
+                                    <Users className="size-3" />
+                                    <span className="hidden sm:inline">{t('admin.viewRoster')}</span>
+                                  </Button>
+                                  <Button
+                                    variant="primary"
+                                    className="h-8 px-2.5 text-xs"
+                                    onClick={() => startSpecificSession(sec.sectionId)}
+                                  >
+                                    <Play className="size-3" />{t('teacher.startAttendance')}
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="h-8 px-2.5 text-xs"
+                                    onClick={() => {
+                                      setSelectedSection(sec)
+                                      setSelectedCourseId(sec.courseId)
+                                      setScheduleModalOpen(true)
+                                    }}
+                                  >
+                                    <Edit3 className="size-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
+                                    onClick={() => deleteSection(sec.sectionId)}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -4104,14 +4929,15 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <p>{t('common.noScheduleYet')}</p>
                     <Button
                       variant="outline"
-                      className="mt-3 text-xs"
+                      className="mt-3 text-xs gap-1.5 cursor-pointer"
                       onClick={() => {
                         setSelectedSection(undefined)
                         setSelectedCourseId(course.id)
                         setScheduleModalOpen(true)
                       }}
                     >
-                      <Plus className="size-3.5" />{t('common.addSchedule')}
+                      <Plus className="size-3.5" />
+                      {isAdmin ? t('common.addSchedule') : (t('teacher.registerSession') || 'Đăng ký ca học')}
                     </Button>
                   </div>
                 )}
@@ -4130,6 +4956,244 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             onClose={() => setRosterSection(null)}
             onRefresh={() => reloadRoster(rosterSection.sectionId)}
             t={t}
+          />
+        )}
+      </div>
+    )
+  }
+
+  if (page === 'departments') {
+    return (
+      <div className="flex flex-col gap-6">
+        {notice && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary flex items-center justify-between" role="status">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} className="text-primary hover:opacity-70 cursor-pointer" aria-label="Đóng"><X className="size-4" /></button>
+          </div>
+        )}
+
+        <SectionHeader
+          eyebrow={staffEyebrow}
+          title={t('teacher.departmentsTitle') || 'Khoa / Bộ môn'}
+          detail="Quản lý cơ cấu học thuật, danh mục khoa/bộ môn và phân bổ các học phần trong toàn trường."
+          action={
+            isAdmin ? (
+              <Button
+                onClick={() => {
+                  setEditingDept(null)
+                  setDeptModalOpen(true)
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 shadow-sm cursor-pointer"
+              >
+                <Plus className="size-4" />
+                Thêm khoa/bộ môn mới
+              </Button>
+            ) : undefined
+          }
+        />
+
+        {/* 3 Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-11 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                <Building2 className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Tổng số khoa/bộ môn</p>
+                <p className="text-2xl font-bold text-foreground mt-0.5">{departmentsList.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-11 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                <BookOpen className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Tổng môn học trực thuộc</p>
+                <p className="text-2xl font-bold text-foreground mt-0.5">{courses.length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-11 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                <Layers className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Trung bình môn / khoa</p>
+                <p className="text-2xl font-bold text-foreground mt-0.5">
+                  {departmentsList.length > 0 ? (courses.length / departmentsList.length).toFixed(1) : '0'}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Department List Card */}
+        <Card
+          title="Danh sách Khoa / Bộ môn"
+          description={`${organization.name} · ${filteredDepartments.length} đơn vị đào tạo`}
+          action={
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm khoa/bộ môn..."
+                  value={deptSearch}
+                  onChange={(e) => setDeptSearch(e.target.value)}
+                  className="h-9 w-48 sm:w-64 rounded-lg border bg-background pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+          }
+        >
+          {deptLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+              <RotateCw className="size-4 animate-spin text-primary" />
+              <span>Đang tải danh sách khoa/bộ môn...</span>
+            </div>
+          ) : filteredDepartments.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-left text-sm">
+                <thead className="text-xs text-muted-foreground border-b pb-2">
+                  <tr>
+                    <th className="pb-3 font-semibold">Tên khoa / Bộ môn</th>
+                    <th className="pb-3 font-semibold">Số môn học trực thuộc</th>
+                    <th className="pb-3 font-semibold">Trạng thái</th>
+                    <th className="pb-3 font-semibold">Ngày khởi tạo</th>
+                    {isAdmin && <th className="pb-3 text-right font-semibold">Thao tác</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredDepartments.map((dept) => {
+                    const deptCourses = courses.filter((c) => c.department.toLowerCase() === dept.name.toLowerCase())
+                    const count = dept.courseCount || deptCourses.length
+
+                    return (
+                      <tr key={dept.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="py-3.5 font-medium">
+                          <div className="flex items-center gap-2.5">
+                            <div className="grid size-8 place-items-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                              <Building2 className="size-4" />
+                            </div>
+                            <div>
+                              <span className="font-bold text-foreground text-sm">{dept.name}</span>
+                              <p className="text-[11px] text-muted-foreground">ID: {dept.id}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            count > 0
+                              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          }`}>
+                            <BookOpen className="size-3" />
+                            {count} môn học
+                          </span>
+                        </td>
+                        <td className="py-3.5">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            Hoạt động
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-xs text-muted-foreground">
+                          {dept.createdAt ? new Date(dept.createdAt).toLocaleDateString('vi-VN') : '—'}
+                        </td>
+                        {isAdmin && (
+                          <td className="py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                variant="outline"
+                                className="h-8 px-2.5 text-xs gap-1 cursor-pointer"
+                                onClick={() => {
+                                  setEditingDept(dept)
+                                  setDeptModalOpen(true)
+                                }}
+                                title="Đổi tên khoa/bộ môn"
+                              >
+                                <Edit3 className="size-3.5" />
+                                <span>Đổi tên</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
+                                onClick={() => setDeletingDept(dept)}
+                                title={count > 0 ? "Không thể xóa khoa có môn học" : "Xóa khoa/bộ môn"}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center">
+              <div className="grid size-12 place-items-center rounded-2xl bg-muted/60 text-muted-foreground mb-3">
+                <Building2 className="size-6" />
+              </div>
+              <p className="font-semibold text-foreground text-base">
+                {deptSearch ? 'Không tìm thấy khoa/bộ môn phù hợp' : 'Chưa có khoa/bộ môn nào'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                {deptSearch
+                  ? `Không có kết quả nào khớp với "${deptSearch}". Vui lòng thử từ khóa khác.`
+                  : 'Hệ thống chưa thiết lập danh mục khoa/bộ môn. Hãy thêm khoa đầu tiên để phân loại học phần và quản lý giáo viên.'}
+              </p>
+              {isAdmin && !deptSearch && (
+                <Button
+                  onClick={() => {
+                    setEditingDept(null)
+                    setDeptModalOpen(true)
+                  }}
+                  className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 text-xs cursor-pointer shadow-sm"
+                >
+                  <Plus className="size-3.5" />
+                  Thêm khoa đầu tiên
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {/* Modal Thêm / Sửa khoa/bộ môn */}
+        {deptModalOpen && (
+          <DepartmentModal
+            initialDept={editingDept}
+            onClose={() => {
+              setDeptModalOpen(false)
+              setEditingDept(null)
+            }}
+            onSaved={async (msg) => {
+              setNotice(msg)
+              setDeptModalOpen(false)
+              setEditingDept(null)
+              await refreshDepartments()
+              await refresh()
+            }}
+          />
+        )}
+
+        {/* Modal Xác nhận Xóa khoa/bộ môn */}
+        {deletingDept && (
+          <DeleteDepartmentModal
+            dept={deletingDept}
+            coursesCount={courses.filter((c) => c.department.toLowerCase() === deletingDept.name.toLowerCase()).length || deletingDept.courseCount}
+            onClose={() => setDeletingDept(null)}
+            onDeleted={async () => {
+              setNotice(`Đã xóa khoa/bộ môn "${deletingDept.name}" thành công.`)
+              setDeletingDept(null)
+              await refreshDepartments()
+              await refresh()
+            }}
           />
         )}
       </div>
@@ -4191,9 +5255,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             setCsvText={setCsvText}
             importing={importing}
             importResult={importResult}
-            targetSectionId={importTargetSectionId}
-            setTargetSectionId={setImportTargetSectionId}
-            sections={sessions}
+            targetCourseId={importTargetSectionId}
+            setTargetCourseId={setImportTargetSectionId}
+            courses={courses}
             onImport={runImport}
             onClose={() => setImportOpen(false)}
             t={t}

@@ -121,6 +121,8 @@ export const courseSections = pgTable(
     room: text('room').notNull(),
     startsAt: text('starts_at').notNull(),
     endsAt: text('ends_at').notNull(),
+    startDate: text('start_date').notNull().default('2026-01-01'),
+    endDate: text('end_date').notNull().default('2026-12-31'),
     dayOfWeek: integer('day_of_week').notNull().default(1),
     autoStart: boolean('auto_start').notNull().default(true),
     status: text('status').notNull().default('scheduled'),
