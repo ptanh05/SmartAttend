@@ -4,12 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
-  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, Users, Volume2, Waves, Wifi, X, Zap
+  ClipboardCheck, Clock, Cookie, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, UserRound, Users, Volume2, Waves, Wifi, X, Zap
 } from 'lucide-react'
 import {
   AppUser, AuthScreen, AuthUser, Button, Card, calcAttendanceRate, CountdownTimer, DynamicQRCode,
-  formatDayOfWeek, initialAuthScreen, Logo, Metric, nav, PageKey, pageFromPath, PasswordInput,
+  formatDayOfWeek, initialAuthScreen, Metric, nav, PageKey, pageFromPath, PasswordInput,
   SectionHeader, Status, statusText, UltrasonicWaveVisualizer, ViewProps,
 } from './smart-attend-ui'
 import { api, loadDashboard, type DashboardData } from '@/lib/api/client'
@@ -20,6 +20,8 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 import { UtcLogo } from './utc-logo'
 import { UtcLoginLanding } from './utc-login-landing'
 import { UtcStudentDashboard } from './utc-student-dashboard'
+import { RegisterScreen } from '@/components/auth/auth-screens'
+import { openCookieSettings } from '@/components/cookie-consent-banner'
 import type { AttendanceStatus, ClassSession, Course, Portal, Role } from '@/lib/types/domain'
 import { startUltrasonicBeacon, detectUltrasonicBeacon, DEFAULT_ULTRASONIC_FREQ, type BeaconController } from '@/lib/attendance/ultrasonic'
 import { authenticateWithBiometrics, registerDeviceBiometrics } from '@/lib/auth/webauthn-client'
@@ -113,111 +115,6 @@ function ChangePasswordForm({
         )}
       </div>
     </form>
-  )
-}
-
-
-function RegisterScreen({ onRegistered, onBack, onHome }: { onRegistered: (role: Role) => void; onBack: () => void; onHome: () => void }) {
-  const { t } = useI18n()
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [organizationName, setOrganizationName] = useState('')
-  const [emailDomain, setEmailDomain] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoading(true)
-    setError('')
-    try {
-      const result = await api.registerAdministrator({
-        name,
-        email,
-        password,
-        organizationName,
-        emailDomain,
-        apiKey,
-      })
-      if (!result.ok || !result.role) {
-        setError(result.message ?? t('auth.registerFailed'))
-        return
-      }
-      onRegistered(result.role)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('auth.registerFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6 sm:p-12">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center justify-between">
-          <Logo onClick={onHome} />
-          <LanguageSwitcher compact />
-        </div>
-        <p className="text-sm font-medium text-primary">{t('auth.registerAdmin')}</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t('auth.createAdminAccount')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('auth.registerAdminDetail')}</p>
-        <form onSubmit={submit} className="mt-8 flex flex-col gap-5">
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('auth.fullName')}
-            <input className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={name} onChange={(e) => setName(e.target.value)} required />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('login.emailStaff')}
-            <input className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('auth.organizationName')}
-            <input className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} required />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('auth.emailDomain')}
-            <input
-              className="h-12 rounded-lg border bg-background px-3 outline-none focus:ring-2 focus:ring-primary"
-              value={emailDomain}
-              onChange={(e) => setEmailDomain(e.target.value)}
-              placeholder="utc.edu.vn"
-              autoComplete="off"
-            />
-            <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('auth.registrationApiKey')}
-            <PasswordInput
-              value={apiKey}
-              onChange={setApiKey}
-              autoComplete="off"
-              mono
-              required
-            />
-            <span className="text-xs font-normal text-muted-foreground">{t('auth.registrationApiKeyHint')}</span>
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            {t('login.password')}
-            <PasswordInput
-              value={password}
-              onChange={setPassword}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </label>
-          {error && (
-            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
-              {error}
-            </div>
-          )}
-          <Button type="submit" className="h-12">{loading ? t('auth.registering') : t('auth.registerSubmit')}</Button>
-        </form>
-        <button onClick={onBack} className="mt-6 text-sm text-primary hover:underline">{t('auth.backToLogin')}</button>
-      </div>
-    </main>
   )
 }
 
@@ -1399,14 +1296,11 @@ function StudentImportPanel({
   }
 
   const downloadTemplate = () => {
-    const template = '\uFEFFstudentId,name,department\n20210001,Nguyen Van A,Computer Science\n20210002,Tran Thi B,Computer Science'
-    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = url
+    link.href = '/download/students-template.csv'
     link.download = 'students-template.csv'
+    link.rel = 'noopener'
     link.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
@@ -1531,24 +1425,21 @@ function TeacherImportPanel({
   }
 
   const downloadTemplate = () => {
-    const template = '\uFEFFemail,name,department\ngv001@utc.edu.vn,Nguyen Van A,Computer Science\ngv002@utc.edu.vn,Tran Thi B,Computer Science'
-    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = url
+    link.href = '/download/lecturers-template.csv'
     link.download = 'lecturers-template.csv'
+    link.rel = 'noopener'
     link.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
     <Card title={t('admin.importLecturers')} description={t('admin.importLecturersDetail')}>
       <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersFormat')}</p>
       <p className="mb-3 rounded-lg bg-muted/50 p-3 font-mono text-xs">
-        email,name,department{'\n'}gv001@utc.edu.vn,Nguyen Van A,Computer Science
+        email,name,department{'\n'}gv001@{emailDomain ?? 'utc.edu.vnc'},Nguyen Van A,Computer Science
       </p>
       <p className="mb-3 text-sm text-muted-foreground">
-        {t('admin.importLecturersDomain', { domain: emailDomain ?? 'utc.edu.vn' })}
+        {t('admin.importLecturersDomain', { domain: emailDomain ?? 'utc.edu.vnc' })}
       </p>
       <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersPassword')}</p>
       <div className="mb-3 flex flex-wrap gap-2">
@@ -3807,7 +3698,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 {t('auth.emailDomain')}
                 <input
                   className="h-11 rounded-lg border bg-muted/40 px-3 text-sm"
-                  defaultValue={organization.emailDomain ?? 'utc.edu.vn'}
+                  defaultValue={organization.emailDomain ?? 'utc.edu.vnc'}
                   disabled
                 />
                 <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
@@ -3936,7 +3827,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       )}
       <SectionHeader
         eyebrow={staffEyebrow}
-        title={t('teacher.goodMorning', { name: user.name.split(' ').slice(-1)[0] === 'Patel' ? 'Dr. Patel' : user.name.split(' ')[0] })}
+        title={t('teacher.goodMorning', { name: user.name })}
         detail={t('teacher.overviewDetail')}
         action={
           <Button onClick={() => go(isAdmin ? 'analytics' : 'sessions')}>
@@ -4166,6 +4057,160 @@ function NotificationBell({
               ))
             )}
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UserProfileDropdown({
+  appUser,
+  role,
+  go,
+  logout,
+  t,
+}: {
+  appUser: AppUser
+  role: Role
+  go: (page: PageKey) => void
+  logout: () => Promise<void>
+  t: (key: string, params?: Record<string, string | number>) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const roleLabel =
+    role === 'student'
+      ? t('roles.student')
+      : role === 'teacher'
+        ? t('roles.teacher')
+        : t('roles.admin')
+
+  const profilePageKey: PageKey = role === 'student' ? 'profile' : 'settings'
+  const profileLabel = role === 'student' ? t('nav.student.profile') : t('teacher.settingsTitle')
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title={profileLabel}
+      >
+        <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
+          {appUser.initials}
+        </div>
+        <span className="hidden text-xs font-bold text-slate-800 dark:text-slate-100 sm:inline-block">
+          {appUser.name}
+        </span>
+        <ChevronDown
+          className={`size-3.5 text-slate-400 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-orientation="vertical"
+          className="absolute right-0 top-full mt-2 w-64 z-50 rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-slate-900 shadow-2xl p-1.5 text-slate-900 dark:text-slate-100 animate-in fade-in zoom-in-95 duration-150"
+        >
+          {/* User brief header */}
+          <div className="px-3 py-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl mb-1 border border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+              {appUser.name}
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+              {appUser.email}
+            </p>
+            <span className="inline-block mt-1.5 rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+              {roleLabel}
+            </span>
+          </div>
+
+          {/* Action 1: Vào trang hồ sơ */}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              go(profilePageKey)
+            }}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
+          >
+            <div className="flex size-7 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+              <UserRound className="size-4" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">{role === 'student' ? 'Hồ sơ cá nhân' : 'Cài đặt tài khoản'}</p>
+              <p className="text-[10px] text-slate-400 font-normal">
+                {role === 'student' ? 'Thông tin & đổi mật khẩu' : 'Bảo mật & thông tin trường'}
+              </p>
+            </div>
+          </button>
+
+          {/* Action 2: Cài đặt Cookie */}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              openCookieSettings()
+            }}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer text-left"
+          >
+            <div className="flex size-7 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+              <Cookie className="size-4" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Cài đặt Cookie</p>
+              <p className="text-[10px] text-slate-400 font-normal">Quản lý quyền riêng tư</p>
+            </div>
+          </button>
+
+          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+          {/* Action 3: Đăng xuất */}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={async () => {
+              setOpen(false)
+              await logout()
+            }}
+            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer text-left"
+          >
+            <div className="flex size-7 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+              <LogOut className="size-4" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">{t('common.logout')}</p>
+              <p className="text-[10px] text-rose-400/80 font-normal">Thoát khỏi phiên làm việc</p>
+            </div>
+          </button>
         </div>
       )}
     </div>
@@ -4521,6 +4566,17 @@ export default function SmartAttendApp() {
 
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5 scrollbar-thin">
+          {sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="mb-2 flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-2 py-2.5 text-slate-300 transition-all hover:bg-white/10 hover:text-white cursor-pointer"
+              title={t('header.expandNav')}
+              aria-label={t('header.expandNav')}
+            >
+              <PanelLeftOpen className="size-4.5" />
+            </button>
+          )}
           {items.map(({ key, labelKey, icon: Icon }) => (
             <button
               key={key}
@@ -4561,7 +4617,7 @@ export default function SmartAttendApp() {
       </aside>
 
       {/* Main Column: Header + Content */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 smartattend-page-enter">
         {/* Top Header Bar */}
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md dark:border-slate-800 dark:bg-[#111d33]/90 sm:px-6 shadow-xs">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -4578,19 +4634,6 @@ export default function SmartAttendApp() {
             <div className="lg:hidden">
               <UtcLogo compact size={34} textColor="text-slate-800 dark:text-white" />
             </div>
-
-            {/* Desktop: When collapsed, show expand button in header */}
-            {sidebarCollapsed && (
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                className="hidden lg:flex size-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-all cursor-pointer shadow-2xs mr-1"
-                title={t('header.expandNav')}
-                aria-label={t('header.expandNav')}
-              >
-                <PanelLeftOpen className="size-4.5" />
-              </button>
-            )}
 
             {/* Breadcrumb / Workspace eyebrow badge on desktop */}
             <div className="hidden sm:flex items-center gap-2">
@@ -4624,21 +4667,14 @@ export default function SmartAttendApp() {
             </button>
             <NotificationBell notifications={data.notifications} role={role} go={go} t={t} />
 
-            {/* User Profile Chip */}
-            <button
-              type="button"
-              onClick={() => go(role === 'student' ? 'profile' : 'settings')}
-              className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50 py-1 pl-1 pr-3 shadow-2xs dark:border-slate-700 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer text-left"
-              title={role === 'student' ? t('student.accountSettings') : t('teacher.settingsTitle')}
-            >
-              <div className="grid size-7 place-items-center rounded-full bg-blue-600 text-xs font-bold text-white shadow-2xs">
-                {appUser.initials}
-              </div>
-              <span className="hidden text-xs font-bold text-slate-800 dark:text-slate-100 sm:inline-block">
-                {appUser.name}
-              </span>
-              <ChevronDown className="size-3.5 text-slate-400" />
-            </button>
+            {/* User Profile Dropdown */}
+            <UserProfileDropdown
+              appUser={appUser}
+              role={role}
+              go={go}
+              logout={logout}
+              t={t}
+            />
           </div>
         </header>
 

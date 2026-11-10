@@ -156,7 +156,7 @@ export function Button({ children, variant = 'primary', onClick, type = 'button'
     danger: 'bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.99] shadow-sm',
     microsoft: 'bg-[#0078d4] text-white hover:bg-[#006cbd] active:scale-[0.99] shadow-sm',
   }
-  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50 cursor-pointer ${styles[variant]} ${className}`}>{children}</button>
+  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50 cursor-pointer ${styles[variant]} ${className}`}>{children}</button>
 }
 
 export function PillButton({ children, onClick, active = false }: { children: React.ReactNode; onClick?: () => void; active?: boolean }) {
@@ -199,7 +199,7 @@ export function Card({
   }
 
   return (
-    <section className={`overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] ${accentClasses[accentBar]} ${className}`}>
+    <section className={`smartattend-card-motion overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-[#121c2d] ${accentClasses[accentBar]} ${className}`}>
       {title && (
         <div className="flex items-center justify-between border-b border-slate-100 bg-white/50 px-5 py-3.5 dark:border-slate-800/80 dark:bg-transparent">
           <div>
@@ -256,6 +256,7 @@ export function PasswordInput({
   minLength,
   required = false,
   mono = false,
+  placeholder,
 }: {
   value: string
   onChange: (value: string) => void
@@ -264,6 +265,7 @@ export function PasswordInput({
   minLength?: number
   required?: boolean
   mono?: boolean
+  placeholder?: string
 }) {
   const { t } = useI18n()
   const [visible, setVisible] = useState(false)
@@ -274,6 +276,7 @@ export function PasswordInput({
         type={visible ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         className={`w-full rounded-lg border bg-background px-3 pr-10 outline-none focus:ring-2 focus:ring-primary ${mono ? 'font-mono' : ''} ${inputClassName}`}
         autoComplete={autoComplete}
         minLength={minLength}

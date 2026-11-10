@@ -43,7 +43,7 @@ import {
   updateLeaveRequestStatus,
 } from '@/lib/attendance/leave'
 import { escapeCsvCell, toCsv } from '@/lib/reports/csv'
-import { clientIp, RateLimiter } from '@/lib/rate-limit'
+import { clientIp } from '@/lib/rate-limit'
 import type { AuthContext } from '@/lib/auth/session'
 
 config({ path: '.env' })

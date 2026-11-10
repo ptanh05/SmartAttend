@@ -46,6 +46,7 @@ export const COOKIE_NAMES = {
   LOCALE: 'smartattend_locale',
   THEME: 'smartattend_theme',
   DEVICE_ID: 'smartattend_device_id',
+  CONSENT: 'smartattend_cookie_consent',
 } as const
 
 // Secret encryption key derived from environment or application master seed

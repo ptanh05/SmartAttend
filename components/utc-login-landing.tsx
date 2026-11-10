@@ -24,6 +24,7 @@ import {
 import { UtcLogo } from './utc-logo'
 import { useI18n } from '@/components/i18n-provider'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { openCookieSettings } from '@/components/cookie-consent-banner'
 import { api } from '@/lib/api/client'
 import type { Portal, Role } from '@/lib/types/domain'
 
@@ -40,7 +41,7 @@ export function UtcLoginLanding({
   initialPortal?: Portal
   organizationName?: string
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const [portal, setPortal] = useState<Portal>(initialPortal)
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -465,8 +466,16 @@ export function UtcLoginLanding({
 
       {/* FOOTER */}
       <footer className="relative z-10 w-full px-4 py-4 text-center text-[11px] text-slate-400">
-        <p className="mx-auto max-w-5xl">
-          {t('landing.devBy')}
+        <p className="mx-auto max-w-5xl flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          <span>{t('landing.devBy')}</span>
+          <span className="hidden sm:inline text-slate-300 dark:text-slate-600">•</span>
+          <button
+            type="button"
+            onClick={openCookieSettings}
+            className="hover:text-slate-600 dark:hover:text-slate-300 underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            {locale === 'en' ? 'Cookie Settings' : 'Cài đặt Cookie'}
+          </button>
         </p>
       </footer>
 

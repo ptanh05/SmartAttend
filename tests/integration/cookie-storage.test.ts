@@ -208,4 +208,59 @@ describe('Cookie Storage System', () => {
       }
     })
   })
+
+  describe('6. Cookie Consent Management (COOKIE_NAMES.CONSENT)', () => {
+    it('properly reads and persists cookie consent choice across sessions', () => {
+      let mockCookie = ''
+      const originalDoc = global.document
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(global as any).document = {
+        get cookie() {
+          return mockCookie
+        },
+        set cookie(val: string) {
+          const parts = val.split(';')
+          const [keyVal] = parts
+          const [key, value] = keyVal.split('=')
+          const existing = mockCookie ? mockCookie.split('; ').filter((c) => !c.startsWith(`${key}=`)) : []
+          if (parts.some((p) => p.trim() === 'Max-Age=0')) {
+            mockCookie = existing.join('; ')
+          } else {
+            existing.push(`${key}=${value}`)
+            mockCookie = existing.join('; ')
+          }
+        },
+      }
+
+      try {
+        expect(COOKIE_NAMES.CONSENT).toBe('smartattend_cookie_consent')
+
+        // Initially no consent
+        expect(clientCookieStorage.get(COOKIE_NAMES.CONSENT)).toBeNull()
+
+        // User accepts necessary only
+        clientCookieStorage.set(COOKIE_NAMES.CONSENT, 'necessary', {
+          maxAge: 365 * 24 * 60 * 60,
+          path: '/',
+          sameSite: 'lax',
+        })
+        expect(clientCookieStorage.get(COOKIE_NAMES.CONSENT)).toBe('necessary')
+
+        // User accepts all
+        clientCookieStorage.set(COOKIE_NAMES.CONSENT, 'all', {
+          maxAge: 365 * 24 * 60 * 60,
+          path: '/',
+          sameSite: 'lax',
+        })
+        expect(clientCookieStorage.get(COOKIE_NAMES.CONSENT)).toBe('all')
+
+        // User removes/clears consent
+        clientCookieStorage.remove(COOKIE_NAMES.CONSENT)
+        expect(clientCookieStorage.get(COOKIE_NAMES.CONSENT)).toBeNull()
+      } finally {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(global as any).document = originalDoc
+      }
+    })
+  })
 })

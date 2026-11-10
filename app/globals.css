@@ -194,6 +194,52 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+/* Motion system: subtle, consistent transitions across the portal. */
+@keyframes smartattend-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes smartattend-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes smartattend-pulse-soft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.10); }
+}
+
+.smartattend-page-enter {
+  animation: smartattend-fade-up 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.smartattend-fade-in {
+  animation: smartattend-fade-in 300ms ease-out both;
+}
+
+.smartattend-card-motion {
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.smartattend-card-motion:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px -18px rgba(15, 23, 42, 0.35);
+}
+
+.smartattend-pulse {
+  animation: smartattend-pulse-soft 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media print {
   body * {
     visibility: hidden !important;
