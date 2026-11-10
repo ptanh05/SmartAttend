@@ -1,5 +1,5 @@
 import { config } from 'dotenv'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { nanoid } from 'nanoid'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
@@ -218,6 +218,7 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
 
       expect(notifs.length).toBe(0)
     } finally {
+      vi.useRealTimers()
       await db().delete(notifications).where(eq(notifications.organizationId, orgId)).catch(() => {})
       await db().delete(attendanceRecords).where(eq(attendanceRecords.organizationId, orgId)).catch(() => {})
       await db().delete(attendanceChallenges).where(eq(attendanceChallenges.organizationId, orgId)).catch(() => {})
@@ -237,6 +238,9 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
     const studentId = `usr_sn_${nanoid(6)}`
     const courseId = `crs_n_${nanoid(6)}`
     const sectionId = `sec_n_${nanoid(6)}`
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-09T08:00:00+07:00'))
 
     // Determine current day of week and time in Vietnam
     const now = new Date()
@@ -302,6 +306,7 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
       expect(notifs[0].body).toContain('kéo dài 3 phút')
       expect(notifs[0].body).toContain(scheduledStartsAt)
     } finally {
+      vi.useRealTimers()
       await db().delete(notifications).where(eq(notifications.organizationId, orgId)).catch(() => {})
       await db().delete(classEnrollments).where(eq(classEnrollments.organizationId, orgId)).catch(() => {})
       await db().delete(courseSections).where(eq(courseSections.organizationId, orgId)).catch(() => {})
