@@ -636,6 +636,7 @@ export const vi: Messages = {
     importLecturersSubmit: 'Tạo tài khoản giảng viên',
     importLecturersDone: 'Đã tạo {count} tài khoản giảng viên.',
     importLecturersFailed: 'Không thể tạo tài khoản giảng viên.',
+    emailColumn: 'Email',
     userDirectory: 'Danh sách tài khoản',
     filterAll: 'Tất cả',
     filterStudents: 'Sinh viên',

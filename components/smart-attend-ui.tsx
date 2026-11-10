@@ -59,7 +59,7 @@ export type ViewProps = {
   go: (p: PageKey) => void
   data: DashboardData
   user: AppUser
-  organization: { name: string; plan: string; emailDomain?: string | null }
+  organization: { id?: string; name: string; plan: string; emailDomain?: string | null }
   refresh: () => Promise<void>
   onPasswordChanged?: () => Promise<void>
 }
@@ -148,7 +148,7 @@ export function Status({ children, tone = 'success' }: { children: React.ReactNo
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shadow-xs ${styles[tone]}`}><span className="size-1.5 rounded-full bg-current" />{children}</span>
 }
 
-export function Button({ children, variant = 'primary', onClick, type = 'button', disabled, className = '' }: { children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost' | 'danger' | 'microsoft'; onClick?: () => void; type?: 'button' | 'submit'; disabled?: boolean; className?: string }) {
+export function Button({ children, variant = 'primary', onClick, type = 'button', disabled, className = '' }: { children: React.ReactNode; variant?: 'primary' | 'outline' | 'ghost' | 'danger' | 'microsoft'; onClick?: () => void; type?: 'button' | 'submit'; disabled?: boolean; size?: string; className?: string }) {
   const styles = {
     primary: 'bg-[#1e4da1] text-white hover:bg-[#163c80] active:scale-[0.99] shadow-sm',
     outline: 'border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 shadow-xs',

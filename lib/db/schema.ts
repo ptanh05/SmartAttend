@@ -50,7 +50,9 @@ export const organizationMemberships = pgTable(
   },
   (table) => [
     uniqueIndex('membership_org_user_idx').on(table.organizationId, table.userId),
-    uniqueIndex('membership_org_student_code_idx').on(table.organizationId, table.studentCode),
+    // Student IDs are institutional identifiers and must be unique globally,
+    // not merely within one organization.
+    uniqueIndex('membership_student_code_idx').on(table.studentCode),
     index('membership_org_role_idx').on(table.organizationId, table.role),
   ],
 )

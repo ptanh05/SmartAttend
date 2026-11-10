@@ -41,7 +41,16 @@ export async function POST(request: Request) {
         ? await resolveMembershipForStudentLogin(loginId)
         : await resolveMembershipForLogin(loginId.includes('@') ? loginId.toLowerCase() : loginId)
 
-    const match = memberships.find((row) => !row.disabledAt && row.membershipStatus === 'active')
+    // A student code may temporarily exist in more than one test/organization
+    // record. Select the active membership whose password actually matches
+    // instead of trusting database row order.
+    const match = portal === 'student'
+      ? (await Promise.all(
+          memberships
+            .filter((row) => !row.disabledAt && row.membershipStatus === 'active')
+            .map(async (row) => ({ row, passwordMatches: await verifyPassword(password, row.passwordHash) })),
+        )).find((candidate) => candidate.passwordMatches)?.row
+      : memberships.find((row) => !row.disabledAt && row.membershipStatus === 'active')
 
     if (!match) {
       const disabledAccount = memberships.find((row) => row.disabledAt || row.membershipStatus !== 'active')
@@ -62,7 +71,7 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!(await verifyPassword(password, match.passwordHash))) {
+    if (portal !== 'student' && !(await verifyPassword(password, match.passwordHash))) {
       return NextResponse.json(
         { ok: false, code: 'invalid_credentials', message: 'Incorrect login ID or password.' },
         { status: 401 },

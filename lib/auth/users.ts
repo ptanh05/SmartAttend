@@ -30,8 +30,15 @@ function makeInitials(name: string) {
   return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
 }
 
-function studentEmail(organizationId: string, studentCode: string) {
-  return `${organizationId}_${studentCode.trim().toLowerCase()}@student.local`
+export function studentEmailFromName(name: string, studentCode: string) {
+  const givenName = name.trim().split(/\s+/).pop() ?? ''
+  const initial = givenName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .charAt(0)
+    .toLowerCase()
+  return `${initial}${studentCode.trim().toLowerCase()}@utc.edu.vn`
 }
 
 export async function registerAdministrator(input: {
@@ -327,7 +334,6 @@ export async function importStudents(
         .from(organizationMemberships)
         .where(
           and(
-            eq(organizationMemberships.organizationId, auth.organizationId),
             eq(organizationMemberships.studentCode, studentCode),
           ),
         )
@@ -346,12 +352,12 @@ export async function importStudents(
           created.push({ studentCode, name, defaultPassword: '(Tài khoản đã tồn tại - đã ghi danh)' })
           continue
         } else {
-          skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong tổ chức.' })
+          skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong hệ thống.' })
           continue
         }
       }
 
-      const email = studentEmail(auth.organizationId, studentCode)
+      const email = studentEmailFromName(name, studentCode)
       const defaultPassword = defaultStudentPassword(studentCode)
       const passwordHash = await hashPassword(defaultPassword)
 

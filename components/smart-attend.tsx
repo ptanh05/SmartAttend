@@ -1,10 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Cookie, Download, Edit3, Eye, FileCheck, FileText, Fingerprint, Image as ImageIcon, KeyRound, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  AlertTriangle, ArrowLeft, BarChart3, Bell, Calendar, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
+  ClipboardCheck, Clock, Cookie, Copy, Download, Edit3, Eye, FileCheck, FileSpreadsheet, FileText, Fingerprint, Globe, Image as ImageIcon, Info, KeyRound, Layers, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
   PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, UserRound, Users, Volume2, Waves, Wifi, X, Zap
 } from 'lucide-react'
 import {
@@ -25,6 +25,16 @@ import { openCookieSettings } from '@/components/cookie-consent-banner'
 import type { AttendanceStatus, ClassSession, Course, Portal, Role } from '@/lib/types/domain'
 import { startUltrasonicBeacon, detectUltrasonicBeacon, DEFAULT_ULTRASONIC_FREQ, type BeaconController } from '@/lib/attendance/ultrasonic'
 import { authenticateWithBiometrics, registerDeviceBiometrics } from '@/lib/auth/webauthn-client'
+
+function studentEmailForDisplay(name: string, studentCode: string) {
+  const initial = name.trim().split(/\s+/).pop()
+    ?.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .charAt(0)
+    .toLowerCase() ?? ''
+  return `${initial}${studentCode}@utc.edu.vn`
+}
 
 
 
@@ -1288,11 +1298,25 @@ function StudentImportPanel({
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+    setUploadedFileName(file.name)
     setCsvText(await file.text())
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && (file.name.endsWith('.csv') || file.type.includes('csv') || file.type.includes('text'))) {
+      setUploadedFileName(file.name)
+      setCsvText(await file.text())
+    }
   }
 
   const downloadTemplate = () => {
@@ -1303,16 +1327,96 @@ function StudentImportPanel({
     link.click()
   }
 
+  const copyPassword = (code: string, pass: string) => {
+    navigator.clipboard.writeText(pass)
+    setCopiedCode(code)
+    setTimeout(() => setCopiedCode(null), 2000)
+  }
+
+  const downloadCreatedCredentials = () => {
+    if (!importResult?.created.length) return
+    const csv =
+      '\uFEFFMã sinh viên,Họ và tên,Mật khẩu mặc định\n' +
+      importResult.created.map((r) => `"${r.studentCode}","${r.name}","${r.defaultPassword}"`).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'danh-sach-tai-khoan-sinh-vien.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Parse first few rows for live preview
+  const preview = useMemo(() => {
+    const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) return { rows: [], totalCount: 0 }
+    const firstLine = lines[0].toLowerCase()
+    const hasHeader = firstLine.includes('studentid') || firstLine.includes('student_id') || firstLine.includes('code')
+    const dataLines = hasHeader ? lines.slice(1) : lines
+    const rows = dataLines.slice(0, 5).map((line) => {
+      const parts = line.split(',').map((p) => p.trim())
+      const studentId = parts[0] || ''
+      const name = parts[1] || ''
+      const department = parts[2] || ''
+      return {
+        studentId,
+        name,
+        department,
+        valid: Boolean(studentId && name),
+      }
+    })
+    return { rows, totalCount: dataLines.length }
+  }, [csvText])
+
   return (
-    <Card title={t('teacher.importStudents')} description={t('teacher.importStudentsDetail')}>
-      <div className="mb-3 space-y-1">
-        <label className="text-xs font-semibold text-foreground">
-          {t('admin.selectSectionForImport')}
+    <div className="rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-xl shadow-slate-100 dark:shadow-none space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-3.5">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 ring-4 ring-blue-500/10">
+            <UserPlus className="size-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white uppercase">
+                {t('teacher.importStudents')}
+              </h2>
+              <span className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                CSV Batch Import
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {t('teacher.importStudentsDetail')}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Button type="button" variant="outline" onClick={downloadTemplate} className="gap-1.5 cursor-pointer">
+            <Download className="size-3.5 text-blue-600" />
+            <span>{t('teacher.downloadTemplate')}</span>
+          </Button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Target Section Selector */}
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+          <Layers className="size-4 text-blue-600 dark:text-blue-400" />
+          <span>{t('admin.selectSectionForImport')}</span>
         </label>
         <select
           value={targetSectionId}
           onChange={(e) => setTargetSectionId(e.target.value)}
-          className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary"
+          className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 dark:text-white outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all cursor-pointer"
         >
           <option value="">{t('admin.importTargetAll')}</option>
           {sections &&
@@ -1324,73 +1428,331 @@ function StudentImportPanel({
         </select>
       </div>
 
-      <p className="mb-3 text-sm text-muted-foreground">{t('teacher.importFormat')}</p>
-      <p className="mb-3 rounded-lg bg-muted/50 p-3 font-mono text-xs">
-        studentId,name,department{'\n'}20210001,Nguyen Van A,Computer Science
-      </p>
-      <p className="mb-3 text-sm text-muted-foreground">{t('teacher.defaultPasswordFormat')}</p>
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* 3 Guideline Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <FileSpreadsheet className="size-4 text-blue-600 dark:text-blue-400" />
+            <span>Cấu trúc 3 cột bắt buộc</span>
+          </div>
+          <p className="font-mono text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-2 py-1 rounded-lg inline-block font-semibold">
+            studentId, name, department
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Có thể có hoặc không có dòng tiêu đề đầu tiên.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <KeyRound className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Mật khẩu khởi tạo</span>
+          </div>
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-1 rounded-lg inline-block">
+            Trùng với Mã sinh viên
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Ví dụ: SV mã <span className="font-mono font-medium">20210001</span> sẽ có mật khẩu ban đầu là <span className="font-mono font-medium">20210001</span>.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <CheckCircle2 className="size-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Kích hoạt tự động</span>
+          </div>
+          <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-1 rounded-lg inline-block">
+            Sẵn sàng điểm danh
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Tài khoản sinh viên được tạo và ghi danh ngay vào các lớp học phần.
+          </p>
+        </div>
+      </div>
+
+      {/* Clean Sample Table Preview */}
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+        <div className="bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800">
+          <span className="flex items-center gap-1.5">
+            <Info className="size-3.5 text-blue-600" />
+            Mẫu dữ liệu CSV chuẩn:
+          </span>
+          <span className="text-[11px] font-normal text-slate-400">Tải file mẫu để điền nhanh</span>
+        </div>
+        <table className="w-full text-left text-xs">
+          <thead className="bg-slate-100/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+              <th className="px-3.5 py-2 font-mono font-semibold">studentId (Mã SV)</th>
+              <th className="px-3.5 py-2 font-semibold">name (Họ và tên)</th>
+              <th className="px-3.5 py-2 font-semibold">department (Khoa/Lớp)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+            <tr>
+              <td className="px-3.5 py-1.5 text-blue-600 dark:text-blue-400 font-semibold">20210001</td>
+              <td className="px-3.5 py-1.5 font-sans">Nguyen Van A</td>
+              <td className="px-3.5 py-1.5 font-sans">Công nghệ thông tin</td>
+            </tr>
+            <tr>
+              <td className="px-3.5 py-1.5 text-blue-600 dark:text-blue-400 font-semibold">20210002</td>
+              <td className="px-3.5 py-1.5 font-sans">Tran Thi B</td>
+              <td className="px-3.5 py-1.5 font-sans">Kỹ thuật xây dựng</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Upload Dropzone & Textarea */}
+      <div className="space-y-3">
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
-        <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
-          <Upload />{t('teacher.uploadCsv')}
-        </Button>
-        <Button type="button" variant="outline" onClick={downloadTemplate}>
-          <Download />{t('teacher.downloadTemplate')}
-        </Button>
-      </div>
-      <textarea
-        value={csvText}
-        onChange={(e) => setCsvText(e.target.value)}
-        rows={8}
-        className="w-full rounded-lg border bg-background p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-primary"
-        placeholder={t('teacher.importPlaceholder')}
-      />
-      <div className="mt-4 flex gap-2">
-        <Button type="button" onClick={onImport} disabled={!csvText.trim() || importing}>
-          {importing ? t('teacher.importing') : t('teacher.runImport')}
-        </Button>
-        <Button type="button" variant="outline" onClick={onClose}>{t('common.back')}</Button>
-      </div>
-      {importResult && (
-        <div className="mt-5 space-y-4 border-t pt-5 text-sm">
+
+        {/* Dropzone area */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+          className={`group flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center transition-all cursor-pointer ${
+            isDragging
+              ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30'
+              : 'border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 bg-slate-50/20'
+          }`}
+        >
+          <div className="flex size-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+            <Upload className="size-5" />
+          </div>
           <div>
-            <p className="font-medium">{t('teacher.importCreated', { count: importResult.created.length })}</p>
-            {importResult.created.length > 0 && (
-              <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="p-2">{t('login.studentId')}</th>
-                      <th className="p-2">{t('auth.fullName')}</th>
-                      <th className="p-2">{t('teacher.defaultPassword')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importResult.created.map((row) => (
-                      <tr key={row.studentCode} className="border-t">
-                        <td className="p-2">{row.studentCode}</td>
-                        <td className="p-2">{row.name}</td>
-                        <td className="p-2 font-mono">{row.defaultPassword}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
+              Kéo thả tệp CSV vào đây, hoặc <span className="text-blue-600 dark:text-blue-400 underline">duyệt từ máy tính</span>
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Hỗ trợ định dạng .csv (UTF-8)
+            </p>
+          </div>
+          {uploadedFileName && (
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+              <FileCheck className="size-3.5" />
+              <span>Đã nạp file: {uploadedFileName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Textarea editor */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Hoặc dán nội dung CSV trực tiếp:
+            </label>
+            {preview.totalCount > 0 && (
+              <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                Phát hiện {preview.totalCount} dòng dữ liệu
+              </span>
             )}
           </div>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            rows={6}
+            className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-4 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-blue-600 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-blue-600/10 transition-all placeholder:text-slate-400"
+            placeholder={t('teacher.importPlaceholder')}
+          />
+        </div>
+      </div>
+
+      {/* Live Preview of Input Data */}
+      {preview.rows.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden space-y-0">
+          <div className="bg-slate-50 dark:bg-slate-800/70 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <FileCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Xem trước dữ liệu ({preview.totalCount} sinh viên)</span>
+            </div>
+            <span className="text-[11px] font-normal text-slate-400">
+              Hiển thị tối đa 5 dòng đầu
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100/60 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th className="px-3.5 py-2 font-semibold">Mã sinh viên</th>
+                  <th className="px-3.5 py-2 font-semibold">Họ và tên</th>
+                  <th className="px-3.5 py-2 font-semibold">Khoa/Ngành</th>
+                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                {preview.rows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                    <td className="px-3.5 py-2 font-mono font-medium text-slate-900 dark:text-white">
+                      {row.studentId}
+                    </td>
+                    <td className="px-3.5 py-2 text-slate-700 dark:text-slate-300">
+                      {row.name}
+                    </td>
+                    <td className="px-3.5 py-2 text-slate-500 dark:text-slate-400">
+                      {row.department || '—'}
+                    </td>
+                    <td className="px-3.5 py-2 text-right">
+                      {row.valid ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <Check className="size-3" /> Hợp lệ
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Thiếu mã hoặc tên
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={onImport}
+            disabled={!csvText.trim() || importing}
+            className="rounded-xl px-5 h-11 text-xs font-semibold shadow-sm shadow-blue-500/20 cursor-pointer"
+          >
+            {importing ? (
+              <>
+                <div className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{t('teacher.importing')}</span>
+              </>
+            ) : (
+              <>
+                <UserPlus className="size-4" />
+                <span>
+                  {t('teacher.runImport')}{' '}
+                  {preview.totalCount > 0 ? `(${preview.totalCount} sinh viên)` : ''}
+                </span>
+              </>
+            )}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose} className="rounded-xl h-11 text-xs font-semibold cursor-pointer">
+            {t('common.back')}
+          </Button>
+        </div>
+
+        {csvText.trim() && (
+          <button
+            type="button"
+            onClick={() => {
+              setCsvText('')
+              setUploadedFileName(null)
+            }}
+            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+          >
+            <Trash2 className="size-3.5" />
+            <span>Xóa nội dung</span>
+          </button>
+        )}
+      </div>
+
+      {/* Result presentation */}
+      {importResult && (
+        <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
+          {/* Success Banner */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="size-4" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                  {t('teacher.importCreated', { count: importResult.created.length })}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Sinh viên có thể đăng nhập ngay bằng mã SV và đổi mật khẩu sau khi vào hệ thống.
+                </p>
+              </div>
+            </div>
+            {importResult.created.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={downloadCreatedCredentials}
+                className="gap-1.5 rounded-xl cursor-pointer"
+              >
+                <Download className="size-3.5 text-blue-600" />
+                <span>Tải danh sách tài khoản (CSV)</span>
+              </Button>
+            )}
+          </div>
+
+          {/* Created Table */}
+          {importResult.created.length > 0 && (
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    <th className="px-3.5 py-2 font-semibold">{t('login.studentId')}</th>
+                    <th className="px-3.5 py-2 font-semibold">{t('auth.fullName')}</th>
+                    <th className="px-3.5 py-2 font-semibold">{t('teacher.defaultPassword')}</th>
+                    <th className="px-3.5 py-2 font-semibold text-right">Sao chép</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {importResult.created.map((row) => (
+                    <tr key={row.studentCode} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                      <td className="px-3.5 py-2 font-mono font-bold text-blue-600 dark:text-blue-400">{row.studentCode}</td>
+                      <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">{row.name}</td>
+                      <td className="px-3.5 py-2 font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded">{row.defaultPassword}</td>
+                      <td className="px-3.5 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => copyPassword(row.studentCode, row.defaultPassword)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                        >
+                          {copiedCode === row.studentCode ? (
+                            <>
+                              <Check className="size-3 text-emerald-600" />
+                              <span className="text-emerald-600">Đã chép</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3" />
+                              <span>Chép MK</span>
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Skipped alert */}
           {importResult.skipped.length > 0 && (
-            <div>
-              <p className="font-medium text-amber-700">{t('teacher.importSkipped', { count: importResult.skipped.length })}</p>
-              <ul className="mt-2 list-disc pl-5 text-muted-foreground">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/30 p-3.5 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                <span>{t('teacher.importSkipped', { count: importResult.skipped.length })}</span>
+              </div>
+              <ul className="mt-2 space-y-1 pl-5 list-disc text-amber-700/90 dark:text-amber-400/90">
                 {importResult.skipped.map((row) => (
-                  <li key={`${row.studentCode}-${row.reason}`}>{row.studentCode}: {row.reason}</li>
+                  <li key={`${row.studentCode}-${row.reason}`}>
+                    <span className="font-mono font-semibold">{row.studentCode}</span>: {row.reason}
+                  </li>
                 ))}
               </ul>
             </div>
           )}
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -1417,11 +1779,27 @@ function TeacherImportPanel({
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
+
+  const expectedDomain = emailDomain ?? 'utc.edu.vn'
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
+    setUploadedFileName(file.name)
     setCsvText(await file.text())
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && (file.name.endsWith('.csv') || file.type.includes('csv') || file.type.includes('text'))) {
+      setUploadedFileName(file.name)
+      setCsvText(await file.text())
+    }
   }
 
   const downloadTemplate = () => {
@@ -1432,78 +1810,412 @@ function TeacherImportPanel({
     link.click()
   }
 
+  const copyPassword = (email: string, pass: string) => {
+    navigator.clipboard.writeText(pass)
+    setCopiedEmail(email)
+    setTimeout(() => setCopiedEmail(null), 2000)
+  }
+
+  const downloadCreatedCredentials = () => {
+    if (!importResult?.created.length) return
+    const csv =
+      '\uFEFFEmail,Họ và tên,Mật khẩu mặc định\n' +
+      importResult.created.map((r) => `"${r.email}","${r.name}","${r.defaultPassword}"`).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'danh-sach-tai-khoan-giang-vien.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Parse preview rows
+  const preview = useMemo(() => {
+    const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) return { rows: [], totalCount: 0 }
+    const firstLine = lines[0].toLowerCase()
+    const hasHeader = firstLine.includes('email') || firstLine.includes('name')
+    const dataLines = hasHeader ? lines.slice(1) : lines
+    const rows = dataLines.slice(0, 5).map((line) => {
+      const parts = line.split(',').map((p) => p.trim())
+      const email = parts[0] || ''
+      const name = parts[1] || ''
+      const department = parts[2] || ''
+      const isValidDomain = email.toLowerCase().endsWith(`@${expectedDomain.toLowerCase()}`)
+      return {
+        email,
+        name,
+        department,
+        isValidDomain,
+      }
+    })
+    return { rows, totalCount: dataLines.length }
+  }, [csvText, expectedDomain])
+
   return (
-    <Card title={t('admin.importLecturers')} description={t('admin.importLecturersDetail')}>
-      <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersFormat')}</p>
-      <p className="mb-3 rounded-lg bg-muted/50 p-3 font-mono text-xs">
-        email,name,department{'\n'}gv001@{emailDomain ?? 'utc.edu.vnc'},Nguyen Van A,Computer Science
-      </p>
-      <p className="mb-3 text-sm text-muted-foreground">
-        {t('admin.importLecturersDomain', { domain: emailDomain ?? 'utc.edu.vnc' })}
-      </p>
-      <p className="mb-3 text-sm text-muted-foreground">{t('admin.importLecturersPassword')}</p>
-      <div className="mb-3 flex flex-wrap gap-2">
-        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
-        <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
-          <Upload />{t('teacher.uploadCsv')}
-        </Button>
-        <Button type="button" variant="outline" onClick={downloadTemplate}>
-          <Download />{t('teacher.downloadTemplate')}
-        </Button>
-      </div>
-      <textarea
-        value={csvText}
-        onChange={(e) => setCsvText(e.target.value)}
-        rows={8}
-        className="w-full rounded-lg border bg-background p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-primary"
-        placeholder="email,name,department"
-      />
-      <div className="mt-4 flex gap-2">
-        <Button type="button" onClick={onImport} disabled={!csvText.trim() || importing}>
-          {importing ? t('teacher.importing') : t('admin.importLecturersSubmit')}
-        </Button>
-        <Button type="button" variant="outline" onClick={onClose}>{t('common.back')}</Button>
-      </div>
-      {importResult && (
-        <div className="mt-5 space-y-4 border-t pt-5 text-sm">
+    <div className="rounded-3xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-xl shadow-slate-100 dark:shadow-none space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-3.5">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 ring-4 ring-indigo-500/10">
+            <Users className="size-5" />
+          </div>
           <div>
-            <p className="font-medium">{t('teacher.importCreated', { count: importResult.created.length })}</p>
-            {importResult.created.length > 0 && (
-              <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="p-2">{t('admin.emailColumn')}</th>
-                      <th className="p-2">{t('auth.fullName')}</th>
-                      <th className="p-2">{t('teacher.defaultPassword')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importResult.created.map((row) => (
-                      <tr key={row.email} className="border-t">
-                        <td className="p-2">{row.email}</td>
-                        <td className="p-2">{row.name}</td>
-                        <td className="p-2 font-mono">{row.defaultPassword}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white uppercase">
+                {t('admin.importLecturers')}
+              </h2>
+              <span className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                Faculty Roster
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {t('admin.importLecturersDetail')}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Button type="button" variant="outline" onClick={downloadTemplate} className="gap-1.5 cursor-pointer">
+            <Download className="size-3.5 text-indigo-600" />
+            <span>{t('teacher.downloadTemplate')}</span>
+          </Button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            aria-label="Đóng"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 3 Guideline Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <FileSpreadsheet className="size-4 text-indigo-600 dark:text-indigo-400" />
+            <span>Cấu trúc 3 cột bắt buộc</span>
+          </div>
+          <p className="font-mono text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-1 rounded-lg inline-block font-semibold">
+            email, name, department
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Có thể có hoặc không có dòng tiêu đề đầu tiên.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <Globe className="size-4 text-blue-600 dark:text-blue-400" />
+            <span>Ràng buộc tên miền trường</span>
+          </div>
+          <p className="font-mono text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/50 px-2 py-1 rounded-lg inline-block font-semibold">
+            @{expectedDomain}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Chỉ chấp nhận email thuộc tên miền chính thức của trường.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 p-3.5">
+          <div className="flex items-center gap-2 font-semibold text-xs text-slate-800 dark:text-slate-200 mb-1">
+            <KeyRound className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Mật khẩu mặc định</span>
+          </div>
+          <p className="font-mono text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-1 rounded-lg inline-block font-semibold">
+            Gv@123456
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Giảng viên nên đổi mật khẩu sau lần đăng nhập đầu tiên.
+          </p>
+        </div>
+      </div>
+
+      {/* Clean Sample Table Preview */}
+      <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+        <div className="bg-slate-50 dark:bg-slate-800/60 px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800">
+          <span className="flex items-center gap-1.5">
+            <Info className="size-3.5 text-indigo-600" />
+            Mẫu dữ liệu CSV chuẩn:
+          </span>
+          <span className="text-[11px] font-normal text-slate-400">Tải file mẫu để điền nhanh</span>
+        </div>
+        <table className="w-full text-left text-xs">
+          <thead className="bg-slate-100/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <tr>
+              <th className="px-3.5 py-2 font-mono font-semibold">email (Email trường)</th>
+              <th className="px-3.5 py-2 font-semibold">name (Họ và tên)</th>
+              <th className="px-3.5 py-2 font-semibold">department (Khoa/Bộ môn)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
+            <tr>
+              <td className="px-3.5 py-1.5 text-indigo-600 dark:text-indigo-400 font-semibold">gv001@{expectedDomain}</td>
+              <td className="px-3.5 py-1.5 font-sans">Nguyen Van A</td>
+              <td className="px-3.5 py-1.5 font-sans">Computer Science</td>
+            </tr>
+            <tr>
+              <td className="px-3.5 py-1.5 text-indigo-600 dark:text-indigo-400 font-semibold">gv002@{expectedDomain}</td>
+              <td className="px-3.5 py-1.5 font-sans">Tran Thi B</td>
+              <td className="px-3.5 py-1.5 font-sans">Civil Engineering</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Upload Dropzone & Textarea */}
+      <div className="space-y-3">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+
+        {/* Dropzone area */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+          className={`group flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center transition-all cursor-pointer ${
+            isDragging
+              ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30'
+              : 'border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 bg-slate-50/20'
+          }`}
+        >
+          <div className="flex size-10 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
+            <Upload className="size-5" />
+          </div>
+          <div>
+            <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
+              Kéo thả tệp CSV vào đây, hoặc <span className="text-indigo-600 dark:text-indigo-400 underline">duyệt từ máy tính</span>
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Hỗ trợ định dạng .csv (UTF-8)
+            </p>
+          </div>
+          {uploadedFileName && (
+            <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+              <FileCheck className="size-3.5" />
+              <span>Đã nạp file: {uploadedFileName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Textarea editor */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Hoặc dán nội dung CSV trực tiếp:
+            </label>
+            {preview.totalCount > 0 && (
+              <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                Phát hiện {preview.totalCount} dòng dữ liệu
+              </span>
             )}
           </div>
+          <textarea
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+            rows={6}
+            className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-4 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-indigo-600 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-indigo-600/10 transition-all placeholder:text-slate-400"
+            placeholder="email,name,department"
+          />
+        </div>
+      </div>
+
+      {/* Live Preview of Input Data */}
+      {preview.rows.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden space-y-0">
+          <div className="bg-slate-50 dark:bg-slate-800/70 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <FileCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Xem trước dữ liệu ({preview.totalCount} giảng viên)</span>
+            </div>
+            <span className="text-[11px] font-normal text-slate-400">
+              Hiển thị tối đa 5 dòng đầu
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100/60 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th className="px-3.5 py-2 font-semibold">Email</th>
+                  <th className="px-3.5 py-2 font-semibold">Họ và tên</th>
+                  <th className="px-3.5 py-2 font-semibold">Khoa/Bộ môn</th>
+                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái tên miền</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                {preview.rows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                    <td className="px-3.5 py-2 font-mono font-medium text-slate-900 dark:text-white">
+                      {row.email}
+                    </td>
+                    <td className="px-3.5 py-2 text-slate-700 dark:text-slate-300">
+                      {row.name}
+                    </td>
+                    <td className="px-3.5 py-2 text-slate-500 dark:text-slate-400">
+                      {row.department || '—'}
+                    </td>
+                    <td className="px-3.5 py-2 text-right">
+                      {row.isValidDomain ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <Check className="size-3" /> Hợp lệ (@{expectedDomain})
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Sai tên miền trường
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={onImport}
+            disabled={!csvText.trim() || importing}
+            className="rounded-xl px-5 h-11 text-xs font-semibold shadow-sm shadow-indigo-500/20 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            {importing ? (
+              <>
+                <div className="size-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{t('teacher.importing')}</span>
+              </>
+            ) : (
+              <>
+                <Users className="size-4" />
+                <span>
+                  {t('admin.importLecturersSubmit')}{' '}
+                  {preview.totalCount > 0 ? `(${preview.totalCount} giảng viên)` : ''}
+                </span>
+              </>
+            )}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose} className="rounded-xl h-11 text-xs font-semibold cursor-pointer">
+            {t('common.back')}
+          </Button>
+        </div>
+
+        {csvText.trim() && (
+          <button
+            type="button"
+            onClick={() => {
+              setCsvText('')
+              setUploadedFileName(null)
+            }}
+            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+          >
+            <Trash2 className="size-3.5" />
+            <span>Xóa nội dung</span>
+          </button>
+        )}
+      </div>
+
+      {/* Result presentation */}
+      {importResult && (
+        <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
+          {/* Success Banner */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="size-4" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                  {t('teacher.importCreated', { count: importResult.created.length })}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Giảng viên có thể đăng nhập bằng email trường và đổi mật khẩu sau khi vào hệ thống.
+                </p>
+              </div>
+            </div>
+            {importResult.created.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={downloadCreatedCredentials}
+                className="gap-1.5 rounded-xl cursor-pointer"
+              >
+                <Download className="size-3.5 text-indigo-600" />
+                <span>Tải danh sách tài khoản (CSV)</span>
+              </Button>
+            )}
+          </div>
+
+          {/* Created Table */}
+          {importResult.created.length > 0 && (
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                  <tr>
+                    <th className="px-3.5 py-2 font-semibold">{t('admin.emailColumn') || 'Email'}</th>
+                    <th className="px-3.5 py-2 font-semibold">{t('auth.fullName')}</th>
+                    <th className="px-3.5 py-2 font-semibold">{t('teacher.defaultPassword')}</th>
+                    <th className="px-3.5 py-2 font-semibold text-right">Sao chép</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {importResult.created.map((row) => (
+                    <tr key={row.email} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                      <td className="px-3.5 py-2 font-mono font-bold text-indigo-600 dark:text-indigo-400">{row.email}</td>
+                      <td className="px-3.5 py-2 font-medium text-slate-800 dark:text-slate-200">{row.name}</td>
+                      <td className="px-3.5 py-2 font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded">{row.defaultPassword}</td>
+                      <td className="px-3.5 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => copyPassword(row.email, row.defaultPassword)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                        >
+                          {copiedEmail === row.email ? (
+                            <>
+                              <Check className="size-3 text-emerald-600" />
+                              <span className="text-emerald-600">Đã chép</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3" />
+                              <span>Chép MK</span>
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Skipped alert */}
           {importResult.skipped.length > 0 && (
-            <div>
-              <p className="font-medium text-amber-700">{t('teacher.importSkipped', { count: importResult.skipped.length })}</p>
-              <ul className="mt-2 list-disc pl-5 text-muted-foreground">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/30 p-3.5 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                <span>{t('teacher.importSkipped', { count: importResult.skipped.length })}</span>
+              </div>
+              <ul className="mt-2 space-y-1 pl-5 list-disc text-amber-700/90 dark:text-amber-400/90">
                 {importResult.skipped.map((row) => (
-                  <li key={`${row.email}-${row.reason}`}>{row.email}: {row.reason}</li>
+                  <li key={`${row.email}-${row.reason}`}>
+                    <span className="font-mono font-semibold">{row.email}</span>: {row.reason}
+                  </li>
                 ))}
               </ul>
             </div>
           )}
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -3551,11 +4263,18 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       {t(`roles.${item.role}`)}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {item.studentCode ? `MSSV: ${item.studentCode} · ` : ''}
-                    {item.email}
-                    {item.department ? ` · ${item.department}` : ''}
-                  </p>
+                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    {item.role === 'student' && organization.id && (
+                      <p>Mã vào tổ chức: <span className="font-mono text-slate-700 dark:text-slate-300">{organization.id}</span></p>
+                    )}
+                    <p>
+                      {item.studentCode ? `MSSV: ${item.studentCode} · ` : ''}
+                      {item.role === 'student' && item.studentCode
+                        ? studentEmailForDisplay(item.name, item.studentCode)
+                        : item.email}
+                      {item.department ? ` · ${item.department}` : ''}
+                    </p>
+                  </div>
                 </div>
                 {item.role === 'student' && (
                   <Button
@@ -3698,7 +4417,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 {t('auth.emailDomain')}
                 <input
                   className="h-11 rounded-lg border bg-muted/40 px-3 text-sm"
-                  defaultValue={organization.emailDomain ?? 'utc.edu.vnc'}
+                  defaultValue={organization.emailDomain ?? 'utc.edu.vn'}
                   disabled
                 />
                 <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
@@ -4252,7 +4971,7 @@ export default function SmartAttendApp() {
   const [hydrated, setHydrated] = useState(false)
   const [data, setData] = useState<DashboardData>(emptyDashboard)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
-  const [organization, setOrganization] = useState<{ name: string; plan: string; emailDomain?: string | null }>({ name: 'SmartAttend', plan: 'Campus Plus', emailDomain: null })
+  const [organization, setOrganization] = useState<{ id?: string; name: string; plan: string; emailDomain?: string | null }>({ name: 'SmartAttend', plan: 'Campus Plus', emailDomain: null })
   const [mustChangePassword, setMustChangePassword] = useState(false)
 
   const hydrateUser = (user: NonNullable<Awaited<ReturnType<typeof api.me>>['user']>, nextRole: Role) => {
@@ -4313,7 +5032,7 @@ export default function SmartAttendApp() {
             setRole(nextRole)
             setPage(pageFromPath(path, nextRole))
             hydrateUser(me.user, nextRole)
-            setOrganization({ name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
+            setOrganization({ id: me.organization.id, name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
             const next = await loadDashboard(nextRole)
             setData(next)
           } else {
@@ -4372,7 +5091,7 @@ export default function SmartAttendApp() {
     const me = await api.me()
     if (me.ok && me.user && me.organization) {
       hydrateUser(me.user, next)
-      setOrganization({ name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
+      setOrganization({ id: me.organization.id, name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
       setMustChangePassword(forcePasswordChange || me.user.mustChangePassword)
     }
     await refresh()

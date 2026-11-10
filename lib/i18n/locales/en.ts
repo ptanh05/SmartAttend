@@ -636,6 +636,7 @@ export const en: Messages = {
     importLecturersSubmit: 'Create lecturer accounts',
     importLecturersDone: 'Created {count} lecturer accounts.',
     importLecturersFailed: 'Unable to create lecturer accounts.',
+    emailColumn: 'Email',
     userDirectory: 'Account Directory',
     filterAll: 'All',
     filterStudents: 'Students',
