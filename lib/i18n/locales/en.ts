@@ -563,6 +563,7 @@ export const en: Messages = {
     activeStudent: 'Active student',
     activeUpdated: 'Active · Updated today',
     reportsTitle: 'Reports',
+    reportsDetail: 'Export attendance verification data as RFC 4180 CSV and printable course attendance sheets.',
     analyticsTitle: 'Analytics',
     analyticsDetail: 'Understand attendance patterns across your organization.',
     averageAttendance: 'Average attendance',

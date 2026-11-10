@@ -627,6 +627,10 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                     </div>
                   )}
 
+                  {stepNotice && (
+                    <div className="mt-2 text-xs text-muted-foreground">{stepNotice}</div>
+                  )}
+
                   {/* Action button */}
                   <div className="mt-3.5 flex items-center gap-2">
                     {ultrasonicStatus !== 'detected' ? (
@@ -3903,7 +3907,7 @@ function PrintableAttendanceSheetModal({
 
 function StaffView({ role, page, go, data, user, organization, refresh }: ViewProps & { role: 'teacher' | 'admin' }) {
   const { t } = useI18n()
-  const { courses, sessions, live, metrics, suspicious, auditEvents, users, departments, leaveRequests = [] } = data
+  const { courses, sessions, live, records = [], metrics, suspicious, auditEvents, users, departments, leaveRequests = [] } = data
   const [search, setSearch] = useState('')
   const [notice, setNotice] = useState('')
   const [saved, setSaved] = useState(false)
@@ -3923,8 +3927,6 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     skipped: { email: string; reason: string }[]
   } | null>(null)
 
-  const [emailDomain, setEmailDomain] = useState<string>(organization.emailDomain ?? '')
-
   const [courseModalOpen, setCourseModalOpen] = useState(false)
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
   const [showStaffChangePassword, setShowStaffChangePassword] = useState(false)
@@ -3936,6 +3938,76 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   const [editingDept, setEditingDept] = useState<DepartmentItem | null>(null)
   const [deletingDept, setDeletingDept] = useState<DepartmentItem | null>(null)
   const [deptSearch, setDeptSearch] = useState('')
+
+  // Report & Analytics dedicated states
+  const [exportingReport, setExportingReport] = useState(false)
+  const [reportNotice, setReportNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [reportCourseFilter, setReportCourseFilter] = useState<string>('all')
+  const [reportSearch, setReportSearch] = useState('')
+  const [analyticsTimeFilter, setAnalyticsTimeFilter] = useState<'all' | 'week' | 'month'>('all')
+
+  const handleExportReport = async (scope: 'summary' | 'detail', targetCourseId?: string) => {
+    setExportingReport(true)
+    setReportNotice(null)
+    try {
+      const courseIdToUse = targetCourseId || (reportCourseFilter !== 'all' ? reportCourseFilter : undefined)
+      const params = new URLSearchParams()
+      if (courseIdToUse) {
+        params.set('courseId', courseIdToUse)
+      }
+      if (scope === 'detail') {
+        params.set('scope', 'detail')
+      }
+      const qs = params.toString()
+      const url = qs ? `/api/reports/attendance?${qs}` : '/api/reports/attendance'
+      const res = await fetch(url)
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null)
+        throw new Error(errJson?.message || 'Không thể tạo file báo cáo.')
+      }
+      const blob = await res.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      const cd = res.headers.get('content-disposition')
+      let filename = `attendance-${scope}-${new Date().toISOString().slice(0, 10)}.csv`
+      if (cd && cd.includes('filename=')) {
+        const match = cd.match(/filename="?([^";]+)"?/)
+        if (match?.[1]) filename = match[1]
+      }
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(blobUrl)
+      setReportNotice({
+        type: 'success',
+        message: `Đã xuất báo cáo "${filename}" thành công!`,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Xuất báo cáo thất bại.'
+      setReportNotice({
+        type: 'error',
+        message: msg,
+      })
+    } finally {
+      setExportingReport(false)
+    }
+  }
+
+  const handlePrintSelectedReport = () => {
+    const target = reportCourseFilter !== 'all'
+      ? courses.find((c) => c.id === reportCourseFilter)
+      : courses[0]
+    if (!target) {
+      setReportNotice({
+        type: 'error',
+        message: 'Chưa có môn học nào để in phiếu điểm danh.',
+      })
+      return
+    }
+    openPrintableSheet(target)
+  }
 
   const refreshDepartments = async () => {
     setDeptLoading(true)
@@ -4007,7 +4079,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [liveActive, live?.sessionId, live?.startedAt, live?.remainingSeconds, refresh])
+  }, [liveActive, live, refresh])
 
   const formatTimer = (sec: number) => {
     const m = Math.floor(sec / 60)
@@ -4090,7 +4162,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     } catch {
       /* ignore autoplay suspension until user interaction */
     }
-  }, [])
+  }, [setUltrasonicActive])
 
   const stopBeacon = useCallback(() => {
     if (beaconRef.current) {
@@ -4098,7 +4170,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
       beaconRef.current = null
     }
     setUltrasonicActive(false)
-  }, [])
+  }, [setUltrasonicActive])
 
   const toggleUltrasonic = () => {
     if (ultrasonicActive) {
@@ -5361,64 +5433,899 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     )
   }
 
-  if (page === 'analytics' || page === 'reports') {
+  if (page === 'analytics') {
+    const enrolledTotal = courses.reduce((sum, c) => sum + (c.enrolled || 0), 0)
+    const presentCount = records.filter((r) => r.status === 'present').length
+    const lateCount = records.filter((r) => r.status === 'late').length
+    const absentCount = records.filter((r) => r.status === 'absent').length
+    const excusedCount = records.filter((r) => r.status === 'excused').length
+
+    // Map each session to its courseId
+    const sessionToCourseMap = new Map(sessions.map((s) => [s.id, s.courseId]))
+
+    // Group records by student to evaluate attendance warnings & disqualifications
+    const studentStatsMap = new Map<string, { present: number; late: number; absent: number; excused: number; total: number; courseIds: Set<string> }>()
+    for (const r of records) {
+      const cur = studentStatsMap.get(r.studentId) || { present: 0, late: 0, absent: 0, excused: 0, total: 0, courseIds: new Set<string>() }
+      if (r.status === 'present') cur.present++
+      else if (r.status === 'late') cur.late++
+      else if (r.status === 'absent') cur.absent++
+      else if (r.status === 'excused') cur.excused++
+      cur.total++
+      const cId = sessionToCourseMap.get(r.sessionId)
+      if (cId) cur.courseIds.add(cId)
+      studentStatsMap.set(r.studentId, cur)
+    }
+
+    const academicWarnings = Array.from(studentStatsMap.entries())
+      .map(([studentId, stats]) => {
+        const u = users.find((usr) => usr.id === studentId)
+        const unexcused = stats.absent
+        const total = stats.total
+        const rate = total > 0 ? Math.round(((stats.present + stats.late) / total) * 100) : 100
+        const isDisqualified = unexcused >= 3 || (total >= 5 && unexcused / total > 0.2)
+        const isWarning = !isDisqualified && (unexcused === 2 || (total >= 5 && unexcused / total >= 0.15))
+
+        let status: 'disqualified' | 'warning' | 'good' = 'good'
+        let reason = 'Đủ điều kiện dự thi'
+        if (isDisqualified) {
+          status = 'disqualified'
+          reason = unexcused >= 3 ? 'Vắng không phép ≥ 3 buổi' : 'Tỷ lệ vắng > 20% tổng số buổi'
+        } else if (isWarning) {
+          status = 'warning'
+          reason = unexcused === 2 ? 'Đã vắng không phép 2 buổi' : 'Tỷ lệ vắng tiệm cận ngưỡng 20%'
+        }
+
+        const courseNames = Array.from(stats.courseIds)
+          .map((cid) => courses.find((c) => c.id === cid)?.name)
+          .filter(Boolean)
+          .join(', ')
+
+        return {
+          studentId,
+          user: u,
+          stats,
+          rate,
+          status,
+          reason,
+          courseNames: courseNames || 'Học phần chung',
+        }
+      })
+      .filter((w) => w.status === 'disqualified' || w.status === 'warning')
+
+    // Timeline trend by date
+    const dateTrendMap = new Map<string, { label: string; present: number; late: number; absent: number; total: number }>()
+    for (const r of records) {
+      if (!r.verifiedAt) continue
+      const dateKey = r.verifiedAt.slice(0, 10)
+      const cur = dateTrendMap.get(dateKey) || {
+        label: new Date(r.verifiedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+        present: 0,
+        late: 0,
+        absent: 0,
+        total: 0,
+      }
+      if (r.status === 'present') cur.present++
+      else if (r.status === 'late') cur.late++
+      else if (r.status === 'absent') cur.absent++
+      cur.total++
+      dateTrendMap.set(dateKey, cur)
+    }
+
+    const trendItems = Array.from(dateTrendMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-7)
+      .map(([dateKey, val]) => {
+        const rate = val.total > 0 ? Math.round(((val.present + val.late) / val.total) * 100) : 0
+        return {
+          date: dateKey,
+          label: val.label,
+          rate,
+          present: val.present,
+          late: val.late,
+          absent: val.absent,
+          total: val.total,
+        }
+      })
+
+    const teachersList = users.filter((u) => u.role === 'teacher')
+
     return (
       <div className="flex flex-col gap-6">
         <SectionHeader
           eyebrow={staffEyebrow}
-          title={page === 'reports' ? t('teacher.reportsTitle') : t('teacher.analyticsTitle')}
-          detail={t('teacher.analyticsDetail')}
+          title={t('teacher.analyticsTitle') || 'Phân tích'}
+          detail={t('teacher.analyticsDetail') || 'Báo cáo trực quan xu hướng điểm danh, chuyên cần và phân tích học phần.'}
           action={
             <div className="flex items-center gap-2 flex-wrap">
-              {courses[0] && (
-                <Button
-                  variant="outline"
-                  className="text-xs border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100"
-                  onClick={() => openPrintableSheet(courses[0])}
-                >
-                  <Printer className="size-4" />{t('teacher.printAttendanceSheet')}
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => api.downloadAttendanceReport()}>
-                <Download className="size-4" />{page === 'reports' ? t('common.exportReport') : t('common.exportData')}
+              <select
+                value={analyticsTimeFilter}
+                onChange={(e) => setAnalyticsTimeFilter(e.target.value as 'all' | 'week' | 'month')}
+                className="h-9 rounded-lg border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                aria-label="Khoảng thời gian"
+              >
+                <option value="all">Toàn bộ dữ liệu</option>
+                <option value="month">30 ngày qua</option>
+                <option value="week">7 ngày qua</option>
+              </select>
+              <Button variant="outline" className="text-xs gap-1.5 cursor-pointer" onClick={refresh}>
+                <RotateCw className="size-3.5" />
+                <span>{t('common.refresh') || 'Làm mới'}</span>
+              </Button>
+              <Button variant="outline" className="text-xs gap-1.5 cursor-pointer" onClick={() => go('reports')}>
+                <FileSpreadsheet className="size-3.5" />
+                <span>{t('teacher.reportsTitle') || 'Báo cáo'}</span>
               </Button>
             </div>
           }
         />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Metric label={t('teacher.averageAttendance')} value={metrics.attendanceRate} detail={t('common.organizationAverage')} icon={BarChart3} />
-          <Metric label={t('teacher.students')} value={String(metrics.students)} detail={t('common.enrolled')} icon={Users} />
-          <Metric label={t('teacher.suspiciousAttempts')} value={String(metrics.flagged)} detail={t('common.needsReview')} icon={CircleAlert} tone="warning" />
+
+        {/* Primary 4 Metric Cards */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric
+            label={isAdmin ? (t('teacher.totalStudents') || 'Tổng sinh viên') : 'Sinh viên phụ trách'}
+            value={isAdmin ? metrics.students.toLocaleString() : enrolledTotal.toLocaleString()}
+            detail={isAdmin ? 'Quy mô đào tạo toàn trường' : 'Ghi danh trong các lớp phụ trách'}
+            icon={Users}
+          />
+          <Metric
+            label={isAdmin ? (t('teacher.totalTeachers') || 'Tổng giảng viên') : 'Giảng viên'}
+            value={isAdmin ? String(metrics.teachers) : '1'}
+            detail={isAdmin ? 'Cán bộ giảng dạy toàn trường' : `Giảng viên: ${user.name}`}
+            icon={ClipboardCheck}
+          />
+          <Metric
+            label={t('teacher.averageAttendance') || 'Tỷ lệ điểm danh'}
+            value={metrics.attendanceRate}
+            detail={isAdmin ? 'Trung bình toàn bộ học phần' : 'Trung bình các lớp phụ trách'}
+            icon={BarChart3}
+          />
+          <Metric
+            label={t('teacher.activeSessions') || 'Ca học đang mở'}
+            value={String(metrics.activeSessions)}
+            detail={metrics.activeSessions > 0 ? `${metrics.activeSessions} ca học đang hoạt động` : 'Không có ca học nào đang mở'}
+            icon={Wifi}
+            tone={metrics.activeSessions > 0 ? 'success' : undefined}
+          />
         </div>
-        <Card title={t('teacher.attendanceByCourse')}>
-          <div className="flex flex-col gap-5">
-            {courses.map((course) => (
-              <div key={course.id}>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="font-medium">{course.code} · {course.name}</span>
-                  <span className="text-muted-foreground">{t('teacher.enrolledCount', { count: course.enrolled })}</span>
+
+        {/* Secondary 4 Metrics: Status Breakdown */}
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                <CheckCircle2 className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Lượt có mặt</p>
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{presentCount}</p>
+                <p className="text-[11px] text-muted-foreground">Đúng giờ theo quy định</p>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400">
+                <Clock className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Lượt đi muộn</p>
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">{lateCount}</p>
+                <p className="text-[11px] text-muted-foreground">Sau thời gian ân hạn</p>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
+                <CircleAlert className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Vắng không phép</p>
+                <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">{absentCount}</p>
+                <p className="text-[11px] text-muted-foreground">Không có đơn xin nghỉ</p>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                <CalendarClock className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Vắng có phép</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-0.5">{excusedCount}</p>
+                <p className="text-[11px] text-muted-foreground">Đã được giảng viên duyệt</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Attendance Trend Chart */}
+        <Card
+          title="Xu hướng Tỷ lệ Chuyên cần theo Thời gian"
+          description="Tỷ lệ sinh viên có mặt qua các ngày điểm danh gần nhất"
+          action={
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-500" /> Có mặt</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-amber-500" /> Đi muộn</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Vắng</span>
+            </div>
+          }
+        >
+          {trendItems.length > 0 ? (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+                {trendItems.map((item) => {
+                  const barColor = item.rate >= 80 ? 'bg-emerald-500' : item.rate >= 65 ? 'bg-amber-500' : 'bg-rose-500'
+                  return (
+                    <div key={item.date} className="flex flex-col items-center p-3 rounded-xl border bg-card hover:border-primary/40 transition-colors text-center">
+                      <span className="text-xs font-semibold text-muted-foreground mb-2">{item.label}</span>
+                      <div className="relative flex h-28 w-10 flex-col justify-end rounded-lg bg-muted/60 p-1">
+                        <div
+                          className={`w-full rounded-md transition-all duration-500 ${barColor}`}
+                          style={{ height: `${Math.max(item.rate, 6)}%` }}
+                          title={`Tỷ lệ: ${item.rate}% (${item.present} có mặt, ${item.late} muộn, ${item.absent} vắng)`}
+                        />
+                      </div>
+                      <span className="mt-2 text-sm font-bold text-foreground">{item.rate}%</span>
+                      <span className="text-[10px] text-muted-foreground mt-0.5">{item.total} lượt</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="py-10 text-center text-sm text-muted-foreground flex flex-col items-center justify-center">
+              <BarChart3 className="size-8 text-muted-foreground/60 mb-2" />
+              <p className="font-semibold text-foreground">Chưa có dữ liệu xu hướng điểm danh</p>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
+                Khi các ca học mở điểm danh và sinh viên xác thực qua QR hoặc sóng siêu âm, biểu đồ xu hướng sẽ hiển thị tại đây.
+              </p>
+            </div>
+          )}
+        </Card>
+
+        {/* Course Breakdown Analysis */}
+        <Card
+          title={t('teacher.attendanceByCourse') || 'Phân tích Điểm danh theo Môn học'}
+          description={`${courses.length} môn học được phân tích trong phạm vi`}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[650px] text-left text-sm">
+              <thead className="text-xs text-muted-foreground border-b pb-2">
+                <tr>
+                  <th className="pb-3 font-semibold">Môn học</th>
+                  <th className="pb-3 font-semibold">Khoa / Bộ môn</th>
+                  <th className="pb-3 font-semibold">Giảng viên</th>
+                  <th className="pb-3 font-semibold">Sinh viên</th>
+                  <th className="pb-3 font-semibold">Tỷ lệ chuyên cần</th>
+                  <th className="pb-3 font-semibold text-right">Đánh giá</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {courses.map((course) => {
+                  const courseSessions = sessions.filter((s) => s.courseId === course.id)
+                  const courseSessionIds = new Set(courseSessions.map((s) => s.id))
+                  const courseRecords = records.filter((r) => courseSessionIds.has(r.sessionId))
+                  const courseAttended = courseRecords.filter((r) => r.status === 'present' || r.status === 'late').length
+                  const courseRate = courseRecords.length > 0 ? Math.round((courseAttended / courseRecords.length) * 100) : null
+                  const teacherName = users.find((u) => u.id === course.teacherId)?.name || 'Chưa phân công'
+
+                  const badgeClass =
+                    courseRate === null
+                      ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      : courseRate >= 80
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : courseRate >= 65
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+
+                  const label =
+                    courseRate === null
+                      ? 'Chưa có buổi'
+                      : courseRate >= 80
+                      ? 'Chuyên cần tốt'
+                      : courseRate >= 65
+                      ? 'Trung bình'
+                      : 'Tỷ lệ vắng cao'
+
+                  return (
+                    <tr key={course.id} className="hover:bg-muted/40 transition-colors">
+                      <td className="py-3.5 font-medium">
+                        <div>
+                          <span className="font-bold text-foreground text-sm">{course.code}</span>
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        </div>
+                      </td>
+                      <td className="py-3.5 text-xs text-muted-foreground">{course.department || '—'}</td>
+                      <td className="py-3.5 text-xs font-medium text-foreground">{teacherName}</td>
+                      <td className="py-3.5 text-xs">
+                        <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                          <Users className="size-3 text-muted-foreground" />
+                          {course.enrolled}
+                        </span>
+                      </td>
+                      <td className="py-3.5 min-w-[140px]">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-20 rounded-full bg-muted">
+                            <div
+                              className={`h-2 rounded-full ${courseRate && courseRate >= 80 ? 'bg-emerald-500' : courseRate && courseRate >= 65 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                              style={{ width: `${courseRate ?? 0}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-bold">{courseRate !== null ? `${courseRate}%` : '—'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 text-right">
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${badgeClass}`}>
+                          {label}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Lecturer Breakdown */}
+        {isAdmin ? (
+          <Card
+            title="Phân tích Chuyên cần theo Giảng viên"
+            description={`${teachersList.length} giảng viên trong toàn tổ chức trường`}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[650px] text-left text-sm">
+                <thead className="text-xs text-muted-foreground border-b pb-2">
+                  <tr>
+                    <th className="pb-3 font-semibold">Giảng viên</th>
+                    <th className="pb-3 font-semibold">Khoa / Bộ môn</th>
+                    <th className="pb-3 font-semibold">Số môn phụ trách</th>
+                    <th className="pb-3 font-semibold">Tổng sinh viên</th>
+                    <th className="pb-3 font-semibold text-right">Tỷ lệ chuyên cần</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {teachersList.map((teacher) => {
+                    const teacherCourses = courses.filter((c) => c.teacherId === teacher.id)
+                    const teacherEnrolled = teacherCourses.reduce((sum, c) => sum + (c.enrolled || 0), 0)
+                    const teacherCourseIds = new Set(teacherCourses.map((c) => c.id))
+                    const teacherRecords = records.filter((r) => {
+                      const cId = sessionToCourseMap.get(r.sessionId)
+                      return cId && teacherCourseIds.has(cId)
+                    })
+                    const teacherAttended = teacherRecords.filter((r) => r.status === 'present' || r.status === 'late').length
+                    const teacherRate = teacherRecords.length > 0 ? Math.round((teacherAttended / teacherRecords.length) * 100) : null
+
+                    return (
+                      <tr key={teacher.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="py-3.5 font-medium">
+                          <div className="flex items-center gap-2.5">
+                            <div className="grid size-8 place-items-center rounded-full bg-blue-50 text-blue-600 text-xs font-bold dark:bg-blue-950/60 dark:text-blue-400">
+                              {teacher.initials || teacher.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-foreground text-sm">{teacher.name}</p>
+                              <p className="text-[11px] text-muted-foreground">{teacher.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 text-xs text-muted-foreground">{teacher.department || '—'}</td>
+                        <td className="py-3.5 text-xs font-semibold">{teacherCourses.length} môn</td>
+                        <td className="py-3.5 text-xs">{teacherEnrolled} sinh viên</td>
+                        <td className="py-3.5 text-right">
+                          <span className="font-bold text-xs text-foreground">
+                            {teacherRate !== null ? `${teacherRate}%` : 'Chưa có buổi'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : (
+          <Card title="Hồ sơ Giảng dạy & Chuyên cần Cá nhân" description="Thống kê chuyên cần của các lớp do thầy/cô phụ trách">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-2">
+              <div className="flex items-center gap-3">
+                <div className="grid size-12 place-items-center rounded-2xl bg-blue-500/10 text-blue-600 font-bold text-base dark:text-blue-400">
+                  {user.name.slice(0, 2).toUpperCase()}
                 </div>
-                <div className="h-2 rounded-full bg-muted">
-                  <div className="h-2 w-3/4 rounded-full bg-primary" />
-                </div>
-                <div className="mt-3 flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id })}>
-                    <Download className="size-3.5" />{t('common.export')}
-                  </Button>
-                  <Button variant="outline" className="text-xs" onClick={() => api.downloadAttendanceReport({ courseId: course.id, scope: 'detail' })}>
-                    <Download className="size-3.5" />{t('teacher.detailedCsv')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="text-xs border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100"
-                    onClick={() => openPrintableSheet(course)}
-                  >
-                    <Printer className="size-3.5" />{t('teacher.printAttendanceSheet')}
-                  </Button>
+                <div>
+                  <h3 className="text-base font-bold text-foreground">{user.name}</h3>
+                  <p className="text-xs text-muted-foreground">{user.email} · {user.department || organization.name}</p>
                 </div>
               </div>
-            ))}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="rounded-xl border bg-card px-4 py-2.5 text-center shadow-xs">
+                  <p className="text-[11px] font-medium text-muted-foreground">Môn phụ trách</p>
+                  <p className="text-lg font-bold text-primary">{courses.length}</p>
+                </div>
+                <div className="rounded-xl border bg-card px-4 py-2.5 text-center shadow-xs">
+                  <p className="text-[11px] font-medium text-muted-foreground">Tổng sinh viên</p>
+                  <p className="text-lg font-bold text-foreground">{enrolledTotal}</p>
+                </div>
+                <div className="rounded-xl border bg-card px-4 py-2.5 text-center shadow-xs">
+                  <p className="text-[11px] font-medium text-muted-foreground">Tỷ lệ chuyên cần</p>
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{metrics.attendanceRate}</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Academic Warnings & Disqualification Risk List */}
+        <Card
+          title="Danh sách Cảnh báo Chuyên cần & Nguy cơ Cấm thi"
+          description="Cảnh báo sinh viên vắng không phép ≥ 3 buổi hoặc vắng > 20% theo quy chế học vụ"
+        >
+          {academicWarnings.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[650px] text-left text-sm">
+                <thead className="text-xs text-muted-foreground border-b pb-2">
+                  <tr>
+                    <th className="pb-3 font-semibold">Sinh viên</th>
+                    <th className="pb-3 font-semibold">Học phần liên quan</th>
+                    <th className="pb-3 font-semibold">Số buổi vắng</th>
+                    <th className="pb-3 font-semibold">Tỷ lệ chuyên cần</th>
+                    <th className="pb-3 font-semibold">Tình trạng</th>
+                    <th className="pb-3 font-semibold text-right">Lý do</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {academicWarnings.map((w) => (
+                    <tr key={w.studentId} className="hover:bg-muted/40 transition-colors">
+                      <td className="py-3.5 font-medium">
+                        <div>
+                          <span className="font-bold text-foreground text-sm">{w.user?.name || w.studentId}</span>
+                          <p className="text-[11px] text-muted-foreground">
+                            {w.user?.studentCode ? `MSSV: ${w.user.studentCode} · ` : ''}
+                            {w.user?.email || '—'}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="py-3.5 text-xs text-muted-foreground">{w.courseNames}</td>
+                      <td className="py-3.5 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        {w.stats.absent} / {w.stats.total} buổi
+                      </td>
+                      <td className="py-3.5 text-xs font-bold text-foreground">{w.rate}%</td>
+                      <td className="py-3.5">
+                        {w.status === 'disqualified' ? (
+                          <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            CẤM THI
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                            NGUY CƠ CẤM THI
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 text-right text-xs text-muted-foreground">{w.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm text-muted-foreground flex flex-col items-center justify-center">
+              <div className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 mb-2">
+                <CheckCircle2 className="size-5" />
+              </div>
+              <p className="font-semibold text-foreground">Không có cảnh báo chuyên cần nào</p>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
+                Tất cả sinh viên đều duy trì chuyên cần tốt, đảm bảo điều kiện dự thi kết thúc học phần theo quy định.
+              </p>
+            </div>
+          )}
+        </Card>
+
+        {/* Suspicious Anti-proxy Flagged attempts */}
+        {suspicious.length > 0 && (
+          <Card
+            title="Nghi vấn Điểm danh hộ / Gian lận (Cần xem xét)"
+            description={`${suspicious.length} lượt điểm danh bị hệ thống AI và sóng siêu âm cảnh báo`}
+          >
+            <div className="divide-y">
+              {suspicious.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{item.studentName || item.studentCode || 'Sinh viên'}</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-medium mt-0.5">{item.reason}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {item.device ? `Thiết bị: ${item.device} · ` : ''}
+                      {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : ''}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                    Nghi vấn
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+    )
+  }
+
+  if (page === 'reports') {
+    const selectedReportCourse = reportCourseFilter !== 'all' ? courses.find((c) => c.id === reportCourseFilter) : null
+    const sessionToCourse = new Map(sessions.map((s) => [s.id, s.courseId]))
+
+    const previewRecords = records.filter((r) => {
+      const matchCourse = reportCourseFilter === 'all' || sessionToCourse.get(r.sessionId) === reportCourseFilter
+      if (!matchCourse) return false
+      if (!reportSearch.trim()) return true
+      const q = reportSearch.toLowerCase().trim()
+      const u = users.find((usr) => usr.id === r.studentId)
+      const s = sessions.find((sec) => sec.id === r.sessionId)
+      const c = courses.find((crs) => crs.id === s?.courseId)
+      return (
+        (u?.name && u.name.toLowerCase().includes(q)) ||
+        (u?.studentCode && u.studentCode.toLowerCase().includes(q)) ||
+        (u?.email && u.email.toLowerCase().includes(q)) ||
+        (c?.name && c.name.toLowerCase().includes(q)) ||
+        (c?.code && c.code.toLowerCase().includes(q)) ||
+        (r.device && r.device.toLowerCase().includes(q))
+      )
+    })
+
+    return (
+      <div className="flex flex-col gap-6">
+        <SectionHeader
+          eyebrow={staffEyebrow}
+          title={t('teacher.reportsTitle') || 'Trung tâm Báo cáo Điểm danh'}
+          detail={t('teacher.reportsDetail') || 'Xuất dữ liệu đối soát chuyên cần sinh viên dạng CSV chuẩn RFC 4180 và in phiếu theo dõi học phần.'}
+          action={
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" className="text-xs gap-1.5 cursor-pointer" onClick={refresh}>
+                <RotateCw className="size-3.5" />
+                <span>{t('common.refresh') || 'Làm mới'}</span>
+              </Button>
+              <Button variant="outline" className="text-xs gap-1.5 cursor-pointer" onClick={() => go('analytics')}>
+                <BarChart3 className="size-3.5" />
+                <span>{t('teacher.analyticsTitle') || 'Phân tích'}</span>
+              </Button>
+            </div>
+          }
+        />
+
+        {/* Feedback / Notification Banners */}
+        {reportNotice && (
+          <div
+            className={`rounded-xl border p-4 text-sm flex items-center justify-between ${
+              reportNotice.type === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300'
+            }`}
+            role="status"
+          >
+            <div className="flex items-center gap-2.5">
+              {reportNotice.type === 'success' ? (
+                <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <CircleAlert className="size-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              )}
+              <span className="font-medium">{reportNotice.message}</span>
+            </div>
+            <button
+              onClick={() => setReportNotice(null)}
+              className="text-slate-400 hover:text-foreground cursor-pointer"
+              aria-label="Đóng"
+            >
+              <X className="size-4" />
+            </button>
           </div>
+        )}
+
+        {exportingReport && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300 flex items-center gap-2.5">
+            <RotateCw className="size-4 animate-spin text-blue-600 dark:text-blue-400" />
+            <span className="font-medium">Đang khởi tạo và chuẩn bị dữ liệu báo cáo... Vui lòng đợi trong giây lát.</span>
+          </div>
+        )}
+
+        {/* Filter Bar Card */}
+        <Card>
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+              <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground shrink-0">
+                Lọc học phần:
+              </label>
+              <select
+                value={reportCourseFilter}
+                onChange={(e) => setReportCourseFilter(e.target.value)}
+                className="h-9 min-w-[240px] rounded-lg border bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                aria-label="Chọn môn học để lọc báo cáo"
+              >
+                <option value="all">Toàn bộ môn học ({courses.length})</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.code} — {course.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Tìm kiếm sinh viên, môn học..."
+                value={reportSearch}
+                onChange={(e) => setReportSearch(e.target.value)}
+                className="h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+          {selectedReportCourse && (
+            <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+              <span>Đang lọc theo môn: <strong className="text-foreground">{selectedReportCourse.code} — {selectedReportCourse.name}</strong> ({selectedReportCourse.department})</span>
+              <button
+                type="button"
+                onClick={() => setReportCourseFilter('all')}
+                className="text-primary hover:underline cursor-pointer"
+              >
+                Bỏ lọc môn
+              </button>
+            </div>
+          )}
+        </Card>
+
+        {/* 3 Main Export Action Cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <div className="flex flex-col justify-between h-full gap-4">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="grid size-11 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                    <FileSpreadsheet className="size-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                    CSV · RFC 4180
+                  </span>
+                </div>
+                <h3 className="font-bold text-base text-foreground mt-3">Báo cáo Tổng hợp Điểm danh</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Tổng hợp theo từng sinh viên: số buổi có mặt, muộn, vắng có phép, vắng không phép, tỷ lệ % và kết luận đủ điều kiện dự thi (Đạt / Cảnh báo / Cấm thi).
+                </p>
+              </div>
+              <Button
+                onClick={() => handleExportReport('summary')}
+                disabled={exportingReport}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold gap-2 cursor-pointer shadow-sm text-xs"
+              >
+                <Download className="size-4" />
+                Xuất CSV Tổng hợp
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex flex-col justify-between h-full gap-4">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="grid size-11 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                    <FileText className="size-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300">
+                    CSV · Logs Chi tiết
+                  </span>
+                </div>
+                <h3 className="font-bold text-base text-foreground mt-3">Báo cáo Chi tiết Từng Lượt</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Bản ghi đầy đủ từng lượt điểm danh: thời gian chính xác, phòng học, thiết bị nhận diện, điểm tin cậy thuật toán và phương thức xác minh chống gian lận.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => handleExportReport('detail')}
+                disabled={exportingReport}
+                className="w-full gap-2 cursor-pointer text-xs"
+              >
+                <Download className="size-4" />
+                Xuất CSV Chi tiết
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex flex-col justify-between h-full gap-4">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="grid size-11 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                    <Printer className="size-5" />
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                    Khổ A4 · Mẫu Chuẩn UTC
+                  </span>
+                </div>
+                <h3 className="font-bold text-base text-foreground mt-3">Phiếu Theo dõi Điểm danh A4</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Bảng in phiếu điểm danh khổ giấy A4 chính thức theo quy chế đào tạo tín chỉ ĐH Giao thông Vận tải phục vụ nộp lưu trữ khoa và phòng Đào tạo.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handlePrintSelectedReport}
+                disabled={courses.length === 0}
+                className="w-full gap-2 border-blue-200 text-blue-700 bg-blue-50/60 hover:bg-blue-100 cursor-pointer text-xs"
+              >
+                <Printer className="size-4" />
+                Xem & In phiếu điểm danh
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        {/* Quick Export Table per Course */}
+        <Card
+          title="Xuất Báo cáo theo Từng Môn học"
+          description={`${courses.length} môn học trong phạm vi phân quyền`}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[650px] text-left text-sm">
+              <thead className="text-xs text-muted-foreground border-b pb-2">
+                <tr>
+                  <th className="pb-3 font-semibold">Môn học</th>
+                  <th className="pb-3 font-semibold">Khoa / Bộ môn</th>
+                  <th className="pb-3 font-semibold">Giảng viên</th>
+                  <th className="pb-3 font-semibold">Sinh viên</th>
+                  <th className="pb-3 text-right font-semibold">Thao tác xuất file</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {courses.map((course) => {
+                  const teacherName = users.find((u) => u.id === course.teacherId)?.name || 'Chưa phân công'
+                  return (
+                    <tr key={course.id} className="hover:bg-muted/40 transition-colors">
+                      <td className="py-3.5 font-medium">
+                        <div>
+                          <span className="font-bold text-foreground text-sm">{course.code}</span>
+                          <p className="text-xs text-muted-foreground">{course.name}</p>
+                        </div>
+                      </td>
+                      <td className="py-3.5 text-xs text-muted-foreground">{course.department || '—'}</td>
+                      <td className="py-3.5 text-xs text-foreground font-medium">{teacherName}</td>
+                      <td className="py-3.5 text-xs">
+                        <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                          <Users className="size-3 text-muted-foreground" />
+                          {course.enrolled}
+                        </span>
+                      </td>
+                      <td className="py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          <Button
+                            variant="outline"
+                            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+                            onClick={() => handleExportReport('summary', course.id)}
+                            disabled={exportingReport}
+                            title="Xuất CSV tổng hợp môn học này"
+                          >
+                            <Download className="size-3.5" />
+                            <span>Tổng hợp</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="h-8 px-2 text-xs gap-1 cursor-pointer"
+                            onClick={() => handleExportReport('detail', course.id)}
+                            disabled={exportingReport}
+                            title="Xuất CSV chi tiết môn học này"
+                          >
+                            <Download className="size-3.5" />
+                            <span>Chi tiết</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="h-8 px-2 text-xs gap-1 border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 cursor-pointer"
+                            onClick={() => openPrintableSheet(course)}
+                            title="Xem và in phiếu điểm danh A4"
+                          >
+                            <Printer className="size-3.5" />
+                            <span>In phiếu A4</span>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Preview of Attendance Records */}
+        <Card
+          title="Xem trước Bản ghi Điểm danh"
+          description={`${previewRecords.length} lượt điểm danh khớp với bộ lọc`}
+        >
+          {previewRecords.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[650px] text-left text-sm">
+                <thead className="text-xs text-muted-foreground border-b pb-2">
+                  <tr>
+                    <th className="pb-3 font-semibold">Sinh viên</th>
+                    <th className="pb-3 font-semibold">Học phần</th>
+                    <th className="pb-3 font-semibold">Phòng học</th>
+                    <th className="pb-3 font-semibold">Thời gian</th>
+                    <th className="pb-3 font-semibold">Trạng thái</th>
+                    <th className="pb-3 font-semibold">Độ tin cậy</th>
+                    <th className="pb-3 text-right font-semibold">Thiết bị</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {previewRecords.slice(0, 15).map((record) => {
+                    const student = users.find((u) => u.id === record.studentId)
+                    const session = sessions.find((s) => s.id === record.sessionId)
+                    const course = courses.find((c) => c.id === session?.courseId)
+
+                    const statusBadge =
+                      record.status === 'present'
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                        : record.status === 'late'
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                        : record.status === 'excused'
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+
+                    const statusName =
+                      record.status === 'present'
+                        ? 'Có mặt'
+                        : record.status === 'late'
+                        ? 'Đi muộn'
+                        : record.status === 'excused'
+                        ? 'Có phép'
+                        : 'Vắng'
+
+                    return (
+                      <tr key={record.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="py-3 font-medium">
+                          <div>
+                            <span className="font-semibold text-foreground text-sm">{student?.name || record.studentId}</span>
+                            <p className="text-[11px] text-muted-foreground">{student?.studentCode ? `MSSV: ${student.studentCode}` : student?.email || '—'}</p>
+                          </div>
+                        </td>
+                        <td className="py-3 text-xs text-muted-foreground">
+                          {course ? `${course.code} — ${course.name}` : '—'}
+                        </td>
+                        <td className="py-3 text-xs font-semibold text-foreground">{session?.room || '—'}</td>
+                        <td className="py-3 text-xs text-muted-foreground">
+                          {record.verifiedAt ? new Date(record.verifiedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' }) : '—'}
+                        </td>
+                        <td className="py-3">
+                          <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold border ${statusBadge}`}>
+                            {statusName}
+                          </span>
+                        </td>
+                        <td className="py-3 text-xs font-mono font-semibold text-foreground">
+                          {record.confidence ? `${record.confidence}%` : '100%'}
+                        </td>
+                        <td className="py-3 text-right text-xs text-muted-foreground font-mono">
+                          {record.device || 'Thiết bị web'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {previewRecords.length > 15 && (
+                <p className="mt-3 text-center text-xs text-muted-foreground italic">
+                  Đang hiển thị 15 trên tổng số {previewRecords.length} bản ghi. Xuất file CSV chi tiết để xem toàn bộ dữ liệu.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-sm text-muted-foreground flex flex-col items-center justify-center">
+              <FileSpreadsheet className="size-8 text-muted-foreground/60 mb-2" />
+              <p className="font-semibold text-foreground">Không có bản ghi điểm danh nào</p>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
+                Không tìm thấy lượt điểm danh nào phù hợp với bộ lọc hiện tại. Hãy thử chọn môn học khác hoặc tìm kiếm với từ khóa khác.
+              </p>
+            </div>
+          )}
         </Card>
       </div>
     )

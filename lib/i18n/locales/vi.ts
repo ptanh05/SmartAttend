@@ -563,6 +563,7 @@ export const vi: Messages = {
     activeStudent: 'Sinh viên active',
     activeUpdated: 'Active · Cập nhật hôm nay',
     reportsTitle: 'Báo cáo',
+    reportsDetail: 'Xuất dữ liệu đối soát chuyên cần sinh viên dạng CSV chuẩn RFC 4180 và in phiếu theo dõi học phần.',
     analyticsTitle: 'Phân tích',
     analyticsDetail: 'Hiểu xu hướng điểm danh trong tổ chức.',
     averageAttendance: 'Điểm danh trung bình',
