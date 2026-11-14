@@ -160,11 +160,11 @@ export async function importTeachers(
 
   for (const row of rows) {
     const email = row.email.trim().toLowerCase()
-    const name = row.name.trim()
+    const name = row.name.trim() || 'Chưa nhập tên'
     const department = row.department?.trim() || null
 
-    if (!email || !name) {
-      skipped.push({ email: email || '(empty)', reason: 'Thiếu email giảng viên hoặc họ tên.' })
+    if (!email) {
+      skipped.push({ email: '(empty)', reason: 'Thiếu email giảng viên.' })
       continue
     }
 
@@ -174,8 +174,8 @@ export async function importTeachers(
     }
     seenEmails.add(email)
 
-    if (!email.includes('@')) {
-      skipped.push({ email, reason: 'Email giảng viên không hợp lệ.' })
+    if (/\s/.test(email) || !email.includes('@')) {
+      skipped.push({ email, reason: 'Email giảng viên không đúng định dạng (thiếu dấu phân cách , hoặc ;).' })
       continue
     }
 
@@ -264,8 +264,7 @@ export function parseTeacherCsv(
   if (lines.length === 0) return []
 
   let delimiter = ','
-  if (lines[0].includes('\t')) delimiter = '\t'
-  else if (lines[0].includes(';')) delimiter = ';'
+  if (lines[0].includes(';') && !lines[0].includes(',')) delimiter = ';'
 
   const firstCells = splitCsvLine(lines[0], delimiter).map(normalizeHeader)
   const emailKeys = new Set(['email', 'emailgiaovien', 'emailgv', 'mail', 'username', 'ten_dang_nhap', 'tendangnhap', 'user', 'account'])
@@ -289,12 +288,24 @@ export function parseTeacherCsv(
 
   const rows: ImportTeacherRow[] = []
   for (const line of lines.slice(startIndex)) {
-    const cells = splitCsvLine(line, delimiter).map((c) => c.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
-    const rawEmail = (cells[emailIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
-    const name = (cells[nameIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
-    const rawDept = departmentIndex >= 0 ? cells[departmentIndex] : undefined
+    const hasDelimiter = line.includes(',') || line.includes(';')
+    let rawEmail = ''
+    let rawName = ''
+    let rawDept: string | undefined = undefined
+
+    if (!hasDelimiter) {
+      rawEmail = line.trim()
+    } else {
+      const cells = splitCsvLine(line, delimiter).map((c) => c.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
+      rawEmail = (cells[emailIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+      rawName = (cells[nameIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+      rawDept = departmentIndex >= 0 ? cells[departmentIndex] : undefined
+    }
+
+    if (!rawEmail) continue
+
+    const name = rawName || 'Chưa nhập tên'
     const department = rawDept ? rawDept.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim() : undefined
-    if (!rawEmail && !name) continue
 
     const email = rawEmail.includes('@')
       ? rawEmail.trim().toLowerCase()

@@ -1964,18 +1964,43 @@ function TeacherImportPanel({
     const dataLines = hasHeader ? lines.slice(1) : lines
     const rows = dataLines.slice(0, 5).map((line) => {
       let delimiter = ','
-      if (line.includes('\t')) delimiter = '\t'
-      else if (line.includes(';')) delimiter = ';'
-      const parts = line.split(delimiter).map((p) => p.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
-      const email = parts[0] || ''
-      const name = parts[1] || ''
-      const department = parts[2] || ''
-      const isValidDomain = email.toLowerCase().endsWith(`@${expectedDomain.toLowerCase()}`)
+      if (line.includes(';') && !line.includes(',')) delimiter = ';'
+
+      const hasDelimiter = line.includes(',') || line.includes(';')
+      let email = ''
+      let name = ''
+      let department = ''
+      let status: 'valid' | 'missing_delimiter' | 'invalid_domain' | 'invalid_email' = 'valid'
+
+      if (!hasDelimiter) {
+        if (/\s/.test(line)) {
+          // Line has multiple words separated by whitespace without comma or semicolon
+          status = 'missing_delimiter'
+          email = line.trim()
+        } else {
+          // Just a single email without name
+          email = line.trim()
+        }
+      } else {
+        const parts = line.split(delimiter).map((p) => p.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
+        email = parts[0] || ''
+        name = parts[1] || ''
+        department = parts[2] || ''
+      }
+
+      if (status === 'valid') {
+        if (!email || !email.includes('@') || /\s/.test(email)) {
+          status = 'invalid_email'
+        } else if (!email.toLowerCase().endsWith(`@${expectedDomain.toLowerCase()}`)) {
+          status = 'invalid_domain'
+        }
+      }
+
       return {
         email,
         name,
         department,
-        isValidDomain,
+        status,
       }
     })
     return { rows, totalCount: dataLines.length }
@@ -2172,7 +2197,7 @@ function TeacherImportPanel({
                   <th className="px-3.5 py-2 font-semibold">Email</th>
                   <th className="px-3.5 py-2 font-semibold">Họ và tên</th>
                   <th className="px-3.5 py-2 font-semibold">Khoa/Bộ môn</th>
-                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái tên miền</th>
+                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
@@ -2182,19 +2207,30 @@ function TeacherImportPanel({
                       {row.email}
                     </td>
                     <td className="px-3.5 py-2 text-slate-700 dark:text-slate-300">
-                      {row.name}
+                      {row.name ? row.name : <span className="text-slate-400 italic">Chưa nhập tên</span>}
                     </td>
                     <td className="px-3.5 py-2 text-slate-500 dark:text-slate-400">
                       {row.department || '—'}
                     </td>
                     <td className="px-3.5 py-2 text-right">
-                      {row.isValidDomain ? (
+                      {row.status === 'valid' && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          <Check className="size-3" /> Hợp lệ (@{expectedDomain})
+                          <Check className="size-3" /> Hợp lệ
                         </span>
-                      ) : (
+                      )}
+                      {row.status === 'missing_delimiter' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Thiếu dấu phẩy (,) hoặc (;)
+                        </span>
+                      )}
+                      {row.status === 'invalid_domain' && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
                           <AlertTriangle className="size-3" /> Sai tên miền trường
+                        </span>
+                      )}
+                      {row.status === 'invalid_email' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Email không hợp lệ
                         </span>
                       )}
                     </td>
