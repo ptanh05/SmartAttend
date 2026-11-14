@@ -146,18 +146,17 @@ export async function importTeachers(
   const defaultPassword = defaultTeacherPassword()
   const passwordHash = await hashPassword(defaultPassword)
 
-  // Teacher members already present in the organization, so a re-import skips
-  // them instead of creating a duplicate membership.
-  const existingTeachers = await db()
-    .select({ userId: organizationMemberships.userId })
+  // Members already present in the organization, so a re-import skips
+  // them instead of creating a duplicate membership or overwriting passwords.
+  const existingMembers = await db()
+    .select({
+      userId: organizationMemberships.userId,
+      role: organizationMemberships.role,
+    })
     .from(organizationMemberships)
-    .where(
-      and(
-        eq(organizationMemberships.organizationId, auth.organizationId),
-        eq(organizationMemberships.role, 'teacher'),
-      ),
-    )
-  const teacherMemberIds = new Set(existingTeachers.map((row) => row.userId))
+    .where(eq(organizationMemberships.organizationId, auth.organizationId))
+
+  const orgMemberRoleMap = new Map(existingMembers.map((row) => [row.userId, row.role]))
 
   for (const row of rows) {
     const email = row.email.trim().toLowerCase()
@@ -200,8 +199,14 @@ export async function importTeachers(
 
       const userId = existingUser[0]?.id
 
-      if (userId && teacherMemberIds.has(userId)) {
-        skipped.push({ email, reason: 'Tài khoản giảng viên đã tồn tại trong tổ chức.' })
+      if (userId && orgMemberRoleMap.has(userId)) {
+        const existingRole = orgMemberRoleMap.get(userId)
+        skipped.push({
+          email,
+          reason: existingRole === 'teacher'
+            ? 'Tài khoản giảng viên đã tồn tại trong tổ chức.'
+            : `Email này đã được sử dụng bởi tài khoản ${existingRole === 'admin' ? 'Quản trị viên' : 'Sinh viên'} trong tổ chức.`,
+        })
         continue
       }
 
@@ -216,11 +221,6 @@ export async function importTeachers(
           initials: makeInitials(name),
           mustChangePassword: true,
         })
-      } else {
-        await db()
-          .update(users)
-          .set({ passwordHash, name, mustChangePassword: true })
-          .where(eq(users.id, targetUserId))
       }
 
       await db().insert(organizationMemberships).values({
@@ -232,7 +232,7 @@ export async function importTeachers(
         studentCode: null,
         status: 'active',
       })
-      teacherMemberIds.add(targetUserId)
+      orgMemberRoleMap.set(targetUserId, 'teacher')
 
       created.push({ email, name, defaultPassword })
     } catch (err) {
@@ -289,10 +289,11 @@ export function parseTeacherCsv(
 
   const rows: ImportTeacherRow[] = []
   for (const line of lines.slice(startIndex)) {
-    const cells = splitCsvLine(line, delimiter)
-    const rawEmail = cells[emailIndex] ?? ''
-    const name = cells[nameIndex] ?? ''
-    const department = departmentIndex >= 0 ? cells[departmentIndex] : undefined
+    const cells = splitCsvLine(line, delimiter).map((c) => c.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
+    const rawEmail = (cells[emailIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+    const name = (cells[nameIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+    const rawDept = departmentIndex >= 0 ? cells[departmentIndex] : undefined
+    const department = rawDept ? rawDept.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim() : undefined
     if (!rawEmail && !name) continue
 
     const email = rawEmail.includes('@')
