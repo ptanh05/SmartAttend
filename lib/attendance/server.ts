@@ -1,7 +1,8 @@
-import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { challengePlaintextFor, deriveChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
+import { calculateAttendanceRate } from '@/lib/attendance/metrics'
 import { evaluateDevicePolicy, normalizeScore } from '@/lib/attendance/device-policy'
 import { generateAcousticProofToken, verifyAcousticProofToken, type AcousticProofInput } from '@/lib/attendance/ultrasonic'
 import { verifyWebAuthnAssertion, type WebAuthnAssertionInput } from '@/lib/auth/webauthn'
@@ -272,6 +273,9 @@ export async function syncScheduledAttendance(organizationId: string) {
           organizationPlan: '',
         }
         await rotateChallengeForSession(autoAuth, sessionId).catch(() => {})
+        await notifyEnrolledStudentsSessionStarted(organizationId, sessionId).catch((error) => {
+          console.error('Failed to notify students about an auto-started attendance session:', error)
+        })
 
         await db().insert(auditLogs).values({
           id: nanoid(),
@@ -596,6 +600,73 @@ async function getSessionScoped(organizationId: string, sessionId: string) {
   return rows[0] ?? null
 }
 
+async function notifyEnrolledStudentsSessionStarted(organizationId: string, sessionId: string) {
+  const sessionRows = await db()
+    .select({
+      createdAt: attendanceSessions.createdAt,
+      sectionId: attendanceSessions.sectionId,
+      courseCode: courses.code,
+      courseName: courses.name,
+      room: courseSections.room,
+    })
+    .from(attendanceSessions)
+    .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+    .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
+    .where(
+      and(
+        eq(attendanceSessions.id, sessionId),
+        eq(attendanceSessions.organizationId, organizationId),
+      ),
+    )
+    .limit(1)
+
+  const session = sessionRows[0]
+  if (!session) return
+
+  const enrolled = await db()
+    .select({ studentId: classEnrollments.studentId })
+    .from(classEnrollments)
+    .where(
+      and(
+        eq(classEnrollments.organizationId, organizationId),
+        eq(classEnrollments.sectionId, session.sectionId),
+        eq(classEnrollments.status, 'active'),
+      ),
+    )
+
+  const studentIds = [...new Set(enrolled.map((row) => row.studentId))]
+  if (studentIds.length === 0) return
+
+  const title = `Điểm danh đã bắt đầu: ${session.courseCode} - ${session.courseName}`
+  const existing = await db()
+    .select({ userId: notifications.userId })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.organizationId, organizationId),
+        eq(notifications.title, title),
+        gte(notifications.createdAt, session.createdAt),
+        inArray(notifications.userId, studentIds),
+      ),
+    )
+
+  const notifiedStudentIds = new Set(existing.map((row) => row.userId))
+  const notificationRows = studentIds
+    .filter((studentId) => !notifiedStudentIds.has(studentId))
+    .map((studentId) => ({
+      id: nanoid(),
+      organizationId,
+      userId: studentId,
+      title,
+      body: `Ca điểm danh môn ${session.courseCode} đã được mở${session.room ? ` tại phòng ${session.room}` : ''}. Vui lòng vào mục Điểm danh để xác nhận có mặt.`,
+      createdAt: new Date(),
+    }))
+
+  if (notificationRows.length > 0) {
+    await db().insert(notifications).values(notificationRows)
+  }
+}
+
 export async function transitionSessionState(auth: AuthContext, sessionId: string, next: SessionStatus) {
   const sessionWithCourse = await db()
     .select({
@@ -641,6 +712,9 @@ export async function transitionSessionState(auth: AuthContext, sessionId: strin
 
   if (nextNorm === 'active') {
     await rotateChallengeForSession(auth, sessionId)
+    await notifyEnrolledStudentsSessionStarted(auth.organizationId, sessionId).catch((error) => {
+      console.error('Failed to notify students about an active attendance session:', error)
+    })
   }
 
   if (nextNorm === 'closed') {
@@ -1950,7 +2024,26 @@ export async function resolveSuspiciousAttempt(
 }
 
 export async function getOrganizationMetrics(auth: AuthContext, cachedSuspiciousCount?: number) {
-  const [studentRows, teacherRows, liveRows, recordRows, suspiciousCount] = await Promise.all([
+  const now = new Date()
+  const vietnamOffsetMs = 7 * 60 * 60 * 1000
+  const vietnamNow = new Date(now.getTime() + vietnamOffsetMs)
+  const todayStartUtc = new Date(
+    Date.UTC(vietnamNow.getUTCFullYear(), vietnamNow.getUTCMonth(), vietnamNow.getUTCDate()) - vietnamOffsetMs,
+  )
+  const tomorrowStartUtc = new Date(todayStartUtc.getTime() + 24 * 60 * 60 * 1000)
+
+  const todaySessionConditions = [
+    eq(attendanceSessions.organizationId, auth.organizationId),
+    gte(attendanceSessions.createdAt, todayStartUtc),
+    lt(attendanceSessions.createdAt, tomorrowStartUtc),
+  ]
+  if (auth.role === 'teacher') {
+    todaySessionConditions.push(
+      or(eq(attendanceSessions.teacherId, auth.userId), eq(courses.teacherId, auth.userId))!,
+    )
+  }
+
+  const [studentRows, teacherRows, liveRows, todaySessions, suspiciousCount] = await Promise.all([
     db()
       .select({ id: organizationMemberships.id })
       .from(organizationMemberships)
@@ -1964,14 +2057,44 @@ export async function getOrganizationMetrics(auth: AuthContext, cachedSuspicious
       .from(attendanceSessions)
       .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))),
     db()
-      .select({ status: attendanceRecords.status })
-      .from(attendanceRecords)
-      .where(eq(attendanceRecords.organizationId, auth.organizationId)),
+      .select({ id: attendanceSessions.id, sectionId: attendanceSessions.sectionId })
+      .from(attendanceSessions)
+      .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+      .where(and(...todaySessionConditions)),
     cachedSuspiciousCount !== undefined ? Promise.resolve(cachedSuspiciousCount) : listSuspicious(auth).then((r) => r.length),
   ])
 
-  const attended = recordRows.filter((row) => row.status === 'present' || row.status === 'late').length
-  const rate = recordRows.length ? Math.round((attended / recordRows.length) * 1000) / 10 : 0
+  const sessionIds = todaySessions.map((session) => session.id)
+  const sectionIds = [...new Set(todaySessions.map((session) => session.sectionId))]
+  const [todayEnrollments, todayRecords] = sessionIds.length > 0
+    ? await Promise.all([
+        db()
+          .select({ sectionId: classEnrollments.sectionId, studentId: classEnrollments.studentId })
+          .from(classEnrollments)
+          .where(
+            and(
+              eq(classEnrollments.organizationId, auth.organizationId),
+              eq(classEnrollments.status, 'active'),
+              inArray(classEnrollments.sectionId, sectionIds),
+            ),
+          ),
+        db()
+          .select({
+            sessionId: attendanceRecords.sessionId,
+            studentId: attendanceRecords.studentId,
+            status: attendanceRecords.status,
+          })
+          .from(attendanceRecords)
+          .where(
+            and(
+              eq(attendanceRecords.organizationId, auth.organizationId),
+              inArray(attendanceRecords.sessionId, sessionIds),
+            ),
+          ),
+      ])
+    : [[], []]
+
+  const rate = calculateAttendanceRate(todaySessions, todayEnrollments, todayRecords)
 
   return {
     students: studentRows.length,

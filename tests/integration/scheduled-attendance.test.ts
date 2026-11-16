@@ -210,13 +210,16 @@ describe.skipIf(!hasDb)('Scheduled Attendance & 3-Minute Window Lifecycle', () =
       expect(sessions.length).toBe(1)
       expect(sessions[0].id).toBe(manualSessionId)
 
-      // Verify that NO 10-minute scheduled notification was sent because teacher already manual-started
+      // The scheduled 10-minute reminder must not be sent, but the manual start
+      // itself must notify every enrolled student once.
       const notifs = await db()
         .select()
         .from(notifications)
         .where(eq(notifications.organizationId, orgId))
 
-      expect(notifs.length).toBe(0)
+      expect(notifs.length).toBe(1)
+      expect(notifs[0].userId).toBe(studentId)
+      expect(notifs[0].title).toContain('Điểm danh đã bắt đầu')
     } finally {
       vi.useRealTimers()
       await db().delete(notifications).where(eq(notifications.organizationId, orgId)).catch(() => {})
