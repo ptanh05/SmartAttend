@@ -168,6 +168,7 @@ export const en: Messages = {
     fastConfirmSub: 'Immediate check-in recording and data synchronization',
     devBy: 'UTC Smart Attendance System - University of Transport and Communications - No 3 Cau Giay, Dong Da, Hanoi',
     signInMicrosoft: 'Sign in with Microsoft 365',
+    microsoftFeatureInDevelopment: 'This feature is currently under development.',
     help: 'Help?',
     orSignIn: 'or sign in with',
     usernameOrEmail: 'Enter student code / email / username',

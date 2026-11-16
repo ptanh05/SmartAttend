@@ -384,8 +384,15 @@ export function UtcLoginLanding({
               </div>
 
               {/* Microsoft Login Button */}
-              <a
-                href={`/api/auth/microsoft?role=${portal}`}
+              <button
+                type="button"
+                onClick={() =>
+                  setDialogModal({
+                    title: t('landing.ssoModalTitle'),
+                    detail: t('landing.microsoftFeatureInDevelopment'),
+                    icon: <LockKeyhole className="size-6 text-blue-600" />,
+                  })
+                }
                 className="flex h-11 w-full items-center justify-center gap-2.5 rounded-xl bg-[#0078d4] text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#006cbd] active:scale-[0.99] cursor-pointer"
               >
                 {/* 4-Color Microsoft Logo */}
@@ -396,7 +403,7 @@ export function UtcLoginLanding({
                   <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
                 </svg>
                 <span>{t('landing.signInMicrosoft')}</span>
-              </a>
+              </button>
             </div>
 
             {/* Administrator Registration Link */}

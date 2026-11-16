@@ -168,6 +168,7 @@ export const vi: Messages = {
     fastConfirmSub: 'Ghi nhận điểm danh và đồng bộ dữ liệu theo thời gian thực',
     devBy: 'Hệ thống Điểm danh Thông minh UTC - Trường Đại học Giao thông Vận tải - Số 3 Cầu Giấy, Láng Thượng, Đống Đa, Hà Nội',
     signInMicrosoft: 'Đăng nhập với Microsoft 365',
+    microsoftFeatureInDevelopment: 'Tính năng này hiện đang phát triển.',
     help: 'Trợ giúp!',
     orSignIn: 'hoặc đăng nhập',
     usernameOrEmail: 'Nhập mã sinh viên / email / tài khoản',
