@@ -577,7 +577,12 @@ export function parseStudentCsv(text: string): ImportStudentRow[] {
     delimiter = ';'
   }
 
-  const rawFirstCells = splitCsvLine(lines[0], delimiter)
+  // Template headers may include explanatory labels in parentheses, for example
+  // "studentId (Mã SV),name (Họ và tên),department (Khoa/Bộ môn)".
+  // Strip those labels before matching the header keys.
+  const rawFirstCells = splitCsvLine(lines[0], delimiter).map((cell) =>
+    cell.replace(/\([^)]*\)/g, ''),
+  )
   const firstCells = rawFirstCells.map(normalizeHeader)
 
   const studentCodeKeys = new Set([
