@@ -72,6 +72,22 @@ describe('parseTeacherCsv', () => {
     expect(rows[0].department).toBe('CNTT')
   })
 
+  it('ignores parenthetical descriptions in the header row', () => {
+    const csv = [
+      'email (Email trường),name (Họ và tên),department (Khoa/Bộ môn)',
+      'gv001@utc.edu.vn,Nguyễn Văn An,Bộ môn Công nghệ phần mềm',
+      'gv002@utc.edu.vn,Trần Thị Bình,Bộ môn Hệ thống thông tin',
+    ].join('\n')
+
+    const rows = parseTeacherCsv(csv, 'utc.edu.vn')
+
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.email)).toEqual([
+      'gv001@utc.edu.vn',
+      'gv002@utc.edu.vn',
+    ])
+  })
+
   it('completes a bare local part with the institution domain', () => {
     const csv = 'gv003,Nguyen Van C,CNTT'
     const rows = parseTeacherCsv(csv, 'utc.edu.vn')

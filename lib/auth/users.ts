@@ -272,7 +272,12 @@ export function parseTeacherCsv(
   let delimiter = ','
   if (lines[0].includes(';') && !lines[0].includes(',')) delimiter = ';'
 
-  const firstCells = splitCsvLine(lines[0], delimiter).map(normalizeHeader)
+  // Accept human-friendly template headers such as
+  // "email (Email trường),name (Họ và tên),department (Khoa/Bộ môn)".
+  // Parenthetical descriptions are labels, not lecturer data.
+  const firstCells = splitCsvLine(lines[0], delimiter).map((cell) =>
+    normalizeHeader(cell.replace(/\([^)]*\)/g, '')),
+  )
   const emailKeys = new Set(['email', 'emailgiaovien', 'emailgv', 'mail', 'username', 'ten_dang_nhap', 'tendangnhap', 'user', 'account'])
   const nameKeys = new Set(['name', 'hoten', 'hovaten', 'ten', 'fullname', 'giangvien', 'ten_giang_vien'])
   const departmentKeys = new Set(['department', 'dept', 'khoa', 'bomon', 'khoavien', 'chuyennganh', 'nganh', 'donvi'])

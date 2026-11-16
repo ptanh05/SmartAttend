@@ -2000,7 +2000,7 @@ function TeacherImportPanel({
     const firstLine = lines[0].toLowerCase()
     const hasHeader = firstLine.includes('email') || firstLine.includes('name')
     const dataLines = hasHeader ? lines.slice(1) : lines
-    const rows = dataLines.slice(0, 5).map((line) => {
+    const rows = dataLines.map((line) => {
       let delimiter = ','
       if (line.includes(';') && !line.includes(',')) delimiter = ';'
 
@@ -2225,12 +2225,12 @@ function TeacherImportPanel({
               <span>Xem trước dữ liệu ({preview.totalCount} giảng viên)</span>
             </div>
             <span className="text-[11px] font-normal text-slate-400">
-              Hiển thị tối đa 5 dòng đầu
+              Cuộn để xem đầy đủ
             </span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-h-72 overflow-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100/60 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 shadow-xs">
                 <tr>
                   <th className="px-3.5 py-2 font-semibold">Email</th>
                   <th className="px-3.5 py-2 font-semibold">Họ và tên</th>
