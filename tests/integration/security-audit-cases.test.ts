@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { hmacFor } from '@/lib/auth/secrets'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
 import { eq } from 'drizzle-orm'
@@ -277,10 +278,9 @@ describe.skipIf(!hasDb)('Production Security & Integrity Audit Test Suite', () =
 
     // Expired token should verify false
     const pastExpiresAt = Date.now() - 1000
-    const crypto = await import('crypto')
-    const secret = process.env.SESSION_SECRET || process.env.TEACHER_REGISTRATION_API_KEY || 'smartattend_webauthn_challenge_secret'
     const nonce = 'expiredNonce'
-    const expiredSig = crypto.createHmac('sha256', secret).update(`${testUserId}:${nonce}:${pastExpiresAt}`).digest('base64url')
+    // Correctly signed with the real webauthn-challenge key, but expired.
+    const expiredSig = hmacFor('webauthn-challenge', `${testUserId}:${nonce}:${pastExpiresAt}`).toString('base64url')
     const expiredToken = `${nonce}.${pastExpiresAt}.${expiredSig}`
     expect(verifyWebAuthnChallenge(testUserId, expiredToken)).toBe(false)
 

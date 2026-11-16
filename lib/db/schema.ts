@@ -8,6 +8,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const organizations = pgTable('organizations', {
   id: text('id').primaryKey(),
@@ -179,6 +180,12 @@ export const attendanceSessions = pgTable(
   (table) => [
     index('attendance_sessions_org_status_idx').on(table.organizationId, table.status),
     index('attendance_sessions_section_idx').on(table.sectionId),
+    // At most ONE open (draft/active/paused) session per section. This makes
+    // concurrent "open session" requests and the scheduler race-safe without
+    // transactions (neon-http): the loser of the race hits ON CONFLICT.
+    uniqueIndex('attendance_sessions_one_open_per_section_idx')
+      .on(table.sectionId)
+      .where(sql`${table.status} in ('draft', 'active', 'paused')`),
   ],
 )
 

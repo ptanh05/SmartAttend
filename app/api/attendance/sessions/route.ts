@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getLiveSessionDetails, getOrCreateLiveSession, listClassSessions } from '@/lib/attendance/server'
+import { classSessionScopeFor, getLiveSessionDetails, getOrCreateLiveSession, listClassSessions } from '@/lib/attendance/server'
 import { getCurrentAuth, requireAuth, passwordChangePendingResponse } from '@/lib/auth/context'
 import { validateRequestBody, createLiveSessionSchema } from '@/lib/validation'
 
@@ -10,8 +10,7 @@ export async function GET() {
   const pending = await passwordChangePendingResponse(auth)
   if (pending) return pending
 
-  const studentId = auth.role === 'student' ? auth.userId : undefined
-  const sessions = await listClassSessions(auth.organizationId, studentId)
+  const sessions = await listClassSessions(...classSessionScopeFor(auth))
   const live = auth.role !== 'student' ? await getLiveSessionDetails(auth) : null
 
   return NextResponse.json({ ok: true, sessions, live })

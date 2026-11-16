@@ -22,7 +22,11 @@ export async function getLeaveRequests(auth: AuthContext, studentId?: string): P
   const conditions = [eq(leaveRequests.organizationId, auth.organizationId)]
   if (targetStudent) {
     conditions.push(eq(leaveRequests.studentId, targetStudent))
-  } else if (auth.role === 'teacher') {
+  }
+  // SEC (IDOR): the teacher boundary must apply even when a studentId filter is
+  // supplied; otherwise `?studentId=` returned every leave request (and medical
+  // evidence images) of that student across all courses of the organization.
+  if (auth.role === 'teacher') {
     conditions.push(eq(courses.teacherId, auth.userId))
   }
 

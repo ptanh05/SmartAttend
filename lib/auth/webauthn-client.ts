@@ -48,6 +48,14 @@ export function spkiDerToPem(spkiDer: ArrayBuffer): string {
   return `-----BEGIN PUBLIC KEY-----\n${lines.join('\n')}\n-----END PUBLIC KEY-----\n`
 }
 
+/** Double-submit CSRF header required by proxy.ts for every API mutation. */
+function csrfHeaders(): Record<string, string> {
+  if (typeof document === 'undefined') return {}
+  const match = document.cookie.split('; ').find((row) => row.startsWith('smartattend_csrf='))
+  const token = match?.split('=')[1]
+  return token ? { 'x-csrf-token': decodeURIComponent(token) } : {}
+}
+
 export type BiometricAuthResult = {
   ok: boolean
   credentialId?: string
@@ -164,19 +172,27 @@ export async function registerDeviceBiometrics(
       }
     }
 
-    if (!publicKeyPem) {
-      // Fallback: If getPublicKey is not available on this browser, use base64 representation of attestationObject
-      publicKeyPem = bufferToBase64(credential.response.attestationObject)
+    // Fail closed: without the SPKI public key and authenticator data the
+    // server cannot verify this credential, so it must not be registered.
+    const response = credential.response as AuthenticatorAttestationResponse & {
+      getAuthenticatorData?: () => ArrayBuffer
+    }
+    const authenticatorData =
+      typeof response.getAuthenticatorData === 'function' ? response.getAuthenticatorData() : null
+    if (!publicKeyPem || !authenticatorData) {
+      return { ok: false, error: 'Trình duyệt này không hỗ trợ đăng ký passkey an toàn. Vui lòng cập nhật trình duyệt.' }
     }
 
     // Register credential on server
     const res = await fetch('/api/auth/webauthn/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
       body: JSON.stringify({
         credentialId: credential.id,
         publicKey: publicKeyPem,
         challenge: challengeString,
+        clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+        authenticatorData: bufferToBase64Url(authenticatorData),
         deviceLabel: navigator.userAgent.includes('iPhone')
           ? 'Apple iPhone (Face ID)'
           : navigator.userAgent.includes('Macintosh')

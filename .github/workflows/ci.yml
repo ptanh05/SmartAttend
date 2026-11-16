@@ -1,4 +1,4 @@
-name: SmartAttend CI/CD Quality Gate
+name: SmartAttend CI
 
 on:
   push:
@@ -6,13 +6,76 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  audit-and-test:
-    name: Typecheck, Lint & Automated Tests
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, Lint, Unit Tests & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Checkout Source Code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Version comes from "packageManager": "pnpm@9.15.9" in package.json
+      # (matches pnpm-lock.yaml lockfileVersion 9.0).
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript typecheck
+        run: pnpm typecheck
+
+      - name: ESLint
+        run: pnpm lint
+
+      # Unit tests never touch a database (DATABASE_URL is forced empty).
+      - name: Unit tests
+        run: pnpm test:unit
+
+      # The build must not need runtime secrets or a database: the DB client is
+      # created lazily on the first query. A throw-away SESSION_SECRET keeps the
+      # production-mode secret guard satisfied if any module evaluates it.
+      - name: Production build
+        run: pnpm build
+        env:
+          SESSION_SECRET: ci-build-only-not-a-real-secret-0000000000
+
+  integration:
+    name: Integration Tests (dedicated test database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: quality
+    # Never run with secrets on pull requests from forks.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      # MUST point to a disposable Neon branch, never production.
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      SESSION_SECRET: ci-integration-only-not-a-real-secret-000000
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGIN: http://localhost:3000
+    steps:
+      - name: Require a dedicated test database
+        run: |
+          if [ -z "$TEST_DATABASE_URL" ]; then
+            echo "::error::Secret TEST_DATABASE_URL is not configured. Integration tests cannot run (they are NOT skipped). See docs/CI_CD_CONFIGURATION.md."
+            exit 1
+          fi
+
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup pnpm
@@ -22,27 +85,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: pnpm
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: TypeScript Typecheck
-        run: pnpm typecheck
-
-      - name: ESLint Check
-        run: pnpm lint
-
-      - name: Run Vitest Suite
-        run: pnpm test
+      # Bring the disposable test database to the current schema.
+      - name: Push schema to test database
+        run: pnpm exec drizzle-kit push --force
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET || 'ci-mock-session-secret-at-least-32-chars-long' }}
-          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID || 'common' }}
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
 
-      - name: Next.js Production Build
-        run: pnpm build
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET || 'ci-mock-session-secret-at-least-32-chars-long' }}
-          MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID || 'common' }}
+      - name: Integration tests
+        run: pnpm test:integration

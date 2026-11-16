@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { getMicrosoftAuth } from '@/lib/auth/oauth'
+import { evaluateMicrosoftIdentity, getMicrosoftAuth, MicrosoftConfigError, type MicrosoftIdTokenClaims } from '@/lib/auth/oauth'
 import { decodeIdToken } from 'arctic'
 import { db } from '@/lib/db'
 import { auditLogs, externalAccounts, organizationMemberships, users } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { createAuthSession } from '@/lib/auth/session'
 import { nanoid } from 'nanoid'
 import { parsePortal, portalForRole, PORTAL_HOME, PORTAL_LOGIN } from '@/lib/auth/portals'
@@ -46,36 +46,27 @@ export async function GET(request: Request) {
     const tokens = await msAuth.validateAuthorizationCode(code, storedCodeVerifier)
 
     const idToken = tokens.idToken()
-    const payload = decodeIdToken(idToken) as {
-      oid: string
-      tid?: string
-      email?: string
-      preferred_username?: string
-      name?: string
-    }
+    const claims = decodeIdToken(idToken) as MicrosoftIdTokenClaims
 
-    const providerAccountId = payload.oid
-    const email = (payload.email || payload.preferred_username || '').toLowerCase()
-    const configuredTenant = process.env.MICROSOFT_TENANT_ID?.trim()
-
-    // Tenant check if restricted to a specific institution
-    if (
-      configuredTenant &&
-      configuredTenant !== 'common' &&
-      configuredTenant !== 'organizations' &&
-      payload.tid &&
-      payload.tid !== configuredTenant
-    ) {
+    // The ID token comes straight from the token endpoint over TLS (code flow
+    // with PKCE + state), so its signature need not be re-validated (OIDC Core
+    // §3.1.3.7). Audience, tenant and identity claims are still enforced.
+    const decision = evaluateMicrosoftIdentity(claims, {
+      clientId: process.env.MICROSOFT_CLIENT_ID?.trim() ?? '',
+      tenantId: process.env.MICROSOFT_TENANT_ID?.trim() ?? '',
+    })
+    if (!decision.ok) {
       return NextResponse.redirect(
-        loginUrl('Tài khoản Microsoft không thuộc tổ chức/trường đại học được cho phép.'),
+        loginUrl(
+          decision.reason === 'tenant'
+            ? 'Tài khoản Microsoft không thuộc tổ chức/trường đại học được cho phép.'
+            : decision.reason === 'audience'
+              ? 'Phản hồi đăng nhập Microsoft không dành cho ứng dụng này.'
+              : 'Không thể lấy thông tin định danh hoặc email từ tài khoản Microsoft.',
+        ),
       )
     }
-
-    if (!providerAccountId || !email) {
-      return NextResponse.redirect(
-        loginUrl('Không thể lấy thông tin định danh hoặc email từ tài khoản Microsoft.'),
-      )
-    }
+    const { providerAccountId, email } = decision
 
     // Check if external account already linked
     const existingLinks = await db()
@@ -93,11 +84,19 @@ export async function GET(request: Request) {
     if (existingLinks.length > 0) {
       userIdToLogin = existingLinks[0].userId
     } else {
+      // First Microsoft login: linking to an existing account by email is only
+      // safe inside one specific institutional tenant (see evaluateMicrosoftIdentity).
+      if (!decision.mayLinkByEmail) {
+        return NextResponse.redirect(
+          loginUrl('Tài khoản Microsoft này chưa được liên kết với SmartAttend. Vui lòng đăng nhập bằng mật khẩu hoặc liên hệ quản trị viên.'),
+        )
+      }
+
       // Look up user by email in our system
       const existingUsers = await db()
         .select()
         .from(users)
-        .where(eq(users.email, email))
+        .where(sql`lower(${users.email}) = ${email}`)
 
       if (existingUsers.length === 0) {
         return NextResponse.redirect(
@@ -184,7 +183,12 @@ export async function GET(request: Request) {
 
     return response
   } catch (err) {
-    console.error('Microsoft OAuth callback error:', err)
+    if (err instanceof MicrosoftConfigError) {
+      // Names only; values are never logged.
+      console.error('Microsoft OAuth is not configured. Missing:', err.missing.join(', '))
+      return NextResponse.redirect(loginUrl('Đăng nhập Microsoft chưa được cấu hình trên máy chủ.'))
+    }
+    console.error('Microsoft OAuth callback error:', err instanceof Error ? err.message : 'unknown error')
     return NextResponse.redirect(loginUrl('Đã xảy ra lỗi trong quá trình xác thực với Microsoft. Vui lòng thử lại.'))
   }
 }

@@ -48,6 +48,7 @@ Desktop.ini
 
 # Vercel / deploy
 .vercel/
+bug-evidence/
 
 # v0 sandbox (legacy)
 __v0_runtime_loader.js

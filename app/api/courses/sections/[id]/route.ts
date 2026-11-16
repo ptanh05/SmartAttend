@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { deleteCourseSection, listSectionStudents, updateCourseSection } from '@/lib/attendance/server'
+import { SectionAccessError, deleteCourseSection, listSectionStudents, updateCourseSection } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 
 export async function GET(
@@ -12,7 +12,7 @@ export async function GET(
     const students = await listSectionStudents(auth, id)
     return NextResponse.json({ ok: true, students })
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to load section students.' }, { status: 500 })
   }
 }
@@ -39,7 +39,7 @@ export async function PATCH(
     }
     return NextResponse.json(result)
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to update section schedule.' }, { status: 500 })
   }
 }
@@ -58,7 +58,7 @@ export async function DELETE(
     }
     return NextResponse.json(result)
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to delete section schedule.' }, { status: 500 })
   }
 }

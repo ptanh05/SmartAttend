@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'crypto'
+import { timingSafeEqual } from 'crypto'
+import { hmacFor } from '@/lib/auth/secrets'
 
 /**
  * Ultrasonic Acoustic Beacon Engine (Web Audio API)
@@ -259,15 +260,6 @@ export async function detectUltrasonicBeacon({
   }
 }
 
-function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET || process.env.TEACHER_REGISTRATION_API_KEY
-  if (secret) return secret
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('FATAL: SESSION_SECRET or TEACHER_REGISTRATION_API_KEY environment variable is required in production.')
-  }
-  return 'smartattend_acoustic_proof_secret'
-}
-
 export type AcousticProofInput = {
   sessionId: string
   sequence: number
@@ -285,10 +277,9 @@ export type AcousticProofInput = {
  *    HMAC proves token authenticity, NOT absolute physical presence.
  */
 export function generateAcousticProofToken(sessionId: string, sequence: number, timestamp = Date.now()): AcousticProofInput {
-  const secret = getSessionSecret()
   const timeSlot = Math.floor(timestamp / 30000)
   const payload = `${sessionId}:${sequence}:${timeSlot}`
-  const signature = createHmac('sha256', secret).update(payload).digest('base64url')
+  const signature = hmacFor('acoustic-proof', payload).toString('base64url')
   return {
     sessionId,
     sequence,
@@ -324,12 +315,11 @@ export function verifyAcousticProofToken(
     return { ok: false, reason: 'Acoustic proof timestamp has expired (outside valid physical room window).' }
   }
 
-  const secret = getSessionSecret()
   const timeSlot = Math.floor(proof.timestamp / 30000)
   const validSlots = [timeSlot, timeSlot - 1, timeSlot + 1]
   const isValid = validSlots.some((slot) => {
     const expectedPayload = `${proof.sessionId}:${proof.sequence}:${slot}`
-    const expectedSig = createHmac('sha256', secret).update(expectedPayload).digest('base64url')
+    const expectedSig = hmacFor('acoustic-proof', expectedPayload).toString('base64url')
     const expectedBuf = Buffer.from(expectedSig)
     const providedBuf = Buffer.from(proof.signature)
     return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf)

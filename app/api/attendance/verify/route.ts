@@ -44,7 +44,11 @@ export async function POST(request: Request) {
     if (error instanceof AuthError) {
       return NextResponse.json({ ok: false, confidence: 0, message: error.message }, { status: error.status })
     }
-    const message = error instanceof Error ? error.message : 'Verification failed.'
-    return NextResponse.json({ ok: false, confidence: 0, message }, { status: 400 })
+    // Unexpected failure: log server-side, never echo internal/DB error text.
+    console.error('Attendance verification failed', error instanceof Error ? error.message : 'unknown error')
+    return NextResponse.json(
+      { ok: false, confidence: 0, message: 'Không thể xác minh điểm danh lúc này. Vui lòng thử lại.' },
+      { status: 500 },
+    )
   }
 }

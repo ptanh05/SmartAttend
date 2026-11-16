@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
-import { generateChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
+import { challengePlaintextFor, deriveChallengeValue, hashChallengeValue, verifyChallengeValue } from '@/lib/attendance/challenge'
 import { canTransition } from '@/lib/attendance/session-state'
 import { evaluateDevicePolicy, normalizeScore } from '@/lib/attendance/device-policy'
 import { generateAcousticProofToken, verifyAcousticProofToken, type AcousticProofInput } from '@/lib/attendance/ultrasonic'
@@ -240,15 +240,22 @@ export async function syncScheduledAttendance(organizationId: string) {
       // 4. Exactly at class start time (within 3 minutes): Auto-start session if autoStart is true
       if (section.autoStart && currentMinutes >= startsAtMinutes && currentMinutes < autoCloseMinutes) {
         const sessionId = nanoid()
-        await db().insert(attendanceSessions).values({
-          id: sessionId,
-          organizationId,
-          sectionId: section.id,
-          courseId: section.courseId,
-          teacherId: course.teacherId,
-          status: 'active',
-          startedAt: new Date(),
-        })
+        // Race-safe: concurrent schedulers/instances cannot open two sessions
+        // for the same section (partial unique index + ON CONFLICT DO NOTHING).
+        const inserted = await db()
+          .insert(attendanceSessions)
+          .values({
+            id: sessionId,
+            organizationId,
+            sectionId: section.id,
+            courseId: section.courseId,
+            teacherId: course.teacherId,
+            status: 'active',
+            startedAt: new Date(),
+          })
+          .onConflictDoNothing()
+          .returning({ id: attendanceSessions.id })
+        if (!inserted[0]) continue
 
         const autoAuth: AuthContext = {
           userId: course.teacherId,
@@ -283,7 +290,35 @@ export async function syncScheduledAttendance(organizationId: string) {
   }
 }
 
-export async function listClassSessions(organizationId: string, studentId?: string, teacherId?: string): Promise<ClassSession[]> {
+export type ClassSessionListOptions = {
+  /**
+   * Include the plaintext challenge code of live sessions in the result.
+   * Secure by default: codes are only returned when the caller explicitly asks
+   * AND the listing is scoped to a viewer allowed to see them (see
+   * `classSessionScopeFor`). Never set this for students.
+   */
+  revealChallenges?: boolean
+}
+
+/**
+ * Resolves the `listClassSessions` arguments allowed for an authenticated
+ * viewer. Route handlers must use this instead of building the scope by hand,
+ * so a teacher can never receive sections or challenge codes of classes taught
+ * by someone else.
+ */
+export function classSessionScopeFor(auth: AuthContext): [string, string | undefined, string | undefined, ClassSessionListOptions] {
+  if (auth.role === 'student') return [auth.organizationId, auth.userId, undefined, { revealChallenges: false }]
+  if (auth.role === 'teacher') return [auth.organizationId, undefined, auth.userId, { revealChallenges: true }]
+  // Administrators manage the whole organization.
+  return [auth.organizationId, undefined, undefined, { revealChallenges: true }]
+}
+
+export async function listClassSessions(
+  organizationId: string,
+  studentId?: string,
+  teacherId?: string,
+  options: ClassSessionListOptions = {},
+): Promise<ClassSession[]> {
   await syncScheduledAttendance(organizationId)
   let enrolledSectionIds: Set<string> | null = null
   if (studentId) {
@@ -353,12 +388,18 @@ export async function listClassSessions(organizationId: string, studentId?: stri
     .innerJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
     .where(and(eq(attendanceSessions.organizationId, organizationId), eq(attendanceSessions.status, 'active')))
 
-  const liveSessionIds = liveSessions.map((item) => item.session.id)
-  const isStudent = Boolean(studentId)
+  // Only live sessions of the sections in this (already scoped) listing may
+  // ever expose a challenge.
+  const visibleSectionIds = new Set(rows.map((row) => row.section.id))
+  const liveSessionIds = liveSessions
+    .filter((item) => visibleSectionIds.has(item.section.id))
+    .map((item) => item.session.id)
+  const canRevealChallenges = Boolean(options.revealChallenges) && !studentId
   const challengeBySession = new Map<string, string>()
 
-  // Zero Client Trust (SEC-01): Do not load or leak active challenge codes or acoustic proof to students.
-  if (!isStudent && liveSessionIds.length > 0) {
+  // Zero Client Trust (SEC-01): challenge codes are never loaded unless the
+  // caller explicitly asked for them with an owner-scoped listing.
+  if (canRevealChallenges && liveSessionIds.length > 0) {
     const activeChallenges = await db()
       .select()
       .from(attendanceChallenges)
@@ -372,7 +413,7 @@ export async function listClassSessions(organizationId: string, studentId?: stri
 
     for (const ch of activeChallenges) {
       if (!challengeBySession.has(ch.sessionId)) {
-        const plain = ch.code ?? (await getActiveChallengePlain(ch.sessionId))
+        const plain = challengePlaintextFor(ch)
         if (plain) challengeBySession.set(ch.sessionId, plain)
       }
     }
@@ -403,7 +444,7 @@ export async function listClassSessions(organizationId: string, studentId?: stri
       enrolledCount: studentsByCourse.get(row.section.courseId)?.size ?? 0,
       status,
       // For students, challenge is strictly masked to '------' and acousticProof is undefined
-      challenge: isStudent ? '------' : (live ? challengeBySession.get(live.session.id) ?? '------' : '------'),
+      challenge: canRevealChallenges && live ? challengeBySession.get(live.session.id) ?? '------' : '------',
       acousticProof: undefined,
     })
   }
@@ -486,18 +527,6 @@ async function getLatestChallenge(sessionId: string) {
   return rows[0] ?? null
 }
 
-const challengePlainCache = new Map<string, { value: string; expiresAt: number }>()
-
-export function cacheChallengePlain(sessionId: string, value: string, ttlSeconds: number) {
-  challengePlainCache.set(sessionId, { value, expiresAt: Date.now() + ttlSeconds * 1000 })
-}
-
-async function getActiveChallengePlain(sessionId: string) {
-  const cached = challengePlainCache.get(sessionId)
-  if (cached && cached.expiresAt > Date.now()) return cached.value
-  return null
-}
-
 export async function rotateChallengeForSession(auth: AuthContext, sessionId: string) {
   const sessionWithCourse = await db()
     .select({
@@ -537,8 +566,8 @@ export async function rotateChallengeForSession(auth: AuthContext, sessionId: st
       .where(eq(attendanceChallenges.id, active.id))
   }
 
-  const value = generateChallengeValue()
   const sequence = (latest?.sequence ?? 0) + 1
+  const value = deriveChallengeValue(sessionId, sequence)
   const expiresAt = new Date(Date.now() + policy.challengeTtlSeconds * 1000)
 
   await db().insert(attendanceChallenges).values({
@@ -546,13 +575,12 @@ export async function rotateChallengeForSession(auth: AuthContext, sessionId: st
     organizationId: auth.organizationId,
     sessionId,
     sequence,
-    code: value,
+    // Plaintext is never persisted (see deriveChallengeValue).
+    code: null,
     valueHash: hashChallengeValue(value),
     status: 'active',
     expiresAt,
   })
-
-  cacheChallengePlain(sessionId, value, policy.challengeTtlSeconds)
 
   await appendAudit(auth, 'Rotated session challenge', sessionId, 'info')
 
@@ -905,46 +933,58 @@ export async function verifyAttendance(
   const isUltrasonicBiometric = Boolean(verifiedUltrasonic && verifiedBiometric)
   const verificationScore = isUltrasonicBiometric ? 100 : normalizeScore(deviceDecision.score)
 
-  let finalRecordId = existing[0]?.id ?? nanoid()
-
-  if (existing[0]) {
-    await db()
-      .update(attendanceRecords)
-      .set({
+  // ATOMIC + IDEMPOTENT under concurrency: a single statement inserts the
+  // record, or upgrades an existing non-final one (e.g. 'absent' set by hand).
+  // A record that is already final (present/late/excused) is NOT touched and
+  // nothing is returned — a concurrent duplicate request then answers "already
+  // done" below without writing verifications, notifications or audit rows.
+  const writtenRows = await db()
+    .insert(attendanceRecords)
+    .values({
+      id: existing[0]?.id ?? nanoid(),
+      organizationId: auth.organizationId,
+      sessionId: live.id,
+      studentId: auth.userId,
+      status,
+      verificationScore,
+      verifiedAt,
+      device: deviceLabel,
+    })
+    .onConflictDoUpdate({
+      target: [attendanceRecords.sessionId, attendanceRecords.studentId],
+      set: {
         status,
         verificationScore,
         verifiedAt,
         device: deviceLabel,
-      })
-      .where(eq(attendanceRecords.id, finalRecordId))
-  } else {
-    const upsertRows = await db()
-      .insert(attendanceRecords)
-      .values({
-        id: finalRecordId,
-        organizationId: auth.organizationId,
-        sessionId: live.id,
-        studentId: auth.userId,
-        status,
-        verificationScore,
-        verifiedAt,
-        device: deviceLabel,
-      })
-      .onConflictDoUpdate({
-        target: [attendanceRecords.sessionId, attendanceRecords.studentId],
-        set: {
-          status,
-          verificationScore,
-          verifiedAt,
-          device: deviceLabel,
-        },
-      })
-      .returning({ id: attendanceRecords.id })
+      },
+      setWhere: sql`${attendanceRecords.status} not in ('present', 'late', 'excused')`,
+    })
+    .returning({ id: attendanceRecords.id })
 
-    if (upsertRows[0]?.id) {
-      finalRecordId = upsertRows[0].id
+  if (!writtenRows[0]) {
+    const [winner] = await db()
+      .select()
+      .from(attendanceRecords)
+      .where(and(eq(attendanceRecords.sessionId, live.id), eq(attendanceRecords.studentId, auth.userId)))
+    return {
+      ok: true,
+      confidence: winner?.verificationScore ?? verificationScore,
+      message: 'Bạn đã hoàn tất điểm danh cho buổi học này rồi.',
+      record: winner
+        ? {
+            id: winner.id,
+            sessionId: live.id,
+            studentId: auth.userId,
+            status: winner.status as AttendanceStatus,
+            confidence: winner.verificationScore,
+            verifiedAt: winner.verifiedAt?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            device: winner.device ?? deviceLabel,
+          }
+        : undefined,
     }
   }
+  const finalRecordId = writtenRows[0].id
 
   // Update consumedAt timestamp on the challenge while keeping it active for other students in the room
   await db()
@@ -952,7 +992,15 @@ export async function verifyAttendance(
     .set({ consumedAt: verifiedAt })
     .where(eq(attendanceChallenges.id, challenge.id))
 
-  const verificationMethod = options?.method ?? (isUltrasonicBiometric ? 'ultrasonic_faceid' : 'manual_code')
+  // The recorded method reflects what the SERVER verified, never a client
+  // claim: 'ultrasonic_faceid' requires both cryptographic proofs. The client's
+  // claimed method is only kept in metadata for diagnostics.
+  const clientClaimedMethod = options?.method
+  const verificationMethod = isUltrasonicBiometric
+    ? 'ultrasonic_faceid'
+    : clientClaimedMethod === 'qr_scan'
+      ? 'qr_scan'
+      : 'manual_code'
 
   await db().insert(attendanceVerifications).values({
     id: nanoid(),
@@ -968,6 +1016,7 @@ export async function verifyAttendance(
       ultrasonic: verifiedUltrasonic,
       biometric: verifiedBiometric,
       proofVerified: isUltrasonicBiometric,
+      clientClaimedMethod: clientClaimedMethod ?? null,
     },
   })
 
@@ -1190,7 +1239,7 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
   const remainingSeconds = Math.max(0, Math.floor((ATTENDANCE_WINDOW_MS - elapsedMs) / 1000))
 
   const activeChallengeRow = await getActiveChallenge(row.session.id)
-  let challenge = activeChallengeRow?.code ?? (await getActiveChallengePlain(row.session.id))
+  let challenge = activeChallengeRow ? challengePlaintextFor(activeChallengeRow) : null
   let challengeExpiresAt: string | undefined
 
   const isExpired = activeChallengeRow && new Date(activeChallengeRow.expiresAt).getTime() <= Date.now()
@@ -1360,17 +1409,38 @@ export async function getOrCreateLiveSession(auth: AuthContext, sectionId: strin
 
   if (existing[0]) return existing[0].id
 
+  // Race-safe create: the partial unique index
+  // `attendance_sessions_one_open_per_section_idx` guarantees at most one open
+  // session per section. A concurrent request that loses the race inserts
+  // nothing and re-reads the winner instead of creating a duplicate.
   const id = nanoid()
-  await db().insert(attendanceSessions).values({
-    id,
-    organizationId: auth.organizationId,
-    sectionId,
-    courseId: section.courseId,
-    teacherId: auth.userId,
-    status: 'draft',
-  })
+  const inserted = await db()
+    .insert(attendanceSessions)
+    .values({
+      id,
+      organizationId: auth.organizationId,
+      sectionId,
+      courseId: section.courseId,
+      teacherId: auth.userId,
+      status: 'draft',
+    })
+    .onConflictDoNothing()
+    .returning({ id: attendanceSessions.id })
 
-  return id
+  if (inserted[0]) return inserted[0].id
+
+  const winner = await db()
+    .select({ id: attendanceSessions.id })
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.sectionId, sectionId),
+        eq(attendanceSessions.organizationId, auth.organizationId),
+        inArray(attendanceSessions.status, ['active', 'draft', 'paused']),
+      ),
+    )
+    .limit(1)
+  return winner[0]?.id ?? null
 }
 
 export async function listUsers(auth: AuthContext, role?: string) {
@@ -1420,7 +1490,7 @@ export async function listUsers(auth: AuthContext, role?: string) {
     .where(and(...conditions))
     .orderBy(desc(organizationMemberships.createdAt), desc(users.createdAt))
 
-  return rows.map((row) => ({
+  const userList = rows.map((row) => ({
     id: row.id,
     organizationId: auth.organizationId,
     name: row.name,
@@ -1430,9 +1500,58 @@ export async function listUsers(auth: AuthContext, role?: string) {
     department: row.department ?? '',
     studentCode: row.studentCode ?? '',
   }))
+
+  if (auth.role === 'admin' && (!role || role === 'admin') && !userList.some((u) => u.id === auth.userId || u.email.toLowerCase() === auth.email.toLowerCase())) {
+    userList.unshift({
+      id: auth.userId,
+      organizationId: auth.organizationId,
+      name: auth.name,
+      email: auth.email,
+      role: 'admin',
+      initials: auth.initials,
+      department: auth.department ?? '',
+      studentCode: '',
+    })
+  }
+
+  return userList
+}
+
+/**
+ * Raised when the viewer is not allowed to manage a class section. Route
+ * handlers translate it into HTTP 403 (or 404 when the section is unknown).
+ */
+export class SectionAccessError extends Error {
+  status: number
+  constructor(message: string, status = 403) {
+    super(message)
+    this.status = status
+  }
+}
+
+/**
+ * Ensures the viewer may manage `sectionId`: the section must belong to the
+ * viewer's organization and, for teachers, to a course they teach.
+ * Administrators manage every section of their organization.
+ */
+export async function assertCanManageSection(auth: AuthContext, sectionId: string) {
+  if (auth.role !== 'teacher' && auth.role !== 'admin') {
+    throw new SectionAccessError('Permission denied.')
+  }
+  const rows = await db()
+    .select({ id: courseSections.id, teacherId: courses.teacherId })
+    .from(courseSections)
+    .innerJoin(courses, eq(courseSections.courseId, courses.id))
+    .where(and(eq(courseSections.id, sectionId), eq(courseSections.organizationId, auth.organizationId)))
+    .limit(1)
+  if (!rows[0]) throw new SectionAccessError('Section not found.', 404)
+  if (auth.role === 'teacher' && rows[0].teacherId !== auth.userId) {
+    throw new SectionAccessError('Forbidden: You can only access sections of courses you teach.')
+  }
 }
 
 export async function listSectionStudents(auth: AuthContext, sectionId: string) {
+  await assertCanManageSection(auth, sectionId)
   const rows = await db()
     .select({
       id: users.id,
@@ -1619,6 +1738,7 @@ export async function searchAvailableStudentsForSection(
   sectionId: string,
   query: string,
 ) {
+  await assertCanManageSection(auth, sectionId)
   const q = query.trim().toLowerCase()
   if (!q) return []
 
@@ -1780,7 +1900,9 @@ export async function resolveSuspiciousAttempt(
   const target = rows[0]
   if (!target) return { ok: false as const, message: 'Suspicious attempt not found.' }
 
-  if (auth.role === 'teacher' && target.course && target.course.teacherId !== auth.userId) {
+  // Fail closed: an attempt that cannot be tied to a course the teacher owns
+  // (e.g. no linked record) is reserved for administrators.
+  if (auth.role === 'teacher' && (!target.course || target.course.teacherId !== auth.userId)) {
     return { ok: false as const, message: 'Permission denied: You can only review attempts for courses you teach.' }
   }
 

@@ -1,31 +1,50 @@
 import { NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth/context'
-import { saveUserPasskey, verifyWebAuthnChallenge } from '@/lib/auth/webauthn'
+import { z } from 'zod'
+import { AuthError, requireAuth } from '@/lib/auth/context'
+import { saveUserPasskey, verifyPasskeyRegistration } from '@/lib/auth/webauthn'
+import { validateRequestBody } from '@/lib/validation'
+
+const registerPasskeySchema = z.object({
+  credentialId: z.string().trim().min(1).max(1024),
+  publicKey: z.string().trim().min(1).max(4096),
+  challenge: z.string().trim().min(1).max(512),
+  clientDataJSON: z.string().trim().min(1).max(8192),
+  authenticatorData: z.string().trim().min(1).max(8192),
+  deviceLabel: z.string().trim().max(120).optional(),
+})
 
 export async function POST(request: Request) {
   try {
     const auth = await requireAuth()
-    const body = await request.json()
-    const { credentialId, publicKey, deviceLabel, challenge } = body
+    const validation = await validateRequestBody(request, registerPasskeySchema, 'Dữ liệu đăng ký passkey không hợp lệ')
+    if (!validation.success) return validation.response
 
-    if (!credentialId || !publicKey) {
-      return NextResponse.json({ ok: false, message: 'Missing credential information.' }, { status: 400 })
-    }
+    const { credentialId, publicKey, challenge, clientDataJSON, authenticatorData, deviceLabel } = validation.data
 
-    if (!challenge || !verifyWebAuthnChallenge(auth.userId, challenge)) {
-      return NextResponse.json({ ok: false, message: 'Invalid or expired WebAuthn challenge.' }, { status: 400 })
-    }
-
-    const passkeyId = await saveUserPasskey(
-      auth.userId,
+    const verified = await verifyPasskeyRegistration(auth.userId, {
       credentialId,
       publicKey,
-      deviceLabel || 'Biometric Device',
-    )
+      challenge,
+      clientDataJSON,
+      authenticatorData,
+    })
+    if (!verified.ok) {
+      return NextResponse.json({ ok: false, message: verified.reason }, { status: 400 })
+    }
 
+    // Store the key derived from the authenticator data, never the raw client value.
+    const passkeyId = await saveUserPasskey(auth.userId, credentialId, verified.publicKeyPem, deviceLabel || 'Biometric Device')
     return NextResponse.json({ ok: true, passkeyId })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Registration failed'
-    return NextResponse.json({ ok: false, message }, { status: 400 })
+    if (error instanceof AuthError) {
+      return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    }
+    const message = error instanceof Error ? error.message : ''
+    // Known business conflict from saveUserPasskey; everything else stays generic.
+    if (message === 'Credential ID is already registered to another user account.') {
+      return NextResponse.json({ ok: false, message }, { status: 409 })
+    }
+    console.error('Passkey registration failed', message || 'unknown error')
+    return NextResponse.json({ ok: false, message: 'Không thể đăng ký passkey lúc này.' }, { status: 500 })
   }
 }

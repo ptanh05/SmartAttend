@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
+  classSessionScopeFor,
   getAttendancePolicy,
   getLiveSessionDetails,
   getOrganizationMetrics,
@@ -29,7 +30,7 @@ export async function GET() {
       if (pending) return pending
 
       const [sessions, records, notifications, devices, leaveRequests] = await Promise.all([
-        listClassSessions(auth.organizationId, auth.userId),
+        listClassSessions(...classSessionScopeFor(auth)),
         listRecords(auth, auth.userId),
         listNotifications(auth),
         listDevices(auth),
@@ -91,7 +92,7 @@ export async function GET() {
         policy,
       ] = await Promise.all([
         listCourses(auth.organizationId, auth.userId),
-        listClassSessions(auth.organizationId, undefined, auth.userId),
+        listClassSessions(...classSessionScopeFor(auth)),
         getLiveSessionDetails(auth),
         listRecords(auth),
         listNotifications(auth),
@@ -139,7 +140,7 @@ export async function GET() {
       policy,
     ] = await Promise.all([
       listCourses(auth.organizationId),
-      listClassSessions(auth.organizationId),
+      listClassSessions(...classSessionScopeFor(auth)),
       getLiveSessionDetails(auth),
       listRecords(auth),
       listNotifications(auth),

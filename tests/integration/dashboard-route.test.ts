@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GET } from '@/app/api/dashboard/route'
 import * as authModule from '@/lib/auth/context'
+import * as attendanceModule from '@/lib/attendance/server'
 import type { AuthContext } from '@/lib/auth/session'
 
 vi.mock('@/lib/auth/context', () => ({
@@ -8,7 +9,9 @@ vi.mock('@/lib/auth/context', () => ({
   passwordChangePendingResponse: vi.fn().mockResolvedValue(null),
 }))
 
-vi.mock('@/lib/attendance/server', () => ({
+vi.mock('@/lib/attendance/server', async (importOriginal) => ({
+  // Real scope resolver: the test asserts the route uses it for every role.
+  classSessionScopeFor: (await importOriginal<typeof import('@/lib/attendance/server')>()).classSessionScopeFor,
   listCourses: vi.fn().mockResolvedValue([
     { id: 'c1', name: 'Lập trình Web', code: 'IT101', enrolled: 45 },
   ]),
@@ -76,6 +79,8 @@ describe('Consolidated Dashboard API (/api/dashboard)', () => {
     expect(Array.isArray(data.records)).toBe(true)
     expect(data.users).toEqual([])
     expect(data.auditEvents).toEqual([])
+    // Students are scoped to their own enrollments and never receive codes.
+    expect(vi.mocked(attendanceModule.listClassSessions)).toHaveBeenCalledWith('org_123', 'stu_123', undefined, { revealChallenges: false })
   })
 
   it('returns full staff metrics and sessions for teacher role', async () => {
@@ -101,6 +106,8 @@ describe('Consolidated Dashboard API (/api/dashboard)', () => {
     expect(data.ok).toBe(true)
     expect(data.metrics.students).toBe(100)
     expect(data.policy).toBeDefined()
+    // Teachers only list (and see codes of) the courses they teach.
+    expect(vi.mocked(attendanceModule.listClassSessions)).toHaveBeenCalledWith('org_123', undefined, 'tch_123', { revealChallenges: true })
   })
 
   it('returns audit events and departments for admin role', async () => {
@@ -126,6 +133,7 @@ describe('Consolidated Dashboard API (/api/dashboard)', () => {
     expect(data.ok).toBe(true)
     expect(data.departments).toEqual(['CNTT'])
     expect(Array.isArray(data.auditEvents)).toBe(true)
+    expect(vi.mocked(attendanceModule.listClassSessions)).toHaveBeenCalledWith('org_123', undefined, undefined, { revealChallenges: true })
   })
 })
 

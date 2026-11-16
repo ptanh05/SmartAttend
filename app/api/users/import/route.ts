@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
-import { importStudents, parseStudentCsv } from '@/lib/auth/users'
+import { ImportScopeError, importStudents, parseStudentCsv } from '@/lib/auth/users'
 import { clientIp, importLimiter } from '@/lib/rate-limit'
 import { validateRequestBody, importStudentsSchema, MAX_IMPORT_STUDENT_ROWS } from '@/lib/validation'
 
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof ImportScopeError) return NextResponse.json({ ok: false, message: error.message }, { status: 400 })
     console.error('Student import failed', error)
     return NextResponse.json({ ok: false, message: 'Unable to import students right now.' }, { status: 500 })
   }
