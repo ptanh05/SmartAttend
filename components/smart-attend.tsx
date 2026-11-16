@@ -5459,9 +5459,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   }
 
   if (page === 'students') {
-    const effectiveUsers = useMemo(() => {
-      if (isAdmin && user && !users.some((u) => u.id === user.id || (user.email && u.email?.toLowerCase() === user.email.toLowerCase()))) {
-        return [
+    const effectiveUsers =
+      isAdmin && user && !users.some((u) => u.id === user.id || (user.email && u.email?.toLowerCase() === user.email.toLowerCase()))
+        ? [
           {
             id: user.id || 'admin_current',
             organizationId: organization.id,
@@ -5474,9 +5474,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           },
           ...users,
         ]
-      }
-      return users
-    }, [isAdmin, user, users, organization.id])
+        : users
 
     const studentCount = effectiveUsers.filter((u) => u.role === 'student').length
     const teacherCount = effectiveUsers.filter((u) => u.role === 'teacher').length
