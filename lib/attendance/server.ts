@@ -90,7 +90,14 @@ export async function listCourses(organizationId: string, teacherId?: string): P
  */
 export async function syncScheduledAttendance(organizationId: string) {
   try {
-    const ATTENDANCE_WINDOW_MS = 3 * 60 * 1000 // 3 minutes
+    const policyRows = await db()
+      .select({ lateAfterMinutes: attendancePolicies.lateAfterMinutes })
+      .from(attendancePolicies)
+      .where(eq(attendancePolicies.organizationId, organizationId))
+      .limit(1)
+    const configuredLateMinutes = policyRows[0]?.lateAfterMinutes
+    const windowMinutes = configuredLateMinutes && configuredLateMinutes > 3 ? configuredLateMinutes + 5 : 3
+    const ATTENDANCE_WINDOW_MS = windowMinutes * 60 * 1000
 
     // Determine current time in Vietnam Time (UTC+7)
     const now = new Date()
@@ -171,7 +178,7 @@ export async function syncScheduledAttendance(organizationId: string) {
 
       const startsAtMinutes = startH * 60 + startM
       const notifyBeforeMinutes = startsAtMinutes - 10
-      const autoCloseMinutes = startsAtMinutes + 3
+      const autoCloseMinutes = startsAtMinutes + windowMinutes
 
       const endWindowH = Math.floor(autoCloseMinutes / 60)
       const endWindowM = autoCloseMinutes % 60
@@ -377,8 +384,11 @@ export async function listClassSessions(
     .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
     .where(and(eq(classEnrollments.organizationId, organizationId), eq(classEnrollments.status, 'active')))
 
+  const studentsBySection = new Map<string, Set<string>>()
   const studentsByCourse = new Map<string, Set<string>>()
   for (const en of enrollments) {
+    if (!studentsBySection.has(en.sectionId)) studentsBySection.set(en.sectionId, new Set())
+    studentsBySection.get(en.sectionId)!.add(en.studentId)
     if (!studentsByCourse.has(en.courseId)) studentsByCourse.set(en.courseId, new Set())
     studentsByCourse.get(en.courseId)!.add(en.studentId)
   }
@@ -445,7 +455,7 @@ export async function listClassSessions(
       endDate: row.section.endDate,
       dayOfWeek: row.section.dayOfWeek,
       autoStart: row.section.autoStart,
-      enrolledCount: studentsByCourse.get(row.section.courseId)?.size ?? 0,
+      enrolledCount: studentsBySection.get(row.section.id)?.size ?? 0,
       status,
       // For students, challenge is strictly masked to '------' and acousticProof is undefined
       challenge: canRevealChallenges && live ? challengeBySession.get(live.session.id) ?? '------' : '------',
@@ -458,7 +468,7 @@ export async function listClassSessions(
 
 async function getPolicy(organizationId: string) {
   const rows = await db().select().from(attendancePolicies).where(eq(attendancePolicies.organizationId, organizationId))
-  return rows[0] ?? { challengeTtlSeconds: 30, lateAfterMinutes: 10, requireTrustedDevice: false }
+  return rows[0] ?? { challengeTtlSeconds: 30, lateAfterMinutes: 2, requireTrustedDevice: false }
 }
 
 export async function getAttendancePolicy(organizationId: string) {
@@ -753,13 +763,20 @@ export async function finalizeAbsentRecords(organizationId: string, sessionId: s
       ),
     )
 
-  const sessionDateStr = session.startedAt
-    ? session.startedAt.toISOString().split('T')[0]
-    : session.createdAt.toISOString().split('T')[0]
+  const refDate = session.startedAt ?? session.createdAt
+  const sessionDateUtc = refDate.toISOString().split('T')[0]
+  const sessionDateVn = new Date(refDate.getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
 
   const excusedStudentIds = new Set(
     approvedLeaves
-      .filter((lr) => lr.sessionId === sessionId || lr.date.includes(sessionDateStr) || sessionDateStr.includes(lr.date))
+      .filter(
+        (lr) =>
+          lr.sessionId === sessionId ||
+          lr.date.includes(sessionDateVn) ||
+          lr.date.includes(sessionDateUtc) ||
+          sessionDateVn.includes(lr.date) ||
+          sessionDateUtc.includes(lr.date),
+      )
       .map((lr) => lr.studentId),
   )
 
@@ -1187,18 +1204,32 @@ export async function listRecords(auth: AuthContext, studentId?: string) {
   }
 
   const rows = await db()
-    .select()
+    .select({
+      record: attendanceRecords,
+      session: attendanceSessions,
+      section: courseSections,
+      course: courses,
+    })
     .from(attendanceRecords)
+    .leftJoin(attendanceSessions, eq(attendanceRecords.sessionId, attendanceSessions.id))
+    .leftJoin(courseSections, eq(attendanceSessions.sectionId, courseSections.id))
+    .leftJoin(courses, eq(attendanceSessions.courseId, courses.id))
     .where(and(...conditions))
     .orderBy(desc(attendanceRecords.createdAt))
 
-  return rows.map((row) => ({
+  return rows.map(({ record: row, session, section, course }) => ({
     id: row.id,
     sessionId: row.sessionId,
+    sectionId: session?.sectionId ?? undefined,
+    courseId: session?.courseId ?? course?.id ?? undefined,
+    courseCode: course?.code ?? undefined,
+    courseName: course?.name ?? undefined,
+    room: section?.room ?? undefined,
     studentId: row.studentId,
     status: row.status as AttendanceStatus,
     confidence: row.verificationScore,
     verifiedAt: row.verifiedAt?.toISOString(),
+    createdAt: row.createdAt?.toISOString(),
     device: row.device ?? '',
     flaggedReason: row.flaggedReason ?? undefined,
   }))
@@ -1207,6 +1238,7 @@ export async function listRecords(auth: AuthContext, studentId?: string) {
 export type ReportRecordRow = {
   studentName: string
   studentEmail: string
+  courseId: string
   courseCode: string
   courseName: string
   room: string
@@ -1246,6 +1278,7 @@ export async function listReportRecords(auth: AuthContext, courseId?: string): P
   return rows.map(({ record, student, section, course }) => ({
     studentName: student.name,
     studentEmail: student.email,
+    courseId: course.id,
     courseCode: course.code,
     courseName: course.name,
     room: section.room,
@@ -1292,8 +1325,15 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
   const row = rows[0]
   if (!row) return null
 
-  // 3-minute attendance window enforcement
-  const ATTENDANCE_WINDOW_MS = 3 * 60 * 1000
+  // Dynamic attendance window enforcement (3m default, or lateAfterMinutes + 5m when configured > 3m)
+  const policyRows = await db()
+    .select({ lateAfterMinutes: attendancePolicies.lateAfterMinutes })
+    .from(attendancePolicies)
+    .where(eq(attendancePolicies.organizationId, auth.organizationId))
+    .limit(1)
+  const configuredLate = policyRows[0]?.lateAfterMinutes
+  const windowMinutes = configuredLate && configuredLate > 3 ? configuredLate + 5 : 3
+  const ATTENDANCE_WINDOW_MS = windowMinutes * 60 * 1000
   const sessionStartTime = row.session.startedAt ? new Date(row.session.startedAt).getTime() : new Date(row.session.createdAt).getTime()
   const elapsedMs = Date.now() - sessionStartTime
 
@@ -1415,7 +1455,7 @@ export async function getLiveSessionDetails(auth: AuthContext, specificSessionId
     challengeExpiresAt,
     startedAt: row.session.startedAt ? row.session.startedAt.toISOString() : row.session.createdAt.toISOString(),
     remainingSeconds,
-    durationSeconds: 180,
+    durationSeconds: windowMinutes * 60,
     records: finalRecords,
   }
 }
@@ -1774,18 +1814,14 @@ export async function removeStudentFromSection(
     return { ok: false, message: 'Forbidden: You can only manage enrollment for courses you teach.' }
   }
 
-  const courseSectionIds = await db()
-    .select({ id: courseSections.id })
-    .from(courseSections)
-    .where(and(eq(courseSections.courseId, sec[0].courseId), eq(courseSections.organizationId, auth.organizationId)))
-
-  // A roster belongs to the course, so removing a student from one section
-  // removes that student from every scheduled section of the same course.
+  // Each section (e.g., Theory vs Computer Lab 1 / Lab 2) maintains its own
+  // independent student roster. Removing a student only unenrolls them from
+  // the specified section.
   await db()
     .delete(classEnrollments)
     .where(
       and(
-        inArray(classEnrollments.sectionId, courseSectionIds.map((section) => section.id)),
+        eq(classEnrollments.sectionId, sectionId),
         eq(classEnrollments.studentId, studentId),
         eq(classEnrollments.organizationId, auth.organizationId),
       ),
@@ -2043,6 +2079,16 @@ export async function getOrganizationMetrics(auth: AuthContext, cachedSuspicious
     )
   }
 
+  const liveConditions = [
+    eq(attendanceSessions.organizationId, auth.organizationId),
+    eq(attendanceSessions.status, 'active'),
+  ]
+  if (auth.role === 'teacher') {
+    liveConditions.push(
+      or(eq(attendanceSessions.teacherId, auth.userId), eq(courses.teacherId, auth.userId))!,
+    )
+  }
+
   const [studentRows, teacherRows, liveRows, todaySessions, suspiciousCount] = await Promise.all([
     db()
       .select({ id: organizationMemberships.id })
@@ -2055,7 +2101,8 @@ export async function getOrganizationMetrics(auth: AuthContext, cachedSuspicious
     db()
       .select({ id: attendanceSessions.id })
       .from(attendanceSessions)
-      .where(and(eq(attendanceSessions.organizationId, auth.organizationId), eq(attendanceSessions.status, 'active'))),
+      .innerJoin(courses, eq(attendanceSessions.courseId, courses.id))
+      .where(and(...liveConditions)),
     db()
       .select({ id: attendanceSessions.id, sectionId: attendanceSessions.sectionId })
       .from(attendanceSessions)
@@ -2716,6 +2763,7 @@ export type CourseAttendanceStudentSummary = {
   unexcusedCount: number
   totalConducted: number
   attendanceRate: number
+  attendanceScore10: number
   warningStatus: AttendanceWarningStatus
   examEligibility: string
 }
@@ -2853,6 +2901,11 @@ export async function getCourseAttendanceSummary(
       }
     }
 
+    const attendanceScore10 =
+      warningStatus === 'disqualified'
+        ? 0
+        : Math.max(0, Math.round((10 - unexcusedCount * 2 - lateCount * 0.5) * 10) / 10)
+
     studentSummaryList.push({
       studentId: student.id,
       studentName: student.name,
@@ -2865,6 +2918,7 @@ export async function getCourseAttendanceSummary(
       unexcusedCount,
       totalConducted,
       attendanceRate: rate,
+      attendanceScore10,
       warningStatus,
       examEligibility,
     })

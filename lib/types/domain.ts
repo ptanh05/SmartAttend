@@ -29,7 +29,22 @@ export type ClassSession = {
   acousticProof?: { sessionId: string; sequence: number; timestamp: number; signature: string }
   enrolledCount?: number
 }
-export type AttendanceRecord = { id: string; sessionId: string; studentId: string; status: AttendanceStatus; confidence: number; verifiedAt?: string; device: string; flaggedReason?: string }
+export type AttendanceRecord = {
+  id: string
+  sessionId: string
+  sectionId?: string
+  courseId?: string
+  courseCode?: string
+  courseName?: string
+  room?: string
+  studentId: string
+  status: AttendanceStatus
+  confidence: number
+  verifiedAt?: string
+  createdAt?: string
+  device: string
+  flaggedReason?: string
+}
 export type Notification = { id: string; title: string; body: string; read: boolean; createdAt: string }
 export type AuditEvent = { id: string; actor: string; action: string; target: string; createdAt: string; severity: 'info' | 'warning' }
 export type LeaveStatus = 'pending' | 'approved' | 'rejected'

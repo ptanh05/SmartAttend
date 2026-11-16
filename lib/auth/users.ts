@@ -2,13 +2,16 @@ import { and, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
 import {
+  auditLogs,
   authSessions,
   classEnrollments,
   courses,
   courseSections,
+  devices,
   externalAccounts,
   organizationMemberships,
   organizations,
+  userPasskeys,
   users,
 } from '@/lib/db/schema'
 import { resolveMembershipForLogin, type AuthContext } from '@/lib/auth/session'
@@ -811,5 +814,81 @@ export async function adminResetStudentPassword(auth: AuthContext, studentId: st
     name: student.name,
     defaultPassword,
     message: `Đã đặt lại mật khẩu cho sinh viên ${student.name} về mặc định (${defaultPassword}).`,
+  }
+}
+
+export async function adminResetStudentDevices(auth: AuthContext, studentId: string) {
+  if (auth.role !== 'admin' && auth.role !== 'teacher') {
+    return { ok: false as const, message: 'Permission denied.' }
+  }
+
+  const rows = await db()
+    .select({
+      membershipId: organizationMemberships.id,
+      userId: users.id,
+      studentCode: organizationMemberships.studentCode,
+      name: users.name,
+    })
+    .from(organizationMemberships)
+    .innerJoin(users, eq(organizationMemberships.userId, users.id))
+    .where(
+      and(
+        eq(organizationMemberships.organizationId, auth.organizationId),
+        eq(organizationMemberships.role, 'student'),
+        eq(users.id, studentId),
+      ),
+    )
+
+  const student = rows[0]
+  if (!student) {
+    return { ok: false as const, message: 'Không tìm thấy sinh viên trong tổ chức của bạn.' }
+  }
+
+  if (auth.role === 'teacher') {
+    const allowed = await db()
+      .select({ studentId: classEnrollments.studentId })
+      .from(classEnrollments)
+      .innerJoin(courseSections, eq(classEnrollments.sectionId, courseSections.id))
+      .innerJoin(courses, eq(courseSections.courseId, courses.id))
+      .where(
+        and(
+          eq(classEnrollments.organizationId, auth.organizationId),
+          eq(classEnrollments.studentId, student.userId),
+          eq(courses.teacherId, auth.userId),
+        ),
+      )
+      .limit(1)
+
+    if (!allowed[0]) {
+      return {
+        ok: false as const,
+        message: 'Bạn chỉ có thể gỡ liên kết thiết bị cho sinh viên thuộc các lớp mình phụ trách.',
+      }
+    }
+  }
+
+  await db()
+    .delete(devices)
+    .where(and(eq(devices.organizationId, auth.organizationId), eq(devices.studentId, student.userId)))
+
+  await db()
+    .delete(userPasskeys)
+    .where(eq(userPasskeys.userId, student.userId))
+
+  await db().insert(auditLogs).values({
+    id: nanoid(),
+    organizationId: auth.organizationId,
+    actorId: auth.userId,
+    actorName: auth.name,
+    action: `Reset thiết bị tin cậy & Passkey cho sinh viên ${student.name} (${student.studentCode ?? student.userId})`,
+    target: student.userId,
+    severity: 'warning',
+  }).catch(() => {})
+
+  return {
+    ok: true as const,
+    studentCode: student.studentCode ?? '',
+    name: student.name,
+    message: `Đã gỡ toàn bộ thiết bị cũ và Passkey của sinh viên ${student.name}. Sinh viên có thể dùng điện thoại mới để điểm danh.`,
   }
 }

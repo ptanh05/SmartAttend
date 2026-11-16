@@ -124,6 +124,17 @@ export const api = {
       body: JSON.stringify({ studentId }),
     })
   },
+  resetStudentDevices(studentId: string) {
+    return request<{
+      ok: boolean
+      studentCode?: string
+      name?: string
+      message?: string
+    }>('/api/users/reset-student-devices', {
+      method: 'POST',
+      body: JSON.stringify({ studentId }),
+    })
+  },
   importStudents(csv: string, courseId?: string) {
     return request<{
       ok: boolean
@@ -204,6 +215,7 @@ export const api = {
         unexcusedCount: number
         totalConducted: number
         attendanceRate: number
+        attendanceScore10?: number
         warningStatus: 'good' | 'warning' | 'disqualified'
         examEligibility: string
       }[]
@@ -462,6 +474,7 @@ export type LiveSession = {
   records: {
     id: string
     studentName: string
+    studentCode?: string
     studentId: string
     status: string
     confidence: number

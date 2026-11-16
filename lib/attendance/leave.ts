@@ -231,15 +231,22 @@ export async function updateLeaveRequestStatus(
         )
         .orderBy(desc(attendanceSessions.createdAt))
 
+      const toVnDateStr = (d: Date) => new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split('T')[0]
       const reqDateStr = row.req.date.trim()
       const matchingDateSession = courseSessions.find((s) => {
-        const createdDate = s.createdAt.toISOString().split('T')[0]
-        const startedDate = s.startedAt ? s.startedAt.toISOString().split('T')[0] : null
+        const createdUtc = s.createdAt.toISOString().split('T')[0]
+        const createdVn = toVnDateStr(s.createdAt)
+        const startedUtc = s.startedAt ? s.startedAt.toISOString().split('T')[0] : null
+        const startedVn = s.startedAt ? toVnDateStr(s.startedAt) : null
         return (
-          createdDate === reqDateStr ||
-          startedDate === reqDateStr ||
-          reqDateStr.includes(createdDate) ||
-          (startedDate ? reqDateStr.includes(startedDate) : false)
+          createdVn === reqDateStr ||
+          createdUtc === reqDateStr ||
+          startedVn === reqDateStr ||
+          startedUtc === reqDateStr ||
+          reqDateStr.includes(createdVn) ||
+          reqDateStr.includes(createdUtc) ||
+          (startedVn ? reqDateStr.includes(startedVn) : false) ||
+          (startedUtc ? reqDateStr.includes(startedUtc) : false)
         )
       })
 

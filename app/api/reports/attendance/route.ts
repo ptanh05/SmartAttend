@@ -73,45 +73,57 @@ export async function GET(request: Request) {
       })
     }
 
-    const byStudent = new Map<string, { name: string; email: string; items: Array<{ status: string }> }>()
+    const byStudentCourse = new Map<string, { name: string; email: string; course: string; items: Array<{ status: string }> }>()
     for (const record of records) {
-      const key = record.studentEmail || record.studentName
-      const existing = byStudent.get(key)
+      const courseLabel = `${record.courseCode} · ${record.courseName}`
+      const key = `${record.studentEmail || record.studentName}::${record.courseCode}`
+      const existing = byStudentCourse.get(key)
       if (existing) {
         existing.items.push({ status: record.status })
       } else {
-        byStudent.set(key, { name: record.studentName, email: record.studentEmail, items: [{ status: record.status }] })
+        byStudentCourse.set(key, {
+          name: record.studentName,
+          email: record.studentEmail,
+          course: courseLabel,
+          items: [{ status: record.status }],
+        })
       }
     }
 
     const columns = [
       { header: 'Student', key: 'name' },
       { header: 'Email', key: 'email' },
+      { header: 'Course', key: 'course' },
       { header: 'Present', key: 'present' },
       { header: 'Late', key: 'late' },
       { header: 'Absent (Unexcused)', key: 'absent' },
       { header: 'Excused', key: 'excused' },
       { header: 'Attendance rate (%)', key: 'rate' },
+      { header: 'Attendance Score (10)', key: 'score10' },
       { header: 'Exam Eligibility', key: 'eligibility' },
     ]
 
-    const rows = [...byStudent.values()].map((student) => {
+    const rows = [...byStudentCourse.values()].map((student) => {
       const summary = attendanceSummary(student.items)
       const unexcused = summary.absent ?? 0
+      const late = summary.late ?? 0
       const total = student.items.length
       const rate = attendanceRate(student.items)
       const isDisqualified = unexcused >= 3 || (total >= 5 && unexcused / total > 0.2)
       const isWarning = !isDisqualified && (unexcused === 2 || (total >= 5 && unexcused / total >= 0.15))
       const eligibility = isDisqualified ? 'CẤM THI' : isWarning ? 'NGUY CƠ CẤM THI' : 'ĐỦ ĐIỀU KIỆN'
+      const score10 = isDisqualified ? 0 : Math.max(0, Math.round((10 - unexcused * 2 - late * 0.5) * 10) / 10)
 
       return {
         name: student.name,
         email: student.email,
+        course: student.course,
         present: summary.present ?? 0,
-        late: summary.late ?? 0,
+        late,
         absent: unexcused,
         excused: summary.excused ?? 0,
         rate,
+        score10,
         eligibility,
       }
     })

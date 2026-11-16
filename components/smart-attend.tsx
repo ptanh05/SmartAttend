@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle, ArrowLeft, BarChart3, Bell, BookOpen, Building2, Calendar, CalendarClock, CalendarDays, Camera, CameraOff, Check, CheckCircle2, ChevronDown, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock, Cookie, Copy, Download, Edit3, Eye, FileCheck, FileCheck2, FileSpreadsheet, FileText, Fingerprint, FlaskConical, Globe, Image as ImageIcon, Info, KeyRound, Layers, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
+  ClipboardCheck, Clock, Cookie, Copy, Download, Edit3, Eye, FileCheck, FileCheck2, FileSpreadsheet, FileText, Fingerprint, FlaskConical, Globe, GraduationCap, Image as ImageIcon, Info, KeyRound, Layers, Lock, LockKeyhole, LogOut, Maximize2, Menu, Minimize2, Moon,
   PanelLeftClose, PanelLeftOpen, Play, Plus, Printer, RotateCcw, RotateCw, ScanLine, Search, Send, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, UserPlus, UserRound, Users, Volume2, Waves, Wifi, X, Zap
 } from 'lucide-react'
 import {
@@ -471,8 +471,125 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   if (page === 'join') {
     const scheduledSessions = sessions.filter((session) => session.status !== 'live')
     const courseForSession = (session: ClassSession) => courses.find((course) => course.id === session.courseId)
+    const nextSession = scheduledSessions[0]
+    const nextCourse = nextSession ? courseForSession(nextSession) : null
+
+    if (liveSessions.length === 0) {
+      return (
+        <div className="mx-auto flex max-w-6xl flex-col gap-6">
+          <SectionHeader
+            eyebrow={t('student.verification')}
+            title={t('student.joinTitle')}
+            detail={t('student.joinDetail')}
+            action={
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+                <span className="size-2 animate-pulse rounded-full bg-amber-500" />
+                {t('student.waitingForLive')}
+              </span>
+            }
+          />
+
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 p-6 text-white shadow-xl shadow-blue-900/15 sm:p-8">
+            <div className="absolute -right-20 -top-24 size-72 rounded-full bg-white/10 blur-3xl" />
+            <div className="absolute -bottom-24 left-1/3 size-56 rounded-full bg-cyan-300/10 blur-3xl" />
+            <div className="relative grid gap-7 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
+              <div>
+                <div className="mb-5 grid size-14 place-items-center rounded-2xl border border-white/25 bg-white/15 backdrop-blur-sm">
+                  <Wifi className="size-7" />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-100">SmartAttend Live</p>
+                <h2 className="mt-2 text-2xl font-bold sm:text-3xl">{t('student.noLiveClass')}</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-blue-100">{t('student.waitingLiveDetail')}</p>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Button onClick={() => refresh()} className="bg-white text-blue-700 hover:bg-blue-50">
+                    <RotateCw className="size-4" /> {t('student.refreshSessions')}
+                  </Button>
+                  <Button variant="ghost" onClick={() => go('courses')} className="border border-white/25 text-white hover:bg-white/10 hover:text-white">
+                    <CalendarDays className="size-4" /> {t('student.viewSchedule')}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-md">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-blue-100">{t('student.nextClass')}</p>
+                  <CalendarClock className="size-5 text-blue-100" />
+                </div>
+                {nextSession ? (
+                  <div className="mt-4">
+                    <p className="text-xl font-bold">{nextCourse?.code ?? nextSession.courseCode} · {nextCourse?.name ?? nextSession.courseName}</p>
+                    <div className="mt-4 space-y-2 text-sm text-blue-50">
+                      <p className="flex items-center gap-2"><Clock className="size-4" /> {nextSession.startsAt} – {nextSession.endsAt}</p>
+                      <p className="flex items-center gap-2"><Building2 className="size-4" /> {nextSession.room || '—'}</p>
+                      <p className="flex items-center gap-2"><Calendar className="size-4" /> {formatDayOfWeek(t, nextSession.dayOfWeek)}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-blue-100">{t('student.noScheduledClasses')}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Metric label={t('student.enrolledCourses')} value={String(courses.length)} detail={t('student.currentSemester')} icon={BookOpen} />
+            <Metric label={t('student.upcomingSessions')} value={String(scheduledSessions.length)} detail={t('student.waitingTeacher')} icon={CalendarClock} />
+            <Metric label={t('student.attendanceRate')} value={`${rate}%`} detail={t('student.fromRecords')} icon={ClipboardCheck} tone="success" />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
+            <Card title={t('student.yourClassSchedule')} description={t('student.yourClassScheduleDetail')}>
+              {scheduledSessions.length === 0 ? (
+                <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">{t('student.noScheduledClasses')}</div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {scheduledSessions.slice(0, 6).map((session) => {
+                    const course = courseForSession(session)
+                    return (
+                      <div key={session.id} className="group rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900/50 dark:hover:border-blue-800 dark:hover:bg-blue-950/30">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><BookOpen className="size-5" /></div>
+                          <span className="rounded-full bg-slate-200/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{t('student.upcoming')}</span>
+                        </div>
+                        <p className="mt-4 font-bold text-slate-900 dark:text-white">{course?.code ?? session.courseCode} · {course?.name ?? session.courseName}</p>
+                        <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                          <p className="flex items-center gap-2"><Clock className="size-3.5" /> {session.startsAt} – {session.endsAt}</p>
+                          <p className="flex items-center gap-2"><Building2 className="size-3.5" /> {session.room || '—'}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+
+            <Card title={t('student.howAttendanceWorks')} description={t('student.howAttendanceWorksDetail')}>
+              <div className="space-y-4">
+                {[
+                  { icon: Bell, title: t('student.attendanceStepWait'), detail: t('student.attendanceStepWaitDetail') },
+                  { icon: Waves, title: t('student.attendanceStepPresence'), detail: t('student.attendanceStepPresenceDetail') },
+                  { icon: CheckCircle2, title: t('student.attendanceStepComplete'), detail: t('student.attendanceStepCompleteDetail') },
+                ].map((step, index) => (
+                  <div key={step.title} className="flex gap-3">
+                    <div className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                      <step.icon className="size-4" />
+                      <span className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-blue-600 text-[10px] font-bold text-white">{index + 1}</span>
+                    </div>
+                    <div><p className="text-sm font-semibold">{step.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{step.detail}</p></div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0" /> {t('student.attendanceSecureNote')}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-5xl">
         <SectionHeader
           eyebrow={t('student.verification')}
           title={t('student.joinTitle')}
@@ -1253,16 +1370,23 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
           {courses.map((course) => {
             const courseSectionsList = sessions.filter((s) => s.courseId === course.id)
             const courseSessionIds = new Set(courseSectionsList.map((s) => s.id))
-            const courseRecords = records.filter((r) => courseSessionIds.has(r.sessionId))
+            const courseRecords = records.filter((r) => r.courseId === course.id || courseSessionIds.has(r.sessionId))
             const unexcusedAbsences = courseRecords.filter((r) => r.status === 'absent').length
+            const lateRecordsCount = courseRecords.filter((r) => r.status === 'late').length
             const isDisqualified = unexcusedAbsences >= 3
             const isWarning = unexcusedAbsences === 2
+            const score10 = isDisqualified ? 0 : Math.max(0, Math.round((10 - unexcusedAbsences * 2 - lateRecordsCount * 0.5) * 10) / 10)
             return (
               <Card key={course.id} title={`${course.code} · ${course.name}`} description={`${course.department}`}>
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">{t('common.attendance')}</span>
-                    <strong>{rate}%</strong>
+                    <div className="flex items-center gap-2">
+                      <strong>{rate}%</strong>
+                      <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        Điểm CC: {score10.toFixed(1)} / 10
+                      </span>
+                    </div>
                   </div>
                   <div className="h-2 rounded-full bg-muted">
                     <div className="h-2 rounded-full bg-primary" style={{ width: `${rate}%` }} />
@@ -1364,24 +1488,104 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   }
 
   if (page === 'profile') {
+    const lateCount = records.filter((record) => record.status === 'late').length
+    const absentCount = records.filter((record) => record.status === 'absent').length
+    const excusedCount = records.filter((record) => record.status === 'excused').length
+    const trustedDeviceCount = devices.filter((device) => device.trusted).length
+
     return (
       <div className="flex flex-col gap-6">
         <SectionHeader eyebrow={t('student.account')} title={t('student.profileTitle')} detail={t('student.profileDetail')} />
-        <Card title={t('student.studentIdentity')}>
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-            <div className="grid size-16 place-items-center rounded-full bg-primary text-lg font-semibold text-primary-foreground">
-              {user.initials}
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold">{user.name}</h2>
-              <p className="text-sm text-muted-foreground">{user.department ?? t('roles.student')} · SmartAttend</p>
-              {user.studentCode && <p className="text-sm text-muted-foreground">{t('login.studentId')}: {user.studentCode}</p>}
+
+        <div className="overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-900/10">
+          <div className="relative p-6 sm:p-8">
+            <div className="absolute -right-12 -top-16 size-48 rounded-full bg-white/10 blur-2xl" />
+            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="grid size-20 shrink-0 place-items-center rounded-2xl border border-white/30 bg-white/15 text-2xl font-bold shadow-inner backdrop-blur-sm">
+                  {user.initials}
+                </div>
+                <div>
+                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-50">
+                    <CheckCircle2 className="size-3.5" /> {t('student.activeStudent')}
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-tight">{user.name}</h2>
+                  <p className="mt-1 text-sm text-blue-100">{user.studentCode} · {user.department || t('student.noDepartment')}</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-blue-100"><Globe className="size-3.5" /> {user.email}</p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm backdrop-blur-sm">
+                <p className="text-xs uppercase tracking-wider text-blue-100">{t('student.accountStatus')}</p>
+                <p className="mt-1 flex items-center gap-2 font-semibold"><ShieldCheck className="size-4" /> {t('student.active')}</p>
+              </div>
             </div>
           </div>
-        </Card>
-        <Card title={t('student.accountSecurity')}>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setShowChangePassword(true)}><LockKeyhole />{t('student.changePassword')}</Button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label={t('student.enrolledCourses')} value={String(courses.length)} detail={t('student.currentSemester')} icon={BookOpen} />
+          <Metric label={t('student.attendanceRate')} value={`${rate}%`} detail={t('student.fromRecords')} icon={BarChart3} tone="success" />
+          <Metric label={t('student.sessionsAttended')} value={String(presentCount)} detail={t('student.presentAndLate')} icon={ClipboardCheck} />
+          <Metric label={t('student.registeredDevices')} value={String(devices.length)} detail={t('student.trustedDevicesCount', { count: trustedDeviceCount })} icon={Smartphone} />
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+          <Card title={t('student.academicInfo')} description={t('student.academicInfoDetail')}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: t('student.fullName'), value: user.name, icon: UserRound },
+                { label: t('student.studentCode'), value: user.studentCode || '—', icon: GraduationCap },
+                { label: t('student.email'), value: user.email, icon: Globe },
+                { label: t('student.department'), value: user.department || t('student.noDepartment'), icon: Building2 },
+              ].map((item) => (
+                <div key={item.label} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                  <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <item.icon className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                    <p className="mt-1 break-words text-sm font-semibold text-slate-900 dark:text-white">{item.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card title={t('student.attendancePerformance')} description={t('student.attendancePerformanceDetail')}>
+            <div className="space-y-3">
+              {[
+                { label: t('status.present'), value: records.filter((record) => record.status === 'present').length, color: 'bg-emerald-500' },
+                { label: t('status.late'), value: lateCount, color: 'bg-amber-500' },
+                { label: t('status.absent'), value: absentCount, color: 'bg-rose-500' },
+                { label: t('status.excused'), value: excusedCount, color: 'bg-blue-500' },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5 text-sm font-medium"><span className={`size-2.5 rounded-full ${item.color}`} />{item.label}</div>
+                  <span className="text-lg font-bold">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        <Card title={t('student.accountSecurity')} description={t('student.securityDescription')}>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+              <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"><LockKeyhole className="size-5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{t('student.passwordProtection')}</p>
+                <p className="text-sm text-muted-foreground">{t('student.passwordProtectionDetail')}</p>
+              </div>
+              <Button variant="outline" onClick={() => setShowChangePassword(true)}>{t('student.changePassword')}</Button>
+            </div>
+            <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+              <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><Fingerprint className="size-5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{t('student.deviceSecurity')}</p>
+                <p className="text-sm text-muted-foreground">{t('student.trustedDevicesCount', { count: trustedDeviceCount })}</p>
+              </div>
+              <Button variant="outline" onClick={() => go('devices')}>{t('student.manage')}</Button>
+            </div>
           </div>
           {showChangePassword && (
             <div className="mt-5 border-t pt-5">
@@ -2144,13 +2348,13 @@ function TeacherImportPanel({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
             <tr>
               <td className="px-3.5 py-1.5 text-indigo-600 dark:text-indigo-400 font-semibold">gv001@{expectedDomain}</td>
-              <td className="px-3.5 py-1.5 font-sans">Nguyen Van A</td>
-              <td className="px-3.5 py-1.5 font-sans">Computer Science</td>
+              <td className="px-3.5 py-1.5 font-sans">TS. Nguyễn Văn An</td>
+              <td className="px-3.5 py-1.5 font-sans">Bộ môn Công nghệ phần mềm</td>
             </tr>
             <tr>
               <td className="px-3.5 py-1.5 text-indigo-600 dark:text-indigo-400 font-semibold">gv002@{expectedDomain}</td>
-              <td className="px-3.5 py-1.5 font-sans">Tran Thi B</td>
-              <td className="px-3.5 py-1.5 font-sans">Civil Engineering</td>
+              <td className="px-3.5 py-1.5 font-sans">ThS. Trần Thị Bình</td>
+              <td className="px-3.5 py-1.5 font-sans">Bộ môn Hệ thống thông tin</td>
             </tr>
           </tbody>
         </table>
@@ -2623,7 +2827,7 @@ function ClassRosterModal({
 
   const downloadSectionTemplate = () => {
     const template =
-      '\uFEFFstudentId,name,department\n20210001,Nguyen Van A,Computer Science\n20210002,Tran Thi B,Computer Science'
+      '\uFEFFstudentId,name,department\n22120001,Nguyễn Văn An,CNTT1-K64\n22120002,Trần Thị Bình,KTPM-K64'
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -2966,14 +3170,13 @@ function DepartmentModal({
   const [error, setError] = useState('')
 
   const suggestions = [
+    'Bộ môn Công nghệ phần mềm',
+    'Bộ môn Hệ thống thông tin',
+    'Bộ môn Khoa học máy tính',
+    'Bộ môn Mạng & An toàn thông tin',
+    'Bộ môn Tin học cơ sở',
     'Khoa Công nghệ thông tin',
-    'Khoa Điện - Điện tử',
-    'Khoa Công trình',
-    'Khoa Cơ khí',
-    'Khoa Vận tải - Kinh tế',
-    'Khoa Quản trị kinh doanh',
-    'Khoa Khoa học cơ bản',
-    'Bộ môn Giáo dục thể chất & QP',
+    'Trung tâm Thực hành CNTT',
   ]
 
   const submit = async (e: React.FormEvent) => {
@@ -3904,6 +4107,7 @@ function PrintableAttendanceSheetModal({
   summary,
   loading,
   user,
+  teacherName,
   filter,
   onFilterChange,
   onClose,
@@ -3912,11 +4116,13 @@ function PrintableAttendanceSheetModal({
   summary: Awaited<ReturnType<typeof api.courseAttendanceSummary>> | null
   loading: boolean
   user: AppUser
+  teacherName?: string
   filter: 'all' | 'warning' | 'disqualified'
   onFilterChange: (f: 'all' | 'warning' | 'disqualified') => void
   onClose: () => void
 }) {
   const { t } = useI18n()
+  const resolvedTeacherName = teacherName || user.name
   const students = summary?.students || []
   const filteredStudents = students.filter((s) => {
     if (filter === 'all') return true
@@ -3966,8 +4172,8 @@ function PrintableAttendanceSheetModal({
         <div className="grid grid-cols-2 gap-4 border-b pb-4 text-center">
           <div>
             <p className="text-xs uppercase tracking-wider font-semibold text-slate-700">TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI</p>
-            <p className="text-xs font-bold uppercase text-slate-900">PHÒNG ĐÀO TẠO ĐẠI HỌC</p>
-            <p className="text-[11px] text-slate-500 italic mt-0.5">Khoa/Bộ môn: {course.department || 'Công nghệ Thông tin'}</p>
+            <p className="text-xs font-bold uppercase text-slate-900">KHOA CÔNG NGHỆ THÔNG TIN</p>
+            <p className="text-[11px] text-slate-500 italic mt-0.5">Bộ môn: {course.department || 'Công nghệ Phần mềm'}</p>
           </div>
           <div>
             <p className="text-xs uppercase font-bold text-slate-900">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
@@ -3989,7 +4195,7 @@ function PrintableAttendanceSheetModal({
         {/* Course metadata */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200 mb-5">
           <p><strong>Học phần:</strong> {course.name} ({course.code})</p>
-          <p><strong>Giảng viên phụ trách:</strong> {user.name}</p>
+          <p><strong>Giảng viên phụ trách:</strong> {resolvedTeacherName}</p>
           <p><strong>Tổng số buổi giảng dạy:</strong> {totalSessions} buổi</p>
           <p><strong>Quy chế cấm thi:</strong> Nghỉ quá 20% tổng số buổi (≥ 3 buổi) sẽ bị cấm thi kết thúc HP.</p>
           <p className="sm:col-span-2 text-[11px] text-slate-500 italic border-t border-slate-200 pt-1.5 mt-1">
@@ -4014,13 +4220,20 @@ function PrintableAttendanceSheetModal({
                   <th className="border border-slate-300 py-2 px-1 w-12 text-amber-700" title="Muộn">Muộn</th>
                   <th className="border border-slate-300 py-2 px-1 w-12 text-blue-700" title="Vắng có phép">Vắng CP</th>
                   <th className="border border-slate-300 py-2 px-1 w-12 text-rose-700 font-extrabold" title="Vắng không phép">Vắng KP</th>
-                  <th className="border border-slate-300 py-2 px-1 w-14">Tỷ lệ vắng</th>
+                  <th className="border border-slate-300 py-2 px-1 w-14">Tỷ lệ CC</th>
+                  <th className="border border-slate-300 py-2 px-1 w-14 text-indigo-700" title="Điểm chuyên cần thang 10">Điểm CC</th>
                   <th className="border border-slate-300 py-2 px-3 w-28">Kết luận</th>
                   <th className="border border-slate-300 py-2 px-2 w-20">Ký tên</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredStudents.map((st, idx) => (
+                {filteredStudents.map((st, idx) => {
+                  const score10 = st.attendanceScore10 !== undefined
+                    ? st.attendanceScore10
+                    : st.warningStatus === 'disqualified'
+                      ? 0
+                      : Math.max(0, Math.round((10 - st.unexcusedCount * 2 - st.lateCount * 0.5) * 10) / 10)
+                  return (
                   <tr key={st.studentId} className={`text-center ${idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}`}>
                     <td className="border border-slate-300 py-1.5 px-1 text-slate-500">{idx + 1}</td>
                     <td className="border border-slate-300 py-1.5 px-2 font-mono font-medium">{st.studentCode || '—'}</td>
@@ -4034,6 +4247,7 @@ function PrintableAttendanceSheetModal({
                       {st.unexcusedCount}
                     </td>
                     <td className="border border-slate-300 py-1.5 px-1 font-medium">{st.attendanceRate}%</td>
+                    <td className="border border-slate-300 py-1.5 px-1 font-bold text-indigo-700">{score10.toFixed(1)}</td>
                     <td className="border border-slate-300 py-1.5 px-2 font-bold text-[10px]">
                       {st.warningStatus === 'disqualified' ? (
                         <span className="text-rose-700 uppercase">CẤM THI</span>
@@ -4045,10 +4259,11 @@ function PrintableAttendanceSheetModal({
                     </td>
                     <td className="border border-slate-300 py-1.5 px-1 text-slate-400 text-[10px]"></td>
                   </tr>
-                ))}
+                  )
+                })}
                 {filteredStudents.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="border border-slate-300 py-6 text-center text-xs text-slate-500">
+                    <td colSpan={13} className="border border-slate-300 py-6 text-center text-xs text-slate-500">
                       Không có sinh viên nào trong danh mục này.
                     </td>
                   </tr>
@@ -4071,7 +4286,7 @@ function PrintableAttendanceSheetModal({
             <p className="font-bold uppercase mt-1 text-slate-800">GIẢNG VIÊN PHỤ TRÁCH HỌC PHẦN</p>
             <p className="text-[11px] text-slate-400 italic mt-0.5">(Ký và ghi rõ họ tên)</p>
             <div className="h-16" />
-            <p className="font-bold text-slate-900">{user.name}</p>
+            <p className="font-bold text-slate-900">{resolvedTeacherName}</p>
           </div>
         </div>
       </div>
@@ -4422,6 +4637,46 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     }
   }
 
+  const handleResetStudentDevices = async (studentId: string, studentName: string, studentCode: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn gỡ liên kết thiết bị cũ và Passkey của sinh viên ${studentName} (${studentCode || studentId}) để sinh viên đăng nhập thiết bị mới?`)) {
+      return
+    }
+    try {
+      const res = await api.resetStudentDevices(studentId)
+      if (res.ok) {
+        setNotice(res.message || `Đã reset thiết bị tin cậy cho sinh viên ${studentName}.`)
+        await refresh()
+      } else {
+        setNotice(res.message || 'Không thể gỡ thiết bị của sinh viên.')
+      }
+    } catch {
+      setNotice('Không thể gỡ thiết bị của sinh viên lúc này.')
+    }
+  }
+
+  const [liveStatusFilter, setLiveStatusFilter] = useState<'all' | 'unmarked' | 'present' | 'late'>('all')
+  const [domainInput, setDomainInput] = useState<string | null>(null)
+  const [savingDomain, setSavingDomain] = useState(false)
+  const effectiveDomainInput = domainInput ?? organization.emailDomain ?? 'utc.edu.vn'
+
+  const handleSaveDomain = async () => {
+    setSavingDomain(true)
+    try {
+      const res = await api.updateOrganizationDomain(effectiveDomainInput.trim() || 'utc.edu.vn')
+      if (res.ok) {
+        setNotice(`Đã lưu đuôi email trường: @${res.emailDomain ?? 'utc.edu.vn'}`)
+        setDomainInput(null)
+        await refresh()
+      } else {
+        setNotice(res.message || 'Không thể lưu đuôi email trường.')
+      }
+    } catch {
+      setNotice('Không thể lưu đuôi email trường.')
+    } finally {
+      setSavingDomain(false)
+    }
+  }
+
   const [policyTtl, setPolicyTtl] = useState(data.policy?.challengeTtlSeconds ?? 30)
   const [policyLateAfter, setPolicyLateAfter] = useState(data.policy?.lateAfterMinutes ?? 10)
   const [policyRequireTrusted, setPolicyRequireTrusted] = useState(data.policy?.requireTrustedDevice ?? false)
@@ -4701,9 +4956,98 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               </Card>
             </div>
             <Card title={t('teacher.liveTable')} description={t('teacher.liveTableDetail')}>
+              {/* Real-time Roll-Call Counter Bar */}
+              {(() => {
+                const totalLive = live.records.length
+                const presentLive = live.records.filter((r) => r.status === 'present').length
+                const lateExcusedLive = live.records.filter((r) => r.status === 'late' || r.status === 'excused').length
+                const unmarkedLive = live.records.filter((r) => r.status === 'unmarked' || r.status === 'absent').length
+                const checkedInPct = totalLive > 0 ? Math.round(((presentLive + lateExcusedLive) / totalLive) * 100) : 0
+
+                return (
+                  <div className="mb-4 space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setLiveStatusFilter('all')}
+                        className={`rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                          liveStatusFilter === 'all'
+                            ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/20'
+                            : 'bg-muted/30 hover:bg-muted/60'
+                        }`}
+                      >
+                        <p className="text-[11px] font-medium text-muted-foreground">Tổng sĩ số ca học</p>
+                        <p className="text-xl font-bold text-foreground mt-0.5">{totalLive} <span className="text-xs font-normal text-muted-foreground">SV</span></p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setLiveStatusFilter('present')}
+                        className={`rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                          liveStatusFilter === 'present'
+                            ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20'
+                            : 'border-emerald-200/60 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20 hover:bg-emerald-50/60'
+                        }`}
+                      >
+                        <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">Đã có mặt (Đúng giờ)</p>
+                        <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{presentLive} <span className="text-xs font-normal">({checkedInPct}%)</span></p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setLiveStatusFilter('late')}
+                        className={`rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                          liveStatusFilter === 'late'
+                            ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20'
+                            : 'border-amber-200/60 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20 hover:bg-amber-50/60'
+                        }`}
+                      >
+                        <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">Đi muộn / Có phép</p>
+                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">{lateExcusedLive} <span className="text-xs font-normal">SV</span></p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setLiveStatusFilter('unmarked')}
+                        className={`rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                          liveStatusFilter === 'unmarked'
+                            ? 'border-rose-500 bg-rose-50/80 dark:bg-rose-950/40 ring-2 ring-rose-500/20'
+                            : 'border-rose-200/60 bg-rose-50/30 dark:border-rose-900/40 dark:bg-rose-950/20 hover:bg-rose-50/60'
+                        }`}
+                      >
+                        <p className="text-[11px] font-medium text-rose-700 dark:text-rose-300">Chưa điểm danh</p>
+                        <p className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">{unmarkedLive} <span className="text-xs font-normal">cần gọi tên</span></p>
+                      </button>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="flex items-center gap-3">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                          style={{ width: `${checkedInPct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                        Tiến độ: {presentLive + lateExcusedLive}/{totalLive} ({checkedInPct}%)
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <div className="mb-4 flex items-center gap-2 rounded-lg border px-3">
                 <Search className="size-4 text-muted-foreground" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 flex-1 bg-transparent text-sm outline-none" placeholder={t('teacher.searchStudents')} />
+                {liveStatusFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setLiveStatusFilter('all')}
+                    className="text-xs font-semibold text-primary hover:underline cursor-pointer shrink-0"
+                  >
+                    Hiện tất cả
+                  </button>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[700px] text-left text-sm">
@@ -4718,12 +5062,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {live.records.filter((row) => row.studentName.toLowerCase().includes(search.toLowerCase())).map((row) => (
+                    {live.records
+                      .filter((row) => {
+                        if (liveStatusFilter === 'unmarked' && row.status !== 'unmarked' && row.status !== 'absent') return false
+                        if (liveStatusFilter === 'present' && row.status !== 'present') return false
+                        if (liveStatusFilter === 'late' && row.status !== 'late' && row.status !== 'excused') return false
+                        const q = search.toLowerCase().trim()
+                        if (!q) return true
+                        return (
+                          row.studentName.toLowerCase().includes(q) ||
+                          (row.studentCode && row.studentCode.toLowerCase().includes(q)) ||
+                          row.studentId.toLowerCase().includes(q)
+                        )
+                      })
+                      .map((row) => (
                       <tr key={row.id}>
                         <td className="py-3 font-medium">
                           <div>
                             <p className="font-semibold text-foreground">{row.studentName}</p>
-                            {row.studentId && <p className="text-[11px] text-muted-foreground font-mono">{row.studentId}</p>}
+                            <p className="text-[11px] text-muted-foreground font-mono">
+                              {row.studentCode ? `MSSV: ${row.studentCode}` : row.studentId}
+                            </p>
                           </div>
                         </td>
                         <td className="py-3">{row.status === 'unmarked' ? '—' : (row.verifiedAt || '—')}</td>
@@ -5626,14 +5985,25 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                   </div>
                 </div>
                 {item.role === 'student' && (
-                  <Button
-                    variant="outline"
-                    className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-primary hover:border-primary cursor-pointer"
-                    onClick={() => handleResetStudent(item.id, item.name, item.studentCode)}
-                  >
-                    <KeyRound className="size-3.5" />
-                    {t('teacher.resetPassword')}
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-blue-600 hover:border-blue-600 cursor-pointer"
+                      onClick={() => handleResetStudentDevices(item.id, item.name, item.studentCode)}
+                      title="Gỡ liên kết thiết bị cũ & Passkey khi sinh viên đổi điện thoại"
+                    >
+                      <Smartphone className="size-3.5" />
+                      <span>Reset thiết bị</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs text-slate-700 dark:text-slate-200 hover:text-primary hover:border-primary cursor-pointer"
+                      onClick={() => handleResetStudent(item.id, item.name, item.studentCode)}
+                    >
+                      <KeyRound className="size-3.5" />
+                      {t('teacher.resetPassword')}
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
@@ -5648,34 +6018,57 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   if (page === 'analytics') {
     const enrolledTotal = courses.reduce((sum, c) => sum + (c.enrolled || 0), 0)
-    const presentCount = records.filter((r) => r.status === 'present').length
-    const lateCount = records.filter((r) => r.status === 'late').length
-    const absentCount = records.filter((r) => r.status === 'absent').length
-    const excusedCount = records.filter((r) => r.status === 'excused').length
 
-    // Map each session to its courseId
-    const sessionToCourseMap = new Map(sessions.map((s) => [s.id, s.courseId]))
+    // Filter records by selected time range (all, 30 days, 7 days)
+    const nowMs = new Date().getTime()
+    const cutoffMs =
+      analyticsTimeFilter === 'week'
+        ? nowMs - 7 * 24 * 60 * 60 * 1000
+        : analyticsTimeFilter === 'month'
+          ? nowMs - 30 * 24 * 60 * 60 * 1000
+          : 0
 
-    // Group records by student to evaluate attendance warnings & disqualifications
-    const studentStatsMap = new Map<string, { present: number; late: number; absent: number; excused: number; total: number; courseIds: Set<string> }>()
-    for (const r of records) {
-      const cur = studentStatsMap.get(r.studentId) || { present: 0, late: 0, absent: 0, excused: 0, total: 0, courseIds: new Set<string>() }
+    const filteredRecords = cutoffMs > 0
+      ? records.filter((r) => {
+          const tsStr = r.verifiedAt || r.createdAt
+          if (!tsStr) return true
+          const ts = new Date(tsStr).getTime()
+          return !isNaN(ts) ? ts >= cutoffMs : true
+        })
+      : records
+
+    const presentCount = filteredRecords.filter((r) => r.status === 'present').length
+    const lateCount = filteredRecords.filter((r) => r.status === 'late').length
+    const absentCount = filteredRecords.filter((r) => r.status === 'absent').length
+    const excusedCount = filteredRecords.filter((r) => r.status === 'excused').length
+
+    // Map each session or section to its courseId (fallback when record.courseId is absent)
+    const sessionToCourseMap = new Map<string, string>()
+    for (const s of sessions) {
+      sessionToCourseMap.set(s.id, s.courseId)
+      if (s.sectionId) sessionToCourseMap.set(s.sectionId, s.courseId)
+    }
+
+    // Group records per (studentId, courseId) so absences from different courses are never conflated
+    const studentCourseStatsMap = new Map<string, { studentId: string; courseId: string; present: number; late: number; absent: number; excused: number; total: number }>()
+    for (const r of filteredRecords) {
+      const cId = r.courseId || sessionToCourseMap.get(r.sessionId) || 'general'
+      const key = `${r.studentId}::${cId}`
+      const cur = studentCourseStatsMap.get(key) || { studentId: r.studentId, courseId: cId, present: 0, late: 0, absent: 0, excused: 0, total: 0 }
       if (r.status === 'present') cur.present++
       else if (r.status === 'late') cur.late++
       else if (r.status === 'absent') cur.absent++
       else if (r.status === 'excused') cur.excused++
       cur.total++
-      const cId = sessionToCourseMap.get(r.sessionId)
-      if (cId) cur.courseIds.add(cId)
-      studentStatsMap.set(r.studentId, cur)
+      studentCourseStatsMap.set(key, cur)
     }
 
-    const academicWarnings = Array.from(studentStatsMap.entries())
-      .map(([studentId, stats]) => {
-        const u = users.find((usr) => usr.id === studentId)
+    const academicWarnings = Array.from(studentCourseStatsMap.values())
+      .map((stats) => {
+        const u = users.find((usr) => usr.id === stats.studentId)
         const unexcused = stats.absent
         const total = stats.total
-        const rate = total > 0 ? Math.round(((stats.present + stats.late) / total) * 100) : 100
+        const rate = total > 0 ? Math.round(((stats.present + stats.late + stats.excused) / total) * 100) : 100
         const isDisqualified = unexcused >= 3 || (total >= 5 && unexcused / total > 0.2)
         const isWarning = !isDisqualified && (unexcused === 2 || (total >= 5 && unexcused / total >= 0.15))
 
@@ -5689,30 +6082,33 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           reason = unexcused === 2 ? 'Đã vắng không phép 2 buổi' : 'Tỷ lệ vắng tiệm cận ngưỡng 20%'
         }
 
-        const courseNames = Array.from(stats.courseIds)
-          .map((cid) => courses.find((c) => c.id === cid)?.name)
-          .filter(Boolean)
-          .join(', ')
+        const courseObj = courses.find((c) => c.id === stats.courseId)
+        const courseLabel = courseObj ? `${courseObj.code} — ${courseObj.name}` : 'Học phần chuyên ngành'
 
         return {
-          studentId,
+          key: `${stats.studentId}::${stats.courseId}`,
+          studentId: stats.studentId,
           user: u,
           stats,
           rate,
           status,
           reason,
-          courseNames: courseNames || 'Học phần chung',
+          courseNames: courseLabel,
         }
       })
       .filter((w) => w.status === 'disqualified' || w.status === 'warning')
 
-    // Timeline trend by date
+    // Timeline trend by Vietnam date (UTC+7)
     const dateTrendMap = new Map<string, { label: string; present: number; late: number; absent: number; total: number }>()
-    for (const r of records) {
-      if (!r.verifiedAt) continue
-      const dateKey = r.verifiedAt.slice(0, 10)
+    for (const r of filteredRecords) {
+      const tsStr = r.verifiedAt || r.createdAt
+      if (!tsStr) continue
+      const dt = new Date(tsStr)
+      if (isNaN(dt.getTime())) continue
+      const vnDate = new Date(dt.getTime() + 7 * 60 * 60 * 1000)
+      const dateKey = vnDate.toISOString().slice(0, 10)
       const cur = dateTrendMap.get(dateKey) || {
-        label: new Date(r.verifiedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+        label: dt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
         present: 0,
         late: 0,
         absent: 0,
@@ -5920,8 +6316,8 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 {courses.map((course) => {
                   const courseSessions = sessions.filter((s) => s.courseId === course.id)
                   const courseSessionIds = new Set(courseSessions.map((s) => s.id))
-                  const courseRecords = records.filter((r) => courseSessionIds.has(r.sessionId))
-                  const courseAttended = courseRecords.filter((r) => r.status === 'present' || r.status === 'late').length
+                  const courseRecords = filteredRecords.filter((r) => r.courseId === course.id || courseSessionIds.has(r.sessionId))
+                  const courseAttended = courseRecords.filter((r) => r.status === 'present' || r.status === 'late' || r.status === 'excused').length
                   const courseRate = courseRecords.length > 0 ? Math.round((courseAttended / courseRecords.length) * 100) : null
                   const teacherName = users.find((u) => u.id === course.teacherId)?.name || 'Chưa phân công'
 
@@ -6005,11 +6401,11 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     const teacherCourses = courses.filter((c) => c.teacherId === teacher.id)
                     const teacherEnrolled = teacherCourses.reduce((sum, c) => sum + (c.enrolled || 0), 0)
                     const teacherCourseIds = new Set(teacherCourses.map((c) => c.id))
-                    const teacherRecords = records.filter((r) => {
-                      const cId = sessionToCourseMap.get(r.sessionId)
+                    const teacherRecords = filteredRecords.filter((r) => {
+                      const cId = r.courseId || sessionToCourseMap.get(r.sessionId)
                       return cId && teacherCourseIds.has(cId)
                     })
-                    const teacherAttended = teacherRecords.filter((r) => r.status === 'present' || r.status === 'late').length
+                    const teacherAttended = teacherRecords.filter((r) => r.status === 'present' || r.status === 'late' || r.status === 'excused').length
                     const teacherRate = teacherRecords.length > 0 ? Math.round((teacherAttended / teacherRecords.length) * 100) : null
 
                     return (
@@ -6084,13 +6480,16 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <th className="pb-3 font-semibold">Học phần liên quan</th>
                     <th className="pb-3 font-semibold">Số buổi vắng</th>
                     <th className="pb-3 font-semibold">Tỷ lệ chuyên cần</th>
+                    <th className="pb-3 font-semibold">Điểm CC (10)</th>
                     <th className="pb-3 font-semibold">Tình trạng</th>
                     <th className="pb-3 font-semibold text-right">Lý do</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {academicWarnings.map((w) => (
-                    <tr key={w.studentId} className="hover:bg-muted/40 transition-colors">
+                  {academicWarnings.map((w) => {
+                    const score10 = w.status === 'disqualified' ? 0 : Math.max(0, Math.round((10 - w.stats.absent * 2 - w.stats.late * 0.5) * 10) / 10)
+                    return (
+                    <tr key={w.key} className="hover:bg-muted/40 transition-colors">
                       <td className="py-3.5 font-medium">
                         <div>
                           <span className="font-bold text-foreground text-sm">{w.user?.name || w.studentId}</span>
@@ -6105,6 +6504,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                         {w.stats.absent} / {w.stats.total} buổi
                       </td>
                       <td className="py-3.5 text-xs font-bold text-foreground">{w.rate}%</td>
+                      <td className="py-3.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">{score10.toFixed(1)} / 10</td>
                       <td className="py-3.5">
                         {w.status === 'disqualified' ? (
                           <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
@@ -6118,7 +6518,8 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       </td>
                       <td className="py-3.5 text-right text-xs text-muted-foreground">{w.reason}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -6149,7 +6550,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                     <p className="text-xs text-rose-600 dark:text-rose-400 font-medium mt-0.5">{item.reason}</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       {item.device ? `Thiết bị: ${item.device} · ` : ''}
-                      {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : ''}
+                      {item.createdAt || ''}
                     </p>
                   </div>
                   <span className="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-xs font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
@@ -6166,22 +6567,28 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   if (page === 'reports') {
     const selectedReportCourse = reportCourseFilter !== 'all' ? courses.find((c) => c.id === reportCourseFilter) : null
-    const sessionToCourse = new Map(sessions.map((s) => [s.id, s.courseId]))
+    const sessionToCourse = new Map<string, string>()
+    for (const s of sessions) {
+      sessionToCourse.set(s.id, s.courseId)
+      if (s.sectionId) sessionToCourse.set(s.sectionId, s.courseId)
+    }
 
     const previewRecords = records.filter((r) => {
-      const matchCourse = reportCourseFilter === 'all' || sessionToCourse.get(r.sessionId) === reportCourseFilter
+      const recCourseId = r.courseId || sessionToCourse.get(r.sessionId)
+      const matchCourse = reportCourseFilter === 'all' || recCourseId === reportCourseFilter
       if (!matchCourse) return false
       if (!reportSearch.trim()) return true
       const q = reportSearch.toLowerCase().trim()
       const u = users.find((usr) => usr.id === r.studentId)
-      const s = sessions.find((sec) => sec.id === r.sessionId)
-      const c = courses.find((crs) => crs.id === s?.courseId)
+      const c = courses.find((crs) => crs.id === recCourseId)
       return (
         (u?.name && u.name.toLowerCase().includes(q)) ||
         (u?.studentCode && u.studentCode.toLowerCase().includes(q)) ||
         (u?.email && u.email.toLowerCase().includes(q)) ||
         (c?.name && c.name.toLowerCase().includes(q)) ||
         (c?.code && c.code.toLowerCase().includes(q)) ||
+        (r.courseName && r.courseName.toLowerCase().includes(q)) ||
+        (r.courseCode && r.courseCode.toLowerCase().includes(q)) ||
         (r.device && r.device.toLowerCase().includes(q))
       )
     })
@@ -6472,8 +6879,15 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 <tbody className="divide-y">
                   {previewRecords.slice(0, 15).map((record) => {
                     const student = users.find((u) => u.id === record.studentId)
-                    const session = sessions.find((s) => s.id === record.sessionId)
-                    const course = courses.find((c) => c.id === session?.courseId)
+                    const session = sessions.find((s) => s.id === record.sessionId || (record.sectionId && s.sectionId === record.sectionId))
+                    const recCourseId = record.courseId || session?.courseId
+                    const course = courses.find((c) => c.id === recCourseId)
+                    const courseDisplay = course
+                      ? `${course.code} — ${course.name}`
+                      : record.courseCode && record.courseName
+                        ? `${record.courseCode} — ${record.courseName}`
+                        : '—'
+                    const roomDisplay = record.room || session?.room || '—'
 
                     const statusBadge =
                       record.status === 'present'
@@ -6502,9 +6916,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                           </div>
                         </td>
                         <td className="py-3 text-xs text-muted-foreground">
-                          {course ? `${course.code} — ${course.name}` : '—'}
+                          {courseDisplay}
                         </td>
-                        <td className="py-3 text-xs font-semibold text-foreground">{session?.room || '—'}</td>
+                        <td className="py-3 text-xs font-semibold text-foreground">{roomDisplay}</td>
                         <td className="py-3 text-xs text-muted-foreground">
                           {record.verifiedAt ? new Date(record.verifiedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' }) : '—'}
                         </td>
@@ -6597,15 +7011,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               <input className="h-11 rounded-lg border bg-muted/40 px-3 text-sm" defaultValue="SmartAttend Anti-Proxy Ultrasonic + Biometrics" disabled />
             </label>
             {isAdmin && (
-              <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
-                {t('auth.emailDomain')}
-                <input
-                  className="h-11 rounded-lg border bg-muted/40 px-3 text-sm"
-                  defaultValue={organization.emailDomain ?? 'utc.edu.vn'}
-                  disabled
-                />
+              <div className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+                <span>{t('auth.emailDomain')}</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="h-11 flex-1 rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    value={effectiveDomainInput}
+                    onChange={(e) => setDomainInput(e.target.value)}
+                    placeholder="utc.edu.vn"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSaveDomain}
+                    disabled={savingDomain}
+                    className="h-11 px-4 text-xs font-bold cursor-pointer"
+                  >
+                    {savingDomain ? 'Đang lưu...' : 'Lưu tên miền'}
+                  </Button>
+                </div>
                 <span className="text-xs font-normal text-muted-foreground">{t('auth.emailDomainHint')}</span>
-              </label>
+              </div>
             )}
           </div>
         </Card>
@@ -6652,6 +7078,8 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 }}
                 className="h-11 rounded-lg border bg-background px-3 text-sm font-medium focus:ring-2 focus:ring-primary outline-none"
               >
+                <option value={2}>2 phút (Chuẩn cửa sổ nhanh 3 phút)</option>
+                <option value={3}>3 phút</option>
                 <option value={5}>{t('teacher.grace5')}</option>
                 <option value={10}>{t('teacher.grace10')}</option>
                 <option value={15}>{t('teacher.grace15')}</option>
@@ -6744,6 +7172,89 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         <Metric label={isAdmin ? t('teacher.activeSessions') : t('teacher.liveSessions')} value={String(metrics.activeSessions)} detail={t('common.runningNow')} icon={Wifi} />
         <Metric label={t('common.needsReview')} value={String(metrics.flagged)} detail={t('teacher.suspiciousAttempts')} icon={CircleAlert} tone="warning" />
       </div>
+
+      {/* Today's Teaching & Computer Lab Schedule Card (Khoa CNTT - UTC) */}
+      <Card
+        title="Ca giảng dạy & Phòng máy Hôm nay (Khoa CNTT)"
+        description={`${formatDayOfWeek(t, todayDayOfWeek)} · ${todaySections.length} ca học trong lịch hôm nay`}
+        action={
+          <Button variant="outline" className="text-xs gap-1.5 cursor-pointer" onClick={() => go('courses')}>
+            <CalendarDays className="size-3.5" />
+            <span>Quản lý lịch học</span>
+          </Button>
+        }
+      >
+        {todaySections.length > 0 ? (
+          <div className="divide-y">
+            {todaySections.map((sec) => {
+              const meta = parseSessionType(sec.room)
+              const isLiveNow = sec.status === 'live' || (live && live.courseCode === sec.courseCode && live.room === sec.room)
+              return (
+                <div key={sec.sectionId} className="flex flex-wrap items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+                  <div className="space-y-1 min-w-[260px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-foreground">{sec.courseCode} · {sec.courseName}</span>
+                      <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold border ${meta.badgeBg} ${meta.badgeText} ${meta.badgeBorder}`}>
+                        {meta.label}
+                      </span>
+                      {isLiveNow ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                          <span className="size-1.5 rounded-full bg-emerald-500 animate-ping" />
+                          Đang mở điểm danh
+                        </span>
+                      ) : sec.autoStart ? (
+                        <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                          Tự động mở theo giờ
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                      <span><Clock className="mr-1 inline size-3.5 text-primary" />{sec.startsAt} – {sec.endsAt}</span>
+                      <span>·</span>
+                      <span><Building2 className="mr-1 inline size-3.5 text-slate-500" />Phòng: <strong className="text-foreground">{meta.cleanRoom || sec.room}</strong></span>
+                      <span>·</span>
+                      <span><Users className="mr-1 inline size-3.5 text-slate-500" />Sĩ số: <strong>{sec.enrolledCount ?? 0} SV</strong></span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs cursor-pointer"
+                      onClick={() => {
+                        go('courses')
+                        openRoster(sec)
+                      }}
+                    >
+                      <Users className="size-3.5" />
+                      <span>Danh sách ca</span>
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="h-8 px-3 text-xs bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                      onClick={() => {
+                        if (isLiveNow) {
+                          go('sessions')
+                        } else {
+                          void startSpecificSession(sec.sectionId)
+                        }
+                      }}
+                    >
+                      <Zap className="size-3.5" />
+                      <span>{isLiveNow ? 'Vào màn hình LIVE' : 'Mở điểm danh'}</span>
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-1.5">
+            <Calendar className="size-6 text-muted-foreground/60" />
+            <p className="font-semibold text-sm text-foreground">Hôm nay không có ca giảng dạy cố định nào</p>
+            <p>Bạn có thể sang mục Khóa học & Lớp để đăng ký ca thực hành, học bù hoặc mở điểm danh thủ công.</p>
+          </div>
+        )}
+      </Card>
 
       {/* Leave Requests Review Panel */}
       <Card title={t('teacher.leaveClaims')} description={t('teacher.leaveClaimsDetail')}>
@@ -6878,6 +7389,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
           summary={printableSummary}
           loading={loadingPrintable}
           user={user}
+          teacherName={users.find((u) => u.id === printableCourse.teacherId)?.name || user.name}
           filter={eligibilityFilter}
           onFilterChange={setEligibilityFilter}
           onClose={() => setPrintableCourse(null)}
