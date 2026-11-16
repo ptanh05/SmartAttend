@@ -4,6 +4,7 @@ import {
   listSectionStudents,
   removeStudentFromSection,
   searchAvailableStudentsForSection,
+  SectionAccessError,
 } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 
@@ -25,7 +26,7 @@ export async function GET(
     const students = await listSectionStudents(auth, id)
     return NextResponse.json({ ok: true, students })
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to load section students.' }, { status: 500 })
   }
 }
@@ -57,7 +58,7 @@ export async function POST(
     const result = await enrollStudentsToSection(auth, id, identifiers)
     return NextResponse.json(result)
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to enroll students to section.' }, { status: 500 })
   }
 }
@@ -79,7 +80,7 @@ export async function DELETE(
     const result = await removeStudentFromSection(auth, id, studentId)
     return NextResponse.json(result)
   } catch (error) {
-    if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
+    if (error instanceof AuthError || error instanceof SectionAccessError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })
     return NextResponse.json({ ok: false, message: 'Unable to remove student from section.' }, { status: 500 })
   }
 }

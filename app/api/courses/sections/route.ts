@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createCourseSection, listClassSessions } from '@/lib/attendance/server'
+import { classSessionScopeFor, createCourseSection, listClassSessions } from '@/lib/attendance/server'
 import { AuthError, requireAuth } from '@/lib/auth/context'
 import { validateRequestBody, createSectionSchema } from '@/lib/validation'
 
 export async function GET() {
   try {
     const auth = await requireAuth(['teacher', 'admin'])
-    const sections = await listClassSessions(auth.organizationId)
+    const sections = await listClassSessions(...classSessionScopeFor(auth))
     return NextResponse.json({ ok: true, sections })
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ ok: false, message: error.message }, { status: error.status })

@@ -2,6 +2,7 @@
   "name": "my-project",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,11 +12,13 @@
     "test": "vitest run",
     "test:junit": "powershell -ExecutionPolicy Bypass -File tests/junit/run-tests.ps1",
     "test:junit:full": "powershell -ExecutionPolicy Bypass -File tests/junit/run-tests.ps1 -StartApp -Mutating",
-    "test:engine": "vitest run tests/integration/attendance-engine.test.ts",
+    "test:engine": "vitest run -c vitest.integration.config.mts tests/integration/attendance-engine.test.ts",
     "test:load": "k6 run tests/load/attendance-spike.js",
     "test:load-node": "node tests/load/run-spike-node.mjs",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

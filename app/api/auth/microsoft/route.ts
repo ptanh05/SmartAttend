@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { generateState, generateCodeVerifier } from 'arctic'
 import { cookies } from 'next/headers'
-import { getMicrosoftAuth } from '@/lib/auth/oauth'
+import { getMicrosoftAuth, MicrosoftConfigError } from '@/lib/auth/oauth'
+import { PORTAL_LOGIN } from '@/lib/auth/portals'
 import { isLegacyStaffPortal, parsePortal } from '@/lib/auth/portals'
 
 export async function GET(request: Request) {
@@ -47,10 +48,17 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(authUrl)
   } catch (error) {
-    console.error('Failed to initialize Microsoft OAuth:', error)
-    return NextResponse.json(
-      { ok: false, message: 'Server is not configured for Microsoft login.' },
-      { status: 500 },
-    )
+    const url = new URL(request.url)
+    const portal = parsePortal(url.searchParams.get('portal')) ?? 'teacher'
+    const back = (message: string) =>
+      NextResponse.redirect(new URL(`${PORTAL_LOGIN[portal]}?error=${encodeURIComponent(message)}`, url.origin))
+
+    if (error instanceof MicrosoftConfigError) {
+      // Controlled configuration error: names of missing variables only, never values.
+      console.error('Microsoft OAuth is not configured. Missing:', error.missing.join(', '))
+      return back('Đăng nhập Microsoft 365 chưa được cấu hình. Vui lòng đăng nhập bằng tài khoản SmartAttend.')
+    }
+    console.error('Failed to initialize Microsoft OAuth:', error instanceof Error ? error.message : 'unknown error')
+    return back('Không thể khởi tạo đăng nhập Microsoft lúc này. Vui lòng thử lại sau.')
   }
 }

@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { challengePlaintextFor } from '@/lib/attendance/challenge'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
 import { createHash, generateKeyPairSync, sign } from 'crypto'
@@ -158,7 +159,8 @@ describe.skipIf(!hasDb)('Hardened Security & Verification Suite', () => {
         .from(attendanceChallenges)
         .where(eq(attendanceChallenges.sessionId, sessId!))
       expect(activeChallengeRow.length).toBeGreaterThan(0)
-      const challengeCode = activeChallengeRow[0].code!
+      // Plaintext is no longer stored; derive it the same way the teacher screen does.
+      const challengeCode = challengePlaintextFor(activeChallengeRow[0])!
 
       // Attacker attempts to spoof attendance with naked booleans (biometricVerified: true, ultrasonicVerified: true)
       // but WITHOUT sending cryptographic webauthnAssertion or acousticProof
@@ -277,7 +279,8 @@ describe.skipIf(!hasDb)('Hardened Security & Verification Suite', () => {
         .select()
         .from(attendanceChallenges)
         .where(eq(attendanceChallenges.sessionId, sessId!))
-      const challengeCode = activeChallengeRow[0].code!
+      // Plaintext is no longer stored; derive it the same way the teacher screen does.
+      const challengeCode = challengePlaintextFor(activeChallengeRow[0])!
       const challengeSeq = activeChallengeRow[0].sequence
 
       // 1. Generate valid WebAuthn challenge and construct assertion

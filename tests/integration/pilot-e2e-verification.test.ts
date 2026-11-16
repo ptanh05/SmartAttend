@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { challengePlaintextFor } from '@/lib/attendance/challenge'
 import { describe, expect, it } from 'vitest'
 import { nanoid } from 'nanoid'
 import { and, eq } from 'drizzle-orm'
@@ -274,7 +275,7 @@ describe.skipIf(!hasDb)('SMARTATTEND — Final End-to-End Pilot Test Suite', () 
       .from(attendanceChallenges)
       .where(and(eq(attendanceChallenges.sessionId, liveSessionAId), eq(attendanceChallenges.status, 'active')))
     expect(challenges.length).toBeGreaterThan(0)
-    const activeChallengeCode = challenges[0].code!
+    const activeChallengeCode = challengePlaintextFor(challenges[0])!
 
     // Student 1 performs QR check-in using the code displayed on projector
     const checkIn1 = await verifyAttendance(student1Auth, activeChallengeCode, 'iPhone 15 Pro', {

@@ -47,7 +47,32 @@ const sampleStudents = [
   { code: '20260020', name: 'Nguyễn Tiến Đạt', email: '20260020@student.utc.edu.vn' },
 ]
 
+/**
+ * DESTRUCTIVE: this script DELETES EVERY ROW of every table (all organizations,
+ * users, attendance data) and then creates demo accounts with public, weak
+ * passwords. It must never run against production or any database holding real
+ * data. It refuses to run unless explicitly confirmed for a non-production
+ * environment. See docs/DEMO_ACCOUNT_SECURITY.md.
+ */
+function assertSeedAllowed() {
+  const env = (process.env.VERCEL_ENV || process.env.NODE_ENV || '').toLowerCase()
+  if (env === 'production') {
+    throw new Error('Refusing to seed: NODE_ENV/VERCEL_ENV is "production". The seed script wipes all data.')
+  }
+  if (process.env.SEED_CONFIRM_WIPE_ALL_DATA !== 'yes-wipe-this-database') {
+    throw new Error(
+      'Refusing to seed: this script DELETES ALL DATA in the target database. ' +
+        'Set SEED_CONFIRM_WIPE_ALL_DATA=yes-wipe-this-database only for a disposable local/test database.',
+    )
+  }
+  const url = process.env.DATABASE_URL?.trim()
+  if (url && process.env.PRODUCTION_DATABASE_URL?.trim() === url) {
+    throw new Error('Refusing to seed: DATABASE_URL equals PRODUCTION_DATABASE_URL.')
+  }
+}
+
 async function seed() {
+  assertSeedAllowed()
   console.log('--- Cleaning SmartAttend database... ---')
 
   await db().delete(auditLogs)

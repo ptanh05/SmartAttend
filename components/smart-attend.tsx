@@ -417,11 +417,15 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
               challengeRes.challenge,
             )
             if (regRes.ok) {
-              bioAuth = await authenticateWithBiometrics(
-                user.id || '',
-                user.email,
-                challengeRes.challenge,
-              )
+              // WebAuthn challenges are single-use: fetch a fresh one for the assertion.
+              const assertionChallenge = await api.webauthnChallenge()
+              if (assertionChallenge.ok) {
+                bioAuth = await authenticateWithBiometrics(
+                  user.id || '',
+                  user.email,
+                  assertionChallenge.challenge,
+                )
+              }
             }
           }
 
@@ -1397,6 +1401,7 @@ function StudentImportPanel({
   setCsvText,
   importing,
   importResult,
+  importError,
   targetCourseId,
   setTargetCourseId,
   courses,
@@ -1411,6 +1416,7 @@ function StudentImportPanel({
     created: { studentCode: string; name: string; defaultPassword: string }[]
     skipped: { studentCode: string; reason: string }[]
   } | null
+  importError?: string | null
   targetCourseId: string
   setTargetCourseId: (value: string) => void
   courses?: Course[]
@@ -1419,9 +1425,16 @@ function StudentImportPanel({
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (importResult || importError) {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [importResult, importError])
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -1476,7 +1489,9 @@ function StudentImportPanel({
     const hasHeader = firstLine.includes('studentid') || firstLine.includes('student_id') || firstLine.includes('code')
     const dataLines = hasHeader ? lines.slice(1) : lines
     const rows = dataLines.slice(0, 5).map((line) => {
-      const parts = line.split(',').map((p) => p.trim())
+      let delimiter = ','
+      if (line.includes(';') && !line.includes(',')) delimiter = ';'
+      const parts = line.split(delimiter).map((p) => p.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
       const studentId = parts[0] || ''
       const name = parts[1] || ''
       const department = parts[2] || ''
@@ -1731,6 +1746,17 @@ function StudentImportPanel({
         </div>
       )}
 
+      {/* Inline Error Notice */}
+      {importError && (
+        <div ref={resultRef} role="alert" className="rounded-2xl border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 p-4 text-xs text-rose-800 dark:text-rose-200 flex items-start gap-3 shadow-xs">
+          <CircleAlert className="size-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+          <div className="space-y-1">
+            <strong className="block font-semibold">Không thể tạo tài khoản sinh viên</strong>
+            <p className="leading-relaxed">{importError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className="flex items-center gap-2">
@@ -1777,23 +1803,23 @@ function StudentImportPanel({
 
       {/* Result presentation */}
       {importResult && (
-        <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
-          {/* Success Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="size-4" />
+        <div ref={resultRef} className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
+          {/* Success Banner or Zero-Created Notice */}
+          {importResult.created.length > 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="size-4" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                    {t('teacher.importCreated', { count: importResult.created.length })}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Sinh viên có thể đăng nhập ngay bằng mã SV và đổi mật khẩu sau khi vào hệ thống.
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                  {t('teacher.importCreated', { count: importResult.created.length })}
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Sinh viên có thể đăng nhập ngay bằng mã SV và đổi mật khẩu sau khi vào hệ thống.
-                </p>
-              </div>
-            </div>
-            {importResult.created.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
@@ -1803,8 +1829,20 @@ function StudentImportPanel({
                 <Download className="size-3.5 text-blue-600" />
                 <span>Tải danh sách tài khoản (CSV)</span>
               </Button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/90 dark:border-amber-900/60 dark:bg-amber-950/40 p-3.5">
+              <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
+                  Chưa có tài khoản sinh viên nào được tạo
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Dữ liệu bạn nhập đã bị bỏ qua. Vui lòng kiểm tra lý do cụ thể ở danh sách bên dưới.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Created Table */}
           {importResult.created.length > 0 && (
@@ -1877,6 +1915,7 @@ function TeacherImportPanel({
   setCsvText,
   importing,
   importResult,
+  importError,
   emailDomain,
   onImport,
   onClose,
@@ -1889,17 +1928,25 @@ function TeacherImportPanel({
     created: { email: string; name: string; defaultPassword: string }[]
     skipped: { email: string; reason: string }[]
   } | null
+  importError?: string | null
   emailDomain: string | null
   onImport: () => void
   onClose: () => void
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
 
   const expectedDomain = emailDomain ?? 'utc.edu.vn'
+
+  useEffect(() => {
+    if (importResult || importError) {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [importResult, importError])
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -1954,16 +2001,44 @@ function TeacherImportPanel({
     const hasHeader = firstLine.includes('email') || firstLine.includes('name')
     const dataLines = hasHeader ? lines.slice(1) : lines
     const rows = dataLines.slice(0, 5).map((line) => {
-      const parts = line.split(',').map((p) => p.trim())
-      const email = parts[0] || ''
-      const name = parts[1] || ''
-      const department = parts[2] || ''
-      const isValidDomain = email.toLowerCase().endsWith(`@${expectedDomain.toLowerCase()}`)
+      let delimiter = ','
+      if (line.includes(';') && !line.includes(',')) delimiter = ';'
+
+      const hasDelimiter = line.includes(',') || line.includes(';')
+      let email = ''
+      let name = ''
+      let department = ''
+      let status: 'valid' | 'missing_delimiter' | 'invalid_domain' | 'invalid_email' = 'valid'
+
+      if (!hasDelimiter) {
+        if (/\s/.test(line)) {
+          // Line has multiple words separated by whitespace without comma or semicolon
+          status = 'missing_delimiter'
+          email = line.trim()
+        } else {
+          // Just a single email without name
+          email = line.trim()
+        }
+      } else {
+        const parts = line.split(delimiter).map((p) => p.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
+        email = parts[0] || ''
+        name = parts[1] || ''
+        department = parts[2] || ''
+      }
+
+      if (status === 'valid') {
+        if (!email || !email.includes('@') || /\s/.test(email)) {
+          status = 'invalid_email'
+        } else if (!email.toLowerCase().endsWith(`@${expectedDomain.toLowerCase()}`)) {
+          status = 'invalid_domain'
+        }
+      }
+
       return {
         email,
         name,
         department,
-        isValidDomain,
+        status,
       }
     })
     return { rows, totalCount: dataLines.length }
@@ -2160,7 +2235,7 @@ function TeacherImportPanel({
                   <th className="px-3.5 py-2 font-semibold">Email</th>
                   <th className="px-3.5 py-2 font-semibold">Họ và tên</th>
                   <th className="px-3.5 py-2 font-semibold">Khoa/Bộ môn</th>
-                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái tên miền</th>
+                  <th className="px-3.5 py-2 font-semibold text-right">Trạng thái</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
@@ -2170,19 +2245,30 @@ function TeacherImportPanel({
                       {row.email}
                     </td>
                     <td className="px-3.5 py-2 text-slate-700 dark:text-slate-300">
-                      {row.name}
+                      {row.name ? row.name : <span className="text-slate-400 italic">Chưa nhập tên</span>}
                     </td>
                     <td className="px-3.5 py-2 text-slate-500 dark:text-slate-400">
                       {row.department || '—'}
                     </td>
                     <td className="px-3.5 py-2 text-right">
-                      {row.isValidDomain ? (
+                      {row.status === 'valid' && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          <Check className="size-3" /> Hợp lệ (@{expectedDomain})
+                          <Check className="size-3" /> Hợp lệ
                         </span>
-                      ) : (
+                      )}
+                      {row.status === 'missing_delimiter' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Thiếu dấu phẩy (,) hoặc (;)
+                        </span>
+                      )}
+                      {row.status === 'invalid_domain' && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
                           <AlertTriangle className="size-3" /> Sai tên miền trường
+                        </span>
+                      )}
+                      {row.status === 'invalid_email' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                          <AlertTriangle className="size-3" /> Email không hợp lệ
                         </span>
                       )}
                     </td>
@@ -2190,6 +2276,17 @@ function TeacherImportPanel({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Inline Error Notice */}
+      {importError && (
+        <div ref={resultRef} role="alert" className="rounded-2xl border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 p-4 text-xs text-rose-800 dark:text-rose-200 flex items-start gap-3 shadow-xs">
+          <CircleAlert className="size-5 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+          <div className="space-y-1">
+            <strong className="block font-semibold">Không thể tạo tài khoản giảng viên</strong>
+            <p className="leading-relaxed">{importError}</p>
           </div>
         </div>
       )}
@@ -2240,23 +2337,23 @@ function TeacherImportPanel({
 
       {/* Result presentation */}
       {importResult && (
-        <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
-          {/* Success Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="size-4" />
+        <div ref={resultRef} className="mt-6 space-y-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 text-sm">
+          {/* Success Banner or Zero-Created Notice */}
+          {importResult.created.length > 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="size-4" />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                    {t('teacher.importCreated', { count: importResult.created.length })}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Giảng viên có thể đăng nhập bằng email trường và mật khẩu mặc định (Gv@123456) tại cổng Giảng viên.
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                  {t('teacher.importCreated', { count: importResult.created.length })}
-                </p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Giảng viên có thể đăng nhập bằng email trường và đổi mật khẩu sau khi vào hệ thống.
-                </p>
-              </div>
-            </div>
-            {importResult.created.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
@@ -2266,8 +2363,20 @@ function TeacherImportPanel({
                 <Download className="size-3.5 text-indigo-600" />
                 <span>Tải danh sách tài khoản (CSV)</span>
               </Button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/90 dark:border-amber-900/60 dark:bg-amber-950/40 p-3.5">
+              <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="font-bold text-amber-900 dark:text-amber-200 text-xs sm:text-sm">
+                  Chưa có tài khoản nào được tạo
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Dữ liệu bạn nhập đã bị bỏ qua. Vui lòng kiểm tra lý do cụ thể ở danh sách bên dưới.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Created Table */}
           {importResult.created.length > 0 && (
@@ -3983,6 +4092,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     created: { studentCode: string; name: string; defaultPassword: string }[]
     skipped: { studentCode: string; reason: string }[]
   } | null>(null)
+  const [studentImportError, setStudentImportError] = useState<string | null>(null)
 
   const [teacherImportOpen, setTeacherImportOpen] = useState(false)
   const [teacherCsvText, setTeacherCsvText] = useState('')
@@ -3991,6 +4101,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     created: { email: string; name: string; defaultPassword: string }[]
     skipped: { email: string; reason: string }[]
   } | null>(null)
+  const [teacherImportError, setTeacherImportError] = useState<string | null>(null)
 
   const [courseModalOpen, setCourseModalOpen] = useState(false)
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
@@ -4454,14 +4565,19 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   const runImport = async () => {
     setImporting(true)
+    setStudentImportError(null)
     setNotice('')
     try {
       const result = await api.importStudents(csvText, importTargetSectionId || undefined)
       setImportResult(result)
-      setNotice(t('teacher.importDone', { count: result.created.length }))
+      if (result.created.length > 0) {
+        setNotice(t('teacher.importDone', { count: result.created.length }))
+      }
       await refresh()
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : t('teacher.importFailed'))
+      const errMsg = err instanceof Error ? err.message : t('teacher.importFailed')
+      setStudentImportError(errMsg)
+      setNotice(errMsg)
     } finally {
       setImporting(false)
     }
@@ -4469,14 +4585,19 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
 
   const runTeacherImport = async () => {
     setTeacherImporting(true)
+    setTeacherImportError(null)
     setNotice('')
     try {
       const result = await api.importTeachers(teacherCsvText)
       setTeacherImportResult(result)
-      setNotice(t('admin.importLecturersDone', { count: result.created.length }))
+      if (result.created.length > 0) {
+        setNotice(t('admin.importLecturersDone', { count: result.created.length }))
+      }
       await refresh()
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : t('admin.importLecturersFailed'))
+      const errMsg = err instanceof Error ? err.message : t('admin.importLecturersFailed')
+      setTeacherImportError(errMsg)
+      setNotice(errMsg)
     } finally {
       setTeacherImporting(false)
     }
@@ -5338,11 +5459,30 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   }
 
   if (page === 'students') {
-    const studentCount = users.filter((u) => u.role === 'student').length
-    const teacherCount = users.filter((u) => u.role === 'teacher').length
-    const adminCount = users.filter((u) => u.role === 'admin').length
+    const effectiveUsers = useMemo(() => {
+      if (isAdmin && user && !users.some((u) => u.id === user.id || (user.email && u.email?.toLowerCase() === user.email.toLowerCase()))) {
+        return [
+          {
+            id: user.id || 'admin_current',
+            organizationId: organization.id,
+            name: user.name,
+            email: user.email,
+            role: 'admin' as const,
+            initials: user.initials || 'AD',
+            department: '',
+            studentCode: '',
+          },
+          ...users,
+        ]
+      }
+      return users
+    }, [isAdmin, user, users, organization.id])
 
-    const filteredUsers = users.filter((u) => {
+    const studentCount = effectiveUsers.filter((u) => u.role === 'student').length
+    const teacherCount = effectiveUsers.filter((u) => u.role === 'teacher').length
+    const adminCount = effectiveUsers.filter((u) => u.role === 'admin').length
+
+    const filteredUsers = effectiveUsers.filter((u) => {
       const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter
       const matchSearch = `${u.name} ${u.studentCode ?? ''} ${u.email} ${u.department ?? ''}`
         .toLowerCase()
@@ -5380,9 +5520,13 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             setCsvText={setTeacherCsvText}
             importing={teacherImporting}
             importResult={teacherImportResult}
+            importError={teacherImportError}
             emailDomain={organization.emailDomain ?? null}
             onImport={runTeacherImport}
-            onClose={() => setTeacherImportOpen(false)}
+            onClose={() => {
+              setTeacherImportOpen(false)
+              setTeacherImportError(null)
+            }}
             t={t}
           />
         )}
@@ -5392,23 +5536,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
             setCsvText={setCsvText}
             importing={importing}
             importResult={importResult}
+            importError={studentImportError}
             targetCourseId={importTargetSectionId}
             setTargetCourseId={setImportTargetSectionId}
             courses={courses}
             onImport={runImport}
-            onClose={() => setImportOpen(false)}
+            onClose={() => {
+              setImportOpen(false)
+              setStudentImportError(null)
+            }}
             t={t}
           />
         )}
         <Card
           title={isAdmin ? t('admin.userDirectory') : t('teacher.studentDirectory')}
-          description={`${organization.name} · ${filteredUsers.length} ${t('admin.allUsers')}`}
+          description={`${organization.name} · ${effectiveUsers.length} ${t('admin.allUsers')}${userRoleFilter !== 'all' ? ` (${filteredUsers.length} ${userRoleFilter === 'admin' ? t('admin.filterAdmins') : userRoleFilter === 'teacher' ? t('admin.filterTeachers') : t('admin.filterStudents')})` : ''}`}
         >
           {/* Role Filter Tabs (All, Students, Teachers, Admins) */}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-muted/60 rounded-xl">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-800/80 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-xs">
               {([
-                { key: 'all' as const, label: t('admin.filterAll'), count: users.length },
+                { key: 'all' as const, label: t('admin.filterAll'), count: effectiveUsers.length },
                 { key: 'student' as const, label: t('admin.filterStudents'), count: studentCount },
                 { key: 'teacher' as const, label: t('admin.filterTeachers'), count: teacherCount },
                 { key: 'admin' as const, label: t('admin.filterAdmins'), count: adminCount },
@@ -5419,13 +5567,15 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                   onClick={() => setUserRoleFilter(tab.key)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                     userRoleFilter === tab.key
-                      ? 'bg-background text-foreground shadow-sm font-semibold'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                      ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 font-bold shadow-xs border border-slate-200/60 dark:border-slate-700/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'
                   }`}
                 >
                   <span>{tab.label}</span>
                   <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                    userRoleFilter === tab.key ? 'bg-primary/10 text-primary font-bold' : 'bg-muted text-muted-foreground'
+                    userRoleFilter === tab.key
+                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-bold'
+                      : 'bg-slate-200/70 text-slate-600 dark:bg-slate-700/80 dark:text-slate-400 font-medium'
                   }`}>
                     {tab.count}
                   </span>
@@ -5433,27 +5583,27 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               ))}
             </div>
 
-            <div className="flex flex-1 min-w-[200px] max-w-sm items-center gap-2 rounded-lg border px-3">
-              <Search className="size-4 text-muted-foreground" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 flex-1 bg-transparent text-sm outline-none" placeholder={t('common.search')} />
+            <div className="flex flex-1 min-w-[200px] max-w-sm items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/50 px-3">
+              <Search className="size-4 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none" placeholder={t('common.search')} />
             </div>
           </div>
 
-          <div className="divide-y">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {filteredUsers.map((item) => (
               <div key={item.id} className="flex items-center gap-3 py-4">
                 <div className={`grid size-9 place-items-center rounded-full text-xs font-semibold ${
                   item.role === 'admin'
-                    ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-purple-800'
                     : item.role === 'teacher'
-                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 ring-1 ring-blue-200 dark:ring-blue-800'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800'
                 }`}>
                   {item.initials?.slice(0, 2) ?? item.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">{item.name}</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.name}</p>
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
                       item.role === 'admin'
                         ? 'bg-purple-50 text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-950/40 dark:text-purple-300'
@@ -5464,9 +5614,9 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                       {t(`roles.${item.role}`)}
                     </span>
                   </div>
-                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  <div className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
                     {item.role === 'student' && organization.id && (
-                      <p>Mã vào tổ chức: <span className="font-mono text-slate-700 dark:text-slate-300">{organization.id}</span></p>
+                      <p>Mã vào tổ chức: <span className="font-mono font-medium text-slate-700 dark:text-slate-300">{organization.id}</span></p>
                     )}
                     <p>
                       {item.studentCode ? `MSSV: ${item.studentCode} · ` : ''}
@@ -5490,7 +5640,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               </div>
             ))}
             {filteredUsers.length === 0 && (
-              <p className="py-8 text-center text-sm text-muted-foreground">{t('admin.noUsersFound')}</p>
+              <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">{t('admin.noUsersFound')}</p>
             )}
           </div>
         </Card>
@@ -7084,7 +7234,10 @@ export default function SmartAttendApp() {
     return () => window.clearTimeout(id)
   }, [])
 
-  useEffect(() => { document.documentElement.classList.toggle('dark', dark) }, [dark])
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.classList.toggle('light', !dark)
+  }, [dark])
 
   useEffect(() => {
     if (!role || !hydrated) return

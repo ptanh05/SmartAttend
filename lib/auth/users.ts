@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { db } from '@/lib/db'
 import {
@@ -146,26 +146,25 @@ export async function importTeachers(
   const defaultPassword = defaultTeacherPassword()
   const passwordHash = await hashPassword(defaultPassword)
 
-  // Teacher members already present in the organization, so a re-import skips
-  // them instead of creating a duplicate membership.
-  const existingTeachers = await db()
-    .select({ userId: organizationMemberships.userId })
+  // Members already present in the organization, so a re-import skips
+  // them instead of creating a duplicate membership or overwriting passwords.
+  const existingMembers = await db()
+    .select({
+      userId: organizationMemberships.userId,
+      role: organizationMemberships.role,
+    })
     .from(organizationMemberships)
-    .where(
-      and(
-        eq(organizationMemberships.organizationId, auth.organizationId),
-        eq(organizationMemberships.role, 'teacher'),
-      ),
-    )
-  const teacherMemberIds = new Set(existingTeachers.map((row) => row.userId))
+    .where(eq(organizationMemberships.organizationId, auth.organizationId))
+
+  const orgMemberRoleMap = new Map(existingMembers.map((row) => [row.userId, row.role]))
 
   for (const row of rows) {
     const email = row.email.trim().toLowerCase()
-    const name = row.name.trim()
+    const name = row.name.trim() || 'Chưa nhập tên'
     const department = row.department?.trim() || null
 
-    if (!email || !name) {
-      skipped.push({ email: email || '(empty)', reason: 'Thiếu email giảng viên hoặc họ tên.' })
+    if (!email) {
+      skipped.push({ email: '(empty)', reason: 'Thiếu email giảng viên.' })
       continue
     }
 
@@ -175,8 +174,8 @@ export async function importTeachers(
     }
     seenEmails.add(email)
 
-    if (!email.includes('@')) {
-      skipped.push({ email, reason: 'Email giảng viên không hợp lệ.' })
+    if (/\s/.test(email) || !email.includes('@')) {
+      skipped.push({ email, reason: 'Email giảng viên không đúng định dạng (thiếu dấu phân cách , hoặc ;).' })
       continue
     }
 
@@ -200,8 +199,14 @@ export async function importTeachers(
 
       const userId = existingUser[0]?.id
 
-      if (userId && teacherMemberIds.has(userId)) {
-        skipped.push({ email, reason: 'Tài khoản giảng viên đã tồn tại trong tổ chức.' })
+      if (userId && orgMemberRoleMap.has(userId)) {
+        const existingRole = orgMemberRoleMap.get(userId)
+        skipped.push({
+          email,
+          reason: existingRole === 'teacher'
+            ? 'Tài khoản giảng viên đã tồn tại trong tổ chức.'
+            : `Email này đã được sử dụng bởi tài khoản ${existingRole === 'admin' ? 'Quản trị viên' : 'Sinh viên'} trong tổ chức.`,
+        })
         continue
       }
 
@@ -216,11 +221,6 @@ export async function importTeachers(
           initials: makeInitials(name),
           mustChangePassword: true,
         })
-      } else {
-        await db()
-          .update(users)
-          .set({ passwordHash, name, mustChangePassword: true })
-          .where(eq(users.id, targetUserId))
       }
 
       await db().insert(organizationMemberships).values({
@@ -232,9 +232,15 @@ export async function importTeachers(
         studentCode: null,
         status: 'active',
       })
-      teacherMemberIds.add(targetUserId)
+      orgMemberRoleMap.set(targetUserId, 'teacher')
 
-      created.push({ email, name, defaultPassword })
+      // An existing identity keeps its own credentials: never report the
+      // default password for it (it was not, and must not be, reset).
+      created.push({
+        email,
+        name,
+        defaultPassword: userId ? '(Tài khoản đã tồn tại - giữ mật khẩu hiện có)' : defaultPassword,
+      })
     } catch (err) {
       console.error(`Failed to import teacher ${email}`, err)
       skipped.push({ email, reason: err instanceof Error ? err.message : 'Lỗi hệ thống khi tạo tài khoản.' })
@@ -264,8 +270,7 @@ export function parseTeacherCsv(
   if (lines.length === 0) return []
 
   let delimiter = ','
-  if (lines[0].includes('\t')) delimiter = '\t'
-  else if (lines[0].includes(';')) delimiter = ';'
+  if (lines[0].includes(';') && !lines[0].includes(',')) delimiter = ';'
 
   const firstCells = splitCsvLine(lines[0], delimiter).map(normalizeHeader)
   const emailKeys = new Set(['email', 'emailgiaovien', 'emailgv', 'mail', 'username', 'ten_dang_nhap', 'tendangnhap', 'user', 'account'])
@@ -289,11 +294,24 @@ export function parseTeacherCsv(
 
   const rows: ImportTeacherRow[] = []
   for (const line of lines.slice(startIndex)) {
-    const cells = splitCsvLine(line, delimiter)
-    const rawEmail = cells[emailIndex] ?? ''
-    const name = cells[nameIndex] ?? ''
-    const department = departmentIndex >= 0 ? cells[departmentIndex] : undefined
-    if (!rawEmail && !name) continue
+    const hasDelimiter = line.includes(',') || line.includes(';')
+    let rawEmail = ''
+    let rawName = ''
+    let rawDept: string | undefined = undefined
+
+    if (!hasDelimiter) {
+      rawEmail = line.trim()
+    } else {
+      const cells = splitCsvLine(line, delimiter).map((c) => c.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim())
+      rawEmail = (cells[emailIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+      rawName = (cells[nameIndex] ?? '').replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim()
+      rawDept = departmentIndex >= 0 ? cells[departmentIndex] : undefined
+    }
+
+    if (!rawEmail) continue
+
+    const name = rawName || 'Chưa nhập tên'
+    const department = rawDept ? rawDept.replace(/^[,\s\t]+|[,\s\t]+$/g, '').trim() : undefined
 
     const email = rawEmail.includes('@')
       ? rawEmail.trim().toLowerCase()
@@ -305,6 +323,9 @@ export function parseTeacherCsv(
   return rows
 }
 
+/** The import target (course/section) is not part of the caller's organization. */
+export class ImportScopeError extends Error {}
+
 export async function importStudents(
   auth: AuthContext,
   rows: ImportStudentRow[],
@@ -313,6 +334,30 @@ export async function importStudents(
   const created: ImportStudentsResult['created'] = []
   const skipped: ImportStudentsResult['skipped'] = []
   const seenCodes = new Set<string>()
+
+  // Resolve the target sections once, strictly inside this organization. A
+  // section or course id belonging to another tenant resolves to nothing.
+  const hasTarget = Boolean(options?.courseId || options?.sectionId)
+  let targetSectionIds: string[] = []
+  if (options?.sectionId) {
+    const sectionRows = await db()
+      .select({ id: courseSections.id })
+      .from(courseSections)
+      .where(and(eq(courseSections.id, options.sectionId), eq(courseSections.organizationId, auth.organizationId)))
+    if (!sectionRows[0]) throw new ImportScopeError('Lớp học phần không tồn tại hoặc không thuộc tổ chức của bạn.')
+    targetSectionIds = [sectionRows[0].id]
+  } else if (options?.courseId) {
+    const course = await db()
+      .select({ id: courses.id })
+      .from(courses)
+      .where(and(eq(courses.id, options.courseId), eq(courses.organizationId, auth.organizationId)))
+    if (!course[0]) throw new ImportScopeError('Học phần không tồn tại hoặc không thuộc tổ chức của bạn.')
+    const sectionRows = await db()
+      .select({ id: courseSections.id })
+      .from(courseSections)
+      .where(and(eq(courseSections.courseId, options.courseId), eq(courseSections.organizationId, auth.organizationId)))
+    targetSectionIds = sectionRows.map((r) => r.id)
+  }
 
   for (const row of rows) {
     const studentCode = row.studentCode.trim()
@@ -331,57 +376,81 @@ export async function importStudents(
     seenCodes.add(studentCode.toLowerCase())
 
     try {
+      // TENANT-SAFE LOOKUP: student codes are globally unique
+      // (membership_student_code_idx), so we must find *any* holder of the
+      // code — but we only ever act on it when it belongs to this organization.
       const existing = await db()
-        .select({ id: organizationMemberships.id, userId: organizationMemberships.userId })
+        .select({
+          userId: organizationMemberships.userId,
+          organizationId: organizationMemberships.organizationId,
+          role: organizationMemberships.role,
+        })
         .from(organizationMemberships)
-        .where(
-          and(
-            eq(organizationMemberships.studentCode, studentCode),
-          ),
-        )
+        .where(sql`lower(${organizationMemberships.studentCode}) = lower(${studentCode})`)
 
       if (existing.length > 0) {
-        if (options?.courseId || options?.sectionId) {
-          const sections = options.sectionId
-            ? [{ id: options.sectionId }]
-            : await db().select({ id: courseSections.id }).from(courseSections).where(and(eq(courseSections.courseId, options.courseId!), eq(courseSections.organizationId, auth.organizationId)))
-          for (const section of sections) await db().insert(classEnrollments).values({ sectionId: section.id, studentId: existing[0].userId, organizationId: auth.organizationId, status: 'active' }).onConflictDoNothing()
-          created.push({ studentCode, name, defaultPassword: '(Tài khoản đã tồn tại - đã ghi danh)' })
-          continue
-        } else {
-          skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong hệ thống.' })
+        const inThisOrg = existing.find(
+          (m) => m.organizationId === auth.organizationId && m.role === 'student',
+        )
+        if (!inThisOrg) {
+          // Never link, enroll or modify an account of another organization.
+          skipped.push({ studentCode, reason: 'Mã sinh viên đã được đăng ký ở một tổ chức khác.' })
           continue
         }
+        if (hasTarget) {
+          for (const sectionId of targetSectionIds) {
+            await db()
+              .insert(classEnrollments)
+              .values({ sectionId, studentId: inThisOrg.userId, organizationId: auth.organizationId, status: 'active' })
+              .onConflictDoNothing()
+          }
+          created.push({ studentCode, name, defaultPassword: '(Tài khoản đã tồn tại - đã ghi danh)' })
+        } else {
+          skipped.push({ studentCode, reason: 'Mã sinh viên đã tồn tại trong tổ chức.' })
+        }
+        continue
       }
 
       const email = studentEmailFromName(name, studentCode)
-      const defaultPassword = defaultStudentPassword(studentCode)
-      const passwordHash = await hashPassword(defaultPassword)
 
-      // Reuse existing user if identical email exists, otherwise insert new user
+      // An existing identity is NEVER reused or modified by an import: doing so
+      // would overwrite credentials of an account the importer does not own.
       const existingUser = await db()
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.email, email))
-
-      let userId = existingUser[0]?.id
-      if (!userId) {
-        userId = `stu_${nanoid(10)}`
-        await db().insert(users).values({
-          id: userId,
-          email,
-          passwordHash,
-          name,
-          initials: makeInitials(name),
-          mustChangePassword: true,
+        .where(sql`lower(${users.email}) = lower(${email})`)
+        .limit(1)
+      if (existingUser[0]) {
+        const sameOrg = await db()
+          .select({ id: organizationMemberships.id })
+          .from(organizationMemberships)
+          .where(
+            and(
+              eq(organizationMemberships.userId, existingUser[0].id),
+              eq(organizationMemberships.organizationId, auth.organizationId),
+            ),
+          )
+          .limit(1)
+        skipped.push({
+          studentCode,
+          reason: sameOrg[0]
+            ? `Email ${email} đã được sử dụng bởi một tài khoản khác trong tổ chức.`
+            : `Email ${email} đã thuộc về một tài khoản khác trong hệ thống.`,
         })
-      } else {
-        await db().update(users).set({
-          passwordHash,
-          name,
-          mustChangePassword: true,
-        }).where(eq(users.id, userId))
+        continue
       }
+
+      const defaultPassword = defaultStudentPassword(studentCode)
+      const passwordHash = await hashPassword(defaultPassword)
+      const userId = `stu_${nanoid(10)}`
+      await db().insert(users).values({
+        id: userId,
+        email,
+        passwordHash,
+        name,
+        initials: makeInitials(name),
+        mustChangePassword: true,
+      })
 
       await db().insert(organizationMemberships).values({
         id: nanoid(),
@@ -393,11 +462,13 @@ export async function importStudents(
         status: 'active',
       })
 
-      if (options?.courseId || options?.sectionId) {
-        const sections = options.sectionId
-          ? [{ id: options.sectionId }]
-          : await db().select({ id: courseSections.id }).from(courseSections).where(and(eq(courseSections.courseId, options.courseId!), eq(courseSections.organizationId, auth.organizationId)))
-        for (const section of sections) await db().insert(classEnrollments).values({ sectionId: section.id, studentId: userId, organizationId: auth.organizationId, status: 'active' }).onConflictDoNothing()
+      if (hasTarget) {
+        for (const sectionId of targetSectionIds) {
+          await db()
+            .insert(classEnrollments)
+            .values({ sectionId, studentId: userId, organizationId: auth.organizationId, status: 'active' })
+            .onConflictDoNothing()
+        }
       } else if (options?.autoEnrollSections !== false) {
         const existingSections = await db()
           .select({ id: courseSections.id })
