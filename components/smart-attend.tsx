@@ -4433,12 +4433,17 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
   useEffect(() => {
     if (page !== 'departments') return
     let active = true
+    queueMicrotask(() => {
+      if (active) setDeptLoading(true)
+    })
     api.listDepartments().then((res) => {
       if (active && res.ok && res.departments) {
         setDepartmentsList(res.departments)
       }
     }).catch(() => {
       /* ignore */
+    }).finally(() => {
+      if (active) setDeptLoading(false)
     })
     return () => {
       active = false
@@ -4450,6 +4455,10 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
     const q = deptSearch.trim().toLowerCase()
     return departmentsList.filter((d) => d.name.toLowerCase().includes(q))
   }, [departmentsList, deptSearch])
+  const totalDepartmentCourses = useMemo(
+    () => departmentsList.reduce((total, department) => total + department.courseCount, 0),
+    [departmentsList],
+  )
   const [projectorMode, setProjectorMode] = useState(false)
   const [ultrasonicActive, setUltrasonicActive] = useState(false)
   const beaconRef = useRef<BeaconController | null>(null)
@@ -5645,7 +5654,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               </div>
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Tổng môn học trực thuộc</p>
-                <p className="text-2xl font-bold text-foreground mt-0.5">{courses.length}</p>
+                <p className="text-2xl font-bold text-foreground mt-0.5">{totalDepartmentCourses}</p>
               </div>
             </div>
           </Card>
@@ -5657,7 +5666,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Trung bình môn / khoa</p>
                 <p className="text-2xl font-bold text-foreground mt-0.5">
-                  {departmentsList.length > 0 ? (courses.length / departmentsList.length).toFixed(1) : '0'}
+                  {departmentsList.length > 0 ? (totalDepartmentCourses / departmentsList.length).toFixed(1) : '0'}
                 </p>
               </div>
             </div>
@@ -5702,8 +5711,7 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
                 </thead>
                 <tbody className="divide-y">
                   {filteredDepartments.map((dept) => {
-                    const deptCourses = courses.filter((c) => c.department.toLowerCase() === dept.name.toLowerCase())
-                    const count = dept.courseCount || deptCourses.length
+                    const count = dept.courseCount
 
                     return (
                       <tr key={dept.id} className="hover:bg-muted/40 transition-colors">
@@ -5810,7 +5818,6 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
               setDeptModalOpen(false)
               setEditingDept(null)
               await refreshDepartments()
-              await refresh()
             }}
           />
         )}
@@ -5819,13 +5826,12 @@ function StaffView({ role, page, go, data, user, organization, refresh }: ViewPr
         {deletingDept && (
           <DeleteDepartmentModal
             dept={deletingDept}
-            coursesCount={courses.filter((c) => c.department.toLowerCase() === deletingDept.name.toLowerCase()).length || deletingDept.courseCount}
+            coursesCount={deletingDept.courseCount}
             onClose={() => setDeletingDept(null)}
             onDeleted={async () => {
               setNotice(`Đã xóa khoa/bộ môn "${deletingDept.name}" thành công.`)
               setDeletingDept(null)
               await refreshDepartments()
-              await refresh()
             }}
           />
         )}
@@ -7741,12 +7747,19 @@ export default function SmartAttendApp() {
         if (me.ok && me.user && me.organization) {
           const nextRole = me.user.role
           if (canAccessRole(nextRole, path)) {
+            const nextPage = pageFromPath(path, nextRole)
             setRole(nextRole)
-            setPage(pageFromPath(path, nextRole))
+            setPage(nextPage)
             hydrateUser(me.user, nextRole)
             setOrganization({ id: me.organization.id, name: me.organization.name, plan: me.organization.plan, emailDomain: me.organization.emailDomain })
-            const next = await loadDashboard(nextRole)
-            setData(next)
+            // Show the authenticated shell as soon as identity is known. The
+            // departments page owns a smaller endpoint and does not need the
+            // full admin dashboard payload before it can render.
+            setHydrated(true)
+            if (nextPage !== 'departments') {
+              const next = await loadDashboard(nextRole)
+              setData(next)
+            }
           } else {
             window.history.replaceState({}, '', '/unauthorized')
           }
@@ -7766,7 +7779,7 @@ export default function SmartAttendApp() {
   }, [dark])
 
   useEffect(() => {
-    if (!role || !hydrated) return
+    if (!role || !hydrated || page === 'departments') return
 
     const poll = async () => {
       if (typeof document !== 'undefined' && document.hidden) return
@@ -7790,14 +7803,16 @@ export default function SmartAttendApp() {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [role, hydrated, data.live])
+  }, [role, hydrated, data.live, page])
 
   const go = (next: PageKey) => {
+    const leavingLightweightPage = page === 'departments' && next !== 'departments'
     setPage(next)
     setMobileOpen(false)
     if (!role) return
     const slug = next === 'overview' ? 'dashboard' : next
     window.history.replaceState({}, '', `/${portalForRole(role)}/${slug}`)
+    if (leavingLightweightPage) void refresh()
   }
 
   const login = async (next: Role, forcePasswordChange = false) => {
