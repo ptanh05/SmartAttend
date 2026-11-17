@@ -168,6 +168,16 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
   const [biometricStatus, setBiometricStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle')
   const [stage2SubMethod, setStage2SubMethod] = useState<'instant' | 'qr' | 'manual'>('instant')
   const [selectedWeekStart, setSelectedWeekStart] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await refresh?.()
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500)
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -501,8 +511,14 @@ function StudentView({ page, go, data, user, refresh, onPasswordChanged }: ViewP
                 <h2 className="mt-2 text-2xl font-bold sm:text-3xl">{t('student.noLiveClass')}</h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-blue-100">{t('student.waitingLiveDetail')}</p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <Button onClick={() => refresh()} className="bg-white text-blue-700 hover:bg-blue-50">
-                    <RotateCw className="size-4" /> {t('student.refreshSessions')}
+                  <Button
+                    variant="white"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="bg-white text-blue-900 hover:bg-blue-50 hover:text-blue-950 font-bold shadow-md border-0 active:scale-95 transition-all"
+                  >
+                    <RotateCw className={`size-4 text-blue-900 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span className="text-blue-900 font-bold">{t('student.refreshSessions')}</span>
                   </Button>
                   <Button variant="ghost" onClick={() => go('courses')} className="border border-white/25 text-white hover:bg-white/10 hover:text-white">
                     <CalendarDays className="size-4" /> {t('student.viewSchedule')}
